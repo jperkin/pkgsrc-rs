@@ -1,0 +1,15 @@
+[package]
+name = "pkgsrc"
+description = "Library for interacting with a pkgsrc installation"
+version = "0.1.0"
+authors = ["Jonathan Perkin <jonathan@perkin.org.uk>"]
+readme = "README.md"
+keywords = ["pkgsrc"]
+license = "ISC"
+repository = "https://github.com/jperkin/pkgsrc-rs"
+homepage = "https://github.com/jperkin/pkgsrc-rs"
+documentation = "https://docs.rs/pkgsrc"
+edition = "2018"
+
+[dependencies]
+glob = "*"
