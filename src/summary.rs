@@ -16,6 +16,9 @@
  * summary.rs - handle pkg_summary(5) parsing.
  */
 
+#[cfg(test)]
+use unindent::unindent;
+
 use std::io::Write;
 
 #[derive(Debug)]
@@ -172,11 +175,7 @@ impl SummaryEntry {
         &self.supersedes
     }
 
-    pub fn parse_entry(
-        &mut self,
-        key: &str,
-        value: &str,
-    ) -> Result<(), &'static str> {
+    pub fn parse_entry(&mut self, key: &str, value: &str) -> Result<(), &'static str> {
         let valstring = value.to_string();
         let vali64 = value.parse::<i64>();
         /*
@@ -368,5 +367,38 @@ impl Write for SummaryStream {
 
     fn flush(&mut self) -> std::io::Result<()> {
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn valid_summary() {
+        let mut pkgsummary = SummaryStream::new();
+        let pkginfo = unindent(
+            r#"
+        BUILD_DATE=2019-08-14 00:00:00 +0000
+        CATEGORIES=test
+        COMMENT=This is a test
+        DESCRIPTION=A test description
+        DESCRIPTION=This is a multi-line field
+        MACHINE_ARCH=x86_64
+        OPSYS=Darwin
+        OS_VERSION=18.7.0
+        PKGNAME=pkgtest-1.0
+        PKGPATH=category/pkgtest
+        PKGTOOLS_VERSION=20190405
+        SIZE_PKG=1234
+
+        "#,
+        );
+        std::io::copy(&mut pkginfo.as_bytes(), &mut pkgsummary);
+        assert_eq!(pkgsummary.entries().len(), 1);
+
+        let mut pkgsum = SummaryEntry::new();
+        pkgsum = pkgsummary.entries_mut().pop().expect("invalid");
+        assert_eq!(pkgsum.description().len(), 2);
     }
 }
