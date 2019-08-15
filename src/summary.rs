@@ -175,7 +175,11 @@ impl SummaryEntry {
         &self.supersedes
     }
 
-    pub fn parse_entry(&mut self, key: &str, value: &str) -> Result<(), &'static str> {
+    pub fn parse_entry(
+        &mut self,
+        key: &str,
+        value: &str,
+    ) -> Result<(), &'static str> {
         let valstring = value.to_string();
         let vali64 = value.parse::<i64>();
         /*
