@@ -31,5 +31,6 @@
  * updates.
  */
 
+pub mod metadata;
 pub mod pmatch;
 pub mod summary;
