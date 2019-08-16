@@ -1,10 +1,16 @@
-## pkgsrc-rs - A Rust interface to pkg_install packages and database
+# pkgsrc-rs
+
+[![Build Status](https://travis-ci.com/jperkin/pkgsrc-rs.svg?branch=master)](https://travis-ci.com/jperkin/pkgsrc-rs)
+[![Crates.io](https://img.shields.io/crates/v/pkgsrc.svg?maxAge=2592000)](https://crates.io/crates/pkgsrc)
+[![Documentation](https://docs.rs/pkgsrc/badge.svg)](https://docs.rs/pkgsrc)
+
+A Rust interface to pkgsrc packages and the pkg\_install pkgdb.
 
 This is being developed alongside [pm](https://github.com/jperkin/pm), a Rust
 implementation of a pkgsrc package manager.  Anything that handles lower level
 pkg\_install routines will be placed here.
 
-### Status
+## Status
 
 * pkg\_match() is implemented and verified to be correct against a large input
   of matches.
@@ -12,7 +18,12 @@ pkg\_install routines will be placed here.
   that the archive contains a valid package.
 * Summary handles pkg\_summary(5) parsing and generation.
 
-### Testing notes
+
+# License
+
+This project is licensed under the [ISC](https://opensource.org/licenses/ISC) license.
+
+## Testing/compatibility notes
 
 Generate list of dependency matches.
 
