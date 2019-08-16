@@ -24,13 +24,18 @@ use std::io::Write;
 #[cfg(test)]
 use unindent::unindent;
 
+/**
+ * Representation of a stream of pkg_summary(5) entries.
+ */
 #[derive(Debug)]
 pub struct SummaryStream {
     buf: Vec<u8>,
     entries: Vec<SummaryEntry>,
 }
 
-/*
+/**
+ * Representation of a complete pkg_summary(5) entry.
+ *
  * i64 types are used even though the values cannot be expressed as negative
  * as it avoids having to convert to sqlite which does not support u64.
  */

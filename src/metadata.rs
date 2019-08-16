@@ -64,6 +64,9 @@
  * ```
  */
 
+/**
+ * A container for all metadata contained in "+*" files from a package.
+ */
 #[derive(Debug, Default)]
 pub struct MetaData {
     build_info: Option<Vec<String>>,
