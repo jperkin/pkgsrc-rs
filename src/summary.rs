@@ -16,10 +16,13 @@
  * summary.rs - handle pkg_summary(5) parsing.
  */
 
+/*!
+ * Handle pkg_summary(5) parsing and generation
+ */
+use std::io::Write;
+
 #[cfg(test)]
 use unindent::unindent;
-
-use std::io::Write;
 
 #[derive(Debug)]
 pub struct SummaryStream {
