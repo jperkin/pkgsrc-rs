@@ -1,6 +1,6 @@
 # pkgsrc-rs
 
-[![Build Status](https://travis-ci.com/jperkin/pkgsrc-rs.svg?branch=master)](https://travis-ci.com/jperkin/pkgsrc-rs)
+[![Build Status](https://travis-ci.org/jperkin/pkgsrc-rs.svg?branch=master)](https://travis-ci.org/jperkin/pkgsrc-rs)
 [![Crates.io](https://img.shields.io/crates/v/pkgsrc.svg?maxAge=2592000)](https://crates.io/crates/pkgsrc)
 [![Documentation](https://docs.rs/pkgsrc/badge.svg)](https://docs.rs/pkgsrc)
 
