@@ -16,16 +16,40 @@
  * summary.rs - handle pkg_summary(5) parsing.
  */
 
-/*!
- * Handle pkg_summary(5) parsing and generation
- */
 use std::io::Write;
 
 #[cfg(test)]
 use unindent::unindent;
 
 /**
- * Representation of a stream of pkg_summary(5) entries.
+ * A stream of pkg_summary(5) entries.
+ *
+ * ## Example
+ *
+ * ```
+ * use pkgsrc::SummaryStream;
+ * use unindent::unindent;
+ *
+ * let mut pkgsummary = SummaryStream::new();
+ * let pkginfo = unindent(r#"
+ *     BUILD_DATE=2019-08-14 01:23:45 +0000
+ *     CATEGORIES=test
+ *     COMMENT=This is a test
+ *     DESCRIPTION=A test description.
+ *     DESCRIPTION=
+ *     DESCRIPTION=This is not a real package.
+ *     MACHINE_ARCH=x86_64
+ *     OPSYS=Darwin
+ *     OS_VERSION=18.7.0
+ *     PKGNAME=pkgtest-1.0
+ *     PKGPATH=category/pkgtest
+ *     PKGTOOLS_VERSION=20190405
+ *     SIZE_PKG=1234
+ *
+ *     "#);
+ * std::io::copy(&mut pkginfo.as_bytes(), &mut pkgsummary);
+ * assert_eq!(pkgsummary.entries().len(), 1);
+ * ```
  */
 #[derive(Debug)]
 pub struct SummaryStream {
@@ -34,8 +58,9 @@ pub struct SummaryStream {
 }
 
 /**
- * Representation of a complete pkg_summary(5) entry.
- *
+ * A complete pkg_summary(5) entry.
+ */
+/*
  * i64 types are used even though the values cannot be expressed as negative
  * as it avoids having to convert to sqlite which does not support u64.
  */
@@ -69,38 +94,66 @@ pub struct SummaryEntry {
     supersedes: Vec<String>,
 }
 
+/*
+ * XXX: Some are Strings, some are str due to unwrapping Option, I need to
+ * figure out what's best here depending on how they will be used.
+ */
 impl SummaryEntry {
+    /**
+     * Return a new SummaryEntry with default values.
+     */
     pub fn new() -> SummaryEntry {
         let sum: SummaryEntry = Default::default();
         sum
     }
-    /*
-     * XXX: Some are Strings, some are str due to unwrapping Option, I need to
-     * figure out what's best here depending on how they will be used.
+    /**
+     * `0` indicates a manually installed package, otherwise automatically
+     * pulled in as a dependency`.
      */
     pub fn automatic(&self) -> i64 {
         self.automatic.unwrap_or(0)
     }
+    /**
+     * Return package `BUILD_DATE`.
+     */
     pub fn build_date(&self) -> &String {
         &self.build_date
     }
+    /**
+     * Return package `CATEGORIES`.
+     */
     pub fn categories(&self) -> &Vec<String> {
         &self.categories
     }
+    /**
+     * Return package `COMMENT`.
+     */
     pub fn comment(&self) -> &String {
         &self.comment
     }
+    /**
+     * Return package `CONFLICTS`.
+     */
     #[allow(dead_code)]
     pub fn conflicts(&self) -> &Vec<String> {
         &self.conflicts
     }
+    /**
+     * Return package `DEPENDS`.
+     */
     #[allow(dead_code)]
     pub fn depends(&self) -> &Vec<String> {
         &self.depends
     }
+    /**
+     * Return package `DESCRIPTION`.
+     */
     pub fn description(&self) -> &Vec<String> {
         &self.description
     }
+    /**
+     * Return package `FILE_CKSUM`.
+     */
     #[allow(dead_code)]
     pub fn file_cksum(&self) -> &str {
         match &self.file_cksum {
@@ -108,58 +161,100 @@ impl SummaryEntry {
             None => "",
         }
     }
+    /**
+     * Return package `FILE_NAME`.
+     */
     pub fn file_name(&self) -> &str {
         match &self.file_name {
             Some(s) => s.as_str(),
             None => "",
         }
     }
+    /**
+     * Return package `FILE_SIZE`.
+     */
     pub fn file_size(&self) -> i64 {
         self.file_size.unwrap_or(0)
     }
+    /**
+     * Return package `HOMEPAGE`.
+     */
     pub fn homepage(&self) -> &str {
         match &self.homepage {
             Some(s) => s.as_str(),
             None => "",
         }
     }
+    /**
+     * Return package `LICENSE`.
+     */
     pub fn license(&self) -> &str {
         match &self.license {
             Some(s) => s.as_str(),
             None => "",
         }
     }
+    /**
+     * Return package `MACHINE_ARCH`.
+     */
     #[allow(dead_code)]
     pub fn machine_arch(&self) -> &String {
         &self.machine_arch
     }
+    /**
+     * Return package `OPSYS`.
+     */
     pub fn opsys(&self) -> &String {
         &self.opsys
     }
+    /**
+     * Return package `OS_VERSION`.
+     */
     pub fn os_version(&self) -> &String {
         &self.os_version
     }
+    /**
+     * Return package `PKG_OPTIONS`.
+     */
     pub fn pkg_options(&self) -> &str {
         match &self.pkg_options {
             Some(s) => s.as_str(),
             None => "",
         }
     }
+    /**
+     * Return package `PKGBASE`.
+     */
     pub fn pkgbase(&self) -> &String {
         &self.pkgbase
     }
+    /**
+     * Return package `PKGNAME`.
+     */
     pub fn pkgname(&self) -> &String {
         &self.pkgname
     }
+    /**
+     * Return package `PKGPATH`.
+     */
     pub fn pkgpath(&self) -> &String {
         &self.pkgpath
     }
+    /**
+     * Return package `PKGTOOLS_VERSION`.
+     */
     pub fn pkgtools_version(&self) -> &String {
         &self.pkgtools_version
     }
+    /**
+     * Return package `PKGVERSION`.
+     */
     pub fn pkgversion(&self) -> &String {
         &self.pkgversion
     }
+    /**
+     * Return package `PREV_PKGPATH`.
+     */
     #[allow(dead_code)]
     pub fn prev_pkgpath(&self) -> &str {
         match &self.prev_pkgpath {
@@ -167,22 +262,47 @@ impl SummaryEntry {
             None => "",
         }
     }
+    /**
+     * Return package `PROVIDES`.
+     */
     #[allow(dead_code)]
     pub fn provides(&self) -> &Vec<String> {
         &self.provides
     }
+    /**
+     * Return package `REQUIRES`.
+     */
     #[allow(dead_code)]
     pub fn requires(&self) -> &Vec<String> {
         &self.requires
     }
+    /**
+     * Return package `SIZE_PKG`.
+     */
     pub fn size_pkg(&self) -> &Option<i64> {
         &self.size_pkg
     }
+    /**
+     * Return package `SUPERSEDES`.
+     */
     #[allow(dead_code)]
     pub fn supersedes(&self) -> &Vec<String> {
         &self.supersedes
     }
 
+    /**
+     * Parse a pkg_summary(5) entry that has been split at `=` into `key` and
+     * `value`.
+     *
+     * ## Example
+     *
+     * ```
+     * use pkgsrc::SummaryEntry;
+     *
+     * let mut sum = SummaryEntry::new();
+     * sum.parse_entry("+REQUIRES", "/usr/lib/libSystem.B.dylib");
+     * ```
+     */
     pub fn parse_entry(
         &mut self,
         key: &str,
@@ -231,6 +351,10 @@ impl SummaryEntry {
         Ok(())
     }
 
+    /**
+     * Indicate that this package has been pulled in as an automatic
+     * dependency.
+     */
     /*
      * Not a member of pkg_summary(5) but this is the best place to store this
      * information at present.
@@ -239,8 +363,8 @@ impl SummaryEntry {
         self.automatic = Some(1);
     }
 
-    /*
-     * Ensure required fields (as per pkg_summary(5)) are set
+    /**
+     * Ensure all required fields (as per pkg_summary(5)) are set.
      */
     pub fn validate(&self) -> Result<(), &'static str> {
         /*
@@ -288,6 +412,9 @@ impl SummaryEntry {
 }
 
 impl SummaryStream {
+    /**
+     * Return a new SummaryStream with default values.
+     */
     pub fn new() -> SummaryStream {
         SummaryStream {
             buf: vec![],
@@ -295,10 +422,16 @@ impl SummaryStream {
         }
     }
 
+    /**
+     * Return vector of parsed SummaryEntry records.
+     */
     pub fn entries(&self) -> &Vec<SummaryEntry> {
         &self.entries
     }
 
+    /**
+     * Return mutable vector of parsed SummaryEntry records.
+     */
     pub fn entries_mut(&mut self) -> &mut Vec<SummaryEntry> {
         &mut self.entries
     }

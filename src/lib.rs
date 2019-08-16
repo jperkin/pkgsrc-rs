@@ -31,6 +31,12 @@
  * updates.
  */
 
-pub mod metadata;
-pub mod pmatch;
-pub mod summary;
+#![deny(missing_docs)]
+
+pub use crate::metadata::MetaData;
+pub use crate::pmatch::pkg_match;
+pub use crate::summary::{SummaryEntry, SummaryStream};
+
+mod metadata;
+mod pmatch;
+mod summary;

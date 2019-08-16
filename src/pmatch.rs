@@ -22,7 +22,7 @@
  * ## Examples
  *
  * ```
- * use pkgsrc::pmatch::pkg_match;
+ * use pkgsrc::pkg_match;
  *
  * // simple match
  * assert_eq!(pkg_match("foobar-1.0", "foobar-1.0"), true);
