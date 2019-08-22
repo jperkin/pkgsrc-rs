@@ -53,9 +53,9 @@
  *     println!("Information for package-1.0");
  *     println!("Comment: {}", metadata.comment());
  *     println!("Files:");
- *     for file in metadata.contents() {
- *         if !file.starts_with('@') && !file.starts_with('+') {
- *             println!("{}", file);
+ *     for line in metadata.contents().lines() {
+ *         if !line.starts_with('@') && !line.starts_with('+') {
+ *             println!("{}", line);
  *         }
  *     }
  *
@@ -68,11 +68,11 @@ pub struct MetaData {
     build_info: Option<Vec<String>>,
     build_version: Option<Vec<String>>,
     comment: String,
-    contents: Vec<String>,
-    deinstall: Option<Vec<String>>,
-    desc: Vec<String>,
-    display: Option<Vec<String>>,
-    install: Option<Vec<String>>,
+    contents: String,
+    deinstall: Option<String>,
+    desc: String,
+    display: Option<String>,
+    install: Option<String>,
     installed_info: Option<Vec<String>>,
     mtree_dirs: Option<Vec<String>>,
     preserve: Option<Vec<String>>,
@@ -105,45 +105,46 @@ impl MetaData {
     }
 
     /**
-     * Return the mandatory `+COMMENT` file as a string.
+     * Return the mandatory `+COMMENT` file as a string.  This should be a
+     * single line.
      */
     pub fn comment(&self) -> &String {
         &self.comment
     }
 
     /**
-     * Return the mandatory `+CONTENTS` (i.e. packlist) file as a vector of
-     * strings.
+     * Return the mandatory `+CONTENTS` (i.e. packlist or PLIST) file as a
+     * complete string.
      */
-    pub fn contents(&self) -> &Vec<String> {
+    pub fn contents(&self) -> &String {
         &self.contents
     }
 
     /**
-     * Return the optional `+DEINSTALL` script as a vector of strings.
+     * Return the optional `+DEINSTALL` script as complete string.
      */
-    pub fn deinstall(&self) -> &Option<Vec<String>> {
+    pub fn deinstall(&self) -> &Option<String> {
         &self.deinstall
     }
 
     /**
-     * Return the mandatory `+DESC` file as a vector of strings.
+     * Return the mandatory `+DESC` file as a complete string.
      */
-    pub fn desc(&self) -> &Vec<String> {
+    pub fn desc(&self) -> &String {
         &self.desc
     }
 
     /**
-     * Return the optional `+DISPLAY` (i.e. MESSAGE) file as a vector of strings.
+     * Return the optional `+DISPLAY` (i.e. MESSAGE) file as a complete string.
      */
-    pub fn display(&self) -> &Option<Vec<String>> {
+    pub fn display(&self) -> &Option<String> {
         &self.display
     }
 
     /**
-     * Return the optional `+INSTALL` script as a vector of strings.
+     * Return the optional `+INSTALL` script as a complete string.
      */
-    pub fn install(&self) -> &Option<Vec<String>> {
+    pub fn install(&self) -> &Option<String> {
         &self.install
     }
 
@@ -223,12 +224,12 @@ impl MetaData {
         match fname {
             "+BUILD_INFO" => self.build_info = Some(val_vec),
             "+BUILD_VERSION" => self.build_version = Some(val_vec),
-            "+COMMENT" => self.comment = val_string,
-            "+CONTENTS" => self.contents = val_vec,
-            "+DEINSTALL" => self.deinstall = Some(val_vec),
-            "+DESC" => self.desc = val_vec,
-            "+DISPLAY" => self.display = Some(val_vec),
-            "+INSTALL" => self.install = Some(val_vec),
+            "+COMMENT" => self.comment.push_str(&val_string),
+            "+CONTENTS" => self.contents.push_str(&val_string),
+            "+DEINSTALL" => self.deinstall = Some(val_string),
+            "+DESC" => self.desc.push_str(&val_string),
+            "+DISPLAY" => self.display = Some(val_string),
+            "+INSTALL" => self.install = Some(val_string),
             "+INSTALLED_INFO" => self.installed_info = Some(val_vec),
             "+MTREE_DIRS" => self.mtree_dirs = Some(val_vec),
             "+PRESERVE" => self.preserve = Some(val_vec),
