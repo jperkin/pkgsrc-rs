@@ -23,7 +23,7 @@
  *
  * ```no_run
  * use flate2::read::GzDecoder;
- * use pkgsrc::MetaData;
+ * use pkgsrc::Metadata;
  * use std::fs::File;
  * use std::io::Read;
  * use tar::Archive;
@@ -31,7 +31,7 @@
  * fn main() -> Result<(), std::io::Error> {
  *     let pkg = File::open("package-1.0.tgz")?;
  *     let mut archive = Archive::new(GzDecoder::new(pkg));
- *     let mut metadata = MetaData::new();
+ *     let mut metadata = Metadata::new();
  *
  *     for file in archive.entries()? {
  *         let mut file = file?;
@@ -64,7 +64,7 @@
  * ```
  */
 #[derive(Debug, Default)]
-pub struct MetaData {
+pub struct Metadata {
     build_info: Option<Vec<String>>,
     build_version: Option<Vec<String>>,
     comment: String,
@@ -81,12 +81,12 @@ pub struct MetaData {
     size_pkg: Option<i64>,
 }
 
-impl MetaData {
+impl Metadata {
     /**
-     * Return a new empty `MetaData` container.
+     * Return a new empty `Metadata` container.
      */
-    pub fn new() -> MetaData {
-        let metadata: MetaData = Default::default();
+    pub fn new() -> Metadata {
+        let metadata: Metadata = Default::default();
         metadata
     }
 
@@ -192,14 +192,14 @@ impl MetaData {
 
     /**
      * Read in a metadata file `fname` and its `value` as strings, populating
-     * the associated MetaData struct.
+     * the associated Metadata struct.
      *
      * ## Example
      *
      * ```
-     * use pkgsrc::MetaData;
+     * use pkgsrc::Metadata;
      *
-     * let mut m = MetaData::new();
+     * let mut m = Metadata::new();
      * m.read_metadata("+COMMENT", "This is a package comment");
      * ```
      */

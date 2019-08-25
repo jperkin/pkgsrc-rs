@@ -14,7 +14,7 @@ pkg\_install routines will be placed here.
 
 * pkg\_match() is implemented and verified to be correct against a large input
   of matches.
-* MetaData handles "+\*" files contained in an archive and is able to verify
+* Metadata handles "+\*" files contained in an archive and is able to verify
   that the archive contains a valid package.
 * Summary handles pkg\_summary(5) parsing and generation.
 
