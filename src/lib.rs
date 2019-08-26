@@ -33,7 +33,7 @@
 
 #![deny(missing_docs)]
 
-pub use crate::metadata::Metadata;
+pub use crate::metadata::{Metadata, MetadataEntry};
 pub use crate::plist::Plist;
 pub use crate::pmatch::pkg_match;
 pub use crate::summary::{SummaryEntry, SummaryStream};

@@ -23,7 +23,7 @@
  *
  * ```no_run
  * use flate2::read::GzDecoder;
- * use pkgsrc::Metadata;
+ * use pkgsrc::{Metadata,MetadataEntry};
  * use std::fs::File;
  * use std::io::Read;
  * use tar::Archive;
@@ -35,12 +35,12 @@
  *
  *     for file in archive.entries()? {
  *         let mut file = file?;
- *         let filename = String::from(file.header().path()?.to_str().unwrap());
+ *         let fname = String::from(file.header().path()?.to_str().unwrap());
  *         let mut s = String::new();
  *
- *         if filename.starts_with('+') {
+ *         if let Some(entry) = MetadataEntry::from_filename(fname.as_str()) {
  *             file.read_to_string(&mut s)?;
- *             if let Err(e) = metadata.read_metadata(&filename, &s) {
+ *             if let Err(e) = metadata.read_metadata(entry, &s) {
  *                 panic!("Bad metadata: {}", e);
  *             }
  *         }
@@ -79,6 +79,103 @@ pub struct Metadata {
     required_by: Option<Vec<String>>,
     size_all: Option<i64>,
     size_pkg: Option<i64>,
+}
+
+/**
+ * Type of Metadata entry.
+ *
+ * Package metadata stored either in a package archive or inside a package
+ * entry in a `PkgDB::DBType::Files` package database is contained in various
+ * files prefixed with `+`.
+ *
+ * This enum supports all of those filenames and avoids having to hardcode
+ * their values.  It supports converting to and from the filename or enum.
+ *
+ * ## Example
+ *
+ * ```
+ * use pkgsrc::MetadataEntry;
+ *
+ * let e = MetadataEntry::Desc;
+ *
+ * /*
+ *  * Validate that the `Desc` entry matches our expected filename.
+ *  */
+ * assert_eq!(e.to_filename(), "+DESC");
+ * assert_eq!(MetadataEntry::from_filename("+DESC"), Some(e));
+ *
+ * /*
+ *  * This is not a known +FILE
+ *  */
+ * assert_eq!(MetadataEntry::from_filename("+BADFILE"), None);
+ * ```
+ */
+#[derive(Debug, PartialEq)]
+pub enum MetadataEntry {
+    /**
+     * Optional package build information stored in `+BUILD_INFO`.
+     */
+    BuildInfo = 0,
+    /**
+     * Optional version information (usually CVS Id's) for the files used to
+     * create the package stored in `+BUILD_VERSION`.
+     */
+    BuildVersion = 1,
+    /**
+     * Single line description of the package stored in `+COMMENT`.
+     */
+    Comment = 2,
+    /**
+     * Packing list contents, also known as the `packlist` or `PLIST`, stored
+     * in `+CONTENTS`.
+     */
+    Contents = 3,
+    /**
+     * Optional script executed upon deinstall, stored in `+DEINSTALL`.
+     */
+    DeInstall = 4,
+    /**
+     * Multi-line description of the package stored in `+DESC`.
+     */
+    Desc = 5,
+    /**
+     * Optional file, also known as `MESSAGE`, to be shown during package
+     * install or deinstall, stored in `+DISPLAY`.
+     */
+    Display = 6,
+    /**
+     * Optional script executed upon install, stored in `+INSTALL`.
+     */
+    Install = 7,
+    /**
+     * Variables set by this package, currently only `automatic=yes` being
+     * supported, stored in `+INSTALLED_INFO`.
+     */
+    InstalledInfo = 8,
+    /**
+     * Obsolete file used to pre-create directories prior to a package install,
+     * stored in `+MTREE_DIRS`.
+     */
+    MtreeDirs = 9,
+    /**
+     * Optional marker that this package should not be deleted under normal
+     * circumstances, stored in `+PRESERVE`.
+     */
+    Preserve = 10,
+    /**
+     * Optional list of packages that are reverse dependencies of (i.e. depend
+     * upon) this package, stored in `+REQUIRED_BY`.
+     */
+    RequiredBy = 11,
+    /**
+     * Optional size of this package plus all of its dependencies, stored in
+     * `+SIZE_ALL`.
+     */
+    SizeAll = 12,
+    /**
+     * Optional size of this package, stored in `+SIZE_ALL`.
+     */
+    SizePkg = 13,
 }
 
 impl Metadata {
@@ -197,15 +294,15 @@ impl Metadata {
      * ## Example
      *
      * ```
-     * use pkgsrc::Metadata;
+     * use pkgsrc::{Metadata, MetadataEntry};
      *
      * let mut m = Metadata::new();
-     * m.read_metadata("+COMMENT", "This is a package comment");
+     * m.read_metadata(MetadataEntry::Comment, "This is a package comment");
      * ```
      */
     pub fn read_metadata(
         &mut self,
-        fname: &str,
+        entry: MetadataEntry,
         value: &str,
     ) -> Result<(), &'static str> {
         /*
@@ -221,22 +318,21 @@ impl Metadata {
             val_vec.push(line.to_string());
         }
 
-        match fname {
-            "+BUILD_INFO" => self.build_info = Some(val_vec),
-            "+BUILD_VERSION" => self.build_version = Some(val_vec),
-            "+COMMENT" => self.comment.push_str(&val_string),
-            "+CONTENTS" => self.contents.push_str(&val_string),
-            "+DEINSTALL" => self.deinstall = Some(val_string),
-            "+DESC" => self.desc.push_str(&val_string),
-            "+DISPLAY" => self.display = Some(val_string),
-            "+INSTALL" => self.install = Some(val_string),
-            "+INSTALLED_INFO" => self.installed_info = Some(val_vec),
-            "+MTREE_DIRS" => self.mtree_dirs = Some(val_vec),
-            "+PRESERVE" => self.preserve = Some(val_vec),
-            "+REQUIRED_BY" => self.required_by = Some(val_vec),
-            "+SIZE_ALL" => self.size_all = Some(val_i64.unwrap()),
-            "+SIZE_PKG" => self.size_pkg = Some(val_i64.unwrap()),
-            _ => return Err("Invalid metadata filename"),
+        match entry {
+            MetadataEntry::BuildInfo => self.build_info = Some(val_vec),
+            MetadataEntry::BuildVersion => self.build_version = Some(val_vec),
+            MetadataEntry::Comment => self.comment.push_str(&val_string),
+            MetadataEntry::Contents => self.contents.push_str(&val_string),
+            MetadataEntry::DeInstall => self.deinstall = Some(val_string),
+            MetadataEntry::Desc => self.desc.push_str(&val_string),
+            MetadataEntry::Display => self.display = Some(val_string),
+            MetadataEntry::Install => self.install = Some(val_string),
+            MetadataEntry::InstalledInfo => self.installed_info = Some(val_vec),
+            MetadataEntry::MtreeDirs => self.mtree_dirs = Some(val_vec),
+            MetadataEntry::Preserve => self.preserve = Some(val_vec),
+            MetadataEntry::RequiredBy => self.required_by = Some(val_vec),
+            MetadataEntry::SizeAll => self.size_all = Some(val_i64.unwrap()),
+            MetadataEntry::SizePkg => self.size_pkg = Some(val_i64.unwrap()),
         }
 
         Ok(())
@@ -257,5 +353,70 @@ impl Metadata {
             return Err("Missing or empty +DESC");
         }
         Ok(())
+    }
+}
+
+impl MetadataEntry {
+    /**
+     * Return filename for the associated `MetadataEntry` type.
+     *
+     * ## Example
+     *
+     * ```
+     * use pkgsrc::MetadataEntry;
+     *
+     * let e = MetadataEntry::Contents;
+     * assert_eq!(e.to_filename(), "+CONTENTS");
+     * ```
+     */
+    pub fn to_filename(&self) -> &str {
+        match self {
+            MetadataEntry::BuildInfo => "+BUILD_INFO",
+            MetadataEntry::BuildVersion => "+BUILD_VERSION",
+            MetadataEntry::Comment => "+COMMENT",
+            MetadataEntry::Contents => "+CONTENTS",
+            MetadataEntry::DeInstall => "+DEINSTALL",
+            MetadataEntry::Desc => "+DESC",
+            MetadataEntry::Display => "+DISPLAY",
+            MetadataEntry::Install => "+INSTALL",
+            MetadataEntry::InstalledInfo => "+INSTALLED_INFO",
+            MetadataEntry::MtreeDirs => "+MTREE_DIRS",
+            MetadataEntry::Preserve => "+PRESERVE",
+            MetadataEntry::RequiredBy => "+REQUIRED_BY",
+            MetadataEntry::SizeAll => "+SIZE_ALL",
+            MetadataEntry::SizePkg => "+SIZE_PKG",
+        }
+    }
+    /**
+     * Return `MetadataEntry` enum in an Option for requested file.
+     *
+     * ## Example
+     *
+     * ```
+     * use pkgsrc::MetadataEntry;
+     *
+     * assert_eq!(MetadataEntry::from_filename("+CONTENTS"),
+     *            Some(MetadataEntry::Contents));
+     * assert_eq!(MetadataEntry::from_filename("+BADFILE"), None);
+     * ```
+     */
+    pub fn from_filename(file: &str) -> Option<MetadataEntry> {
+        match file {
+            "+BUILD_INFO" => Some(MetadataEntry::BuildInfo),
+            "+BUILD_VERSION" => Some(MetadataEntry::BuildVersion),
+            "+COMMENT" => Some(MetadataEntry::Comment),
+            "+CONTENTS" => Some(MetadataEntry::Contents),
+            "+DEINSTALL" => Some(MetadataEntry::DeInstall),
+            "+DESC" => Some(MetadataEntry::Desc),
+            "+DISPLAY" => Some(MetadataEntry::Display),
+            "+INSTALL" => Some(MetadataEntry::Install),
+            "+INSTALLED_INFO" => Some(MetadataEntry::InstalledInfo),
+            "+MTREE_DIRS" => Some(MetadataEntry::MtreeDirs),
+            "+PRESERVE" => Some(MetadataEntry::Preserve),
+            "+REQUIRED_BY" => Some(MetadataEntry::RequiredBy),
+            "+SIZE_ALL" => Some(MetadataEntry::SizeAll),
+            "+SIZE_PKG" => Some(MetadataEntry::SizePkg),
+            _ => None,
+        }
     }
 }
