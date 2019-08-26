@@ -27,7 +27,8 @@ fn main() -> Result<(), std::io::Error> {
         let pkg = pkg?;
         println!("{:20} {}",
             pkg.pkgname(),
-            pkg.read_metadata(MetadataEntry::Comment)?.trim()
+            pkg.read_metadata(MetadataEntry::Comment)?
+               .trim()
         );
     }
 
