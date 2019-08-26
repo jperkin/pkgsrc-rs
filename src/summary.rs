@@ -54,7 +54,7 @@ use unindent::unindent;
 #[derive(Debug)]
 pub struct SummaryStream {
     buf: Vec<u8>,
-    entries: Vec<SummaryEntry>,
+    entries: Vec<Summary>,
 }
 
 /**
@@ -65,7 +65,7 @@ pub struct SummaryStream {
  * as it avoids having to convert to sqlite which does not support u64.
  */
 #[derive(Debug, Default)]
-pub struct SummaryEntry {
+pub struct Summary {
     automatic: Option<i64>, // Not part of pkg_summary(5)
     build_date: String,
     categories: Vec<String>,
@@ -98,12 +98,12 @@ pub struct SummaryEntry {
  * XXX: Some are Strings, some are str due to unwrapping Option, I need to
  * figure out what's best here depending on how they will be used.
  */
-impl SummaryEntry {
+impl Summary {
     /**
-     * Return a new SummaryEntry with default values.
+     * Return a new Summary with default values.
      */
-    pub fn new() -> SummaryEntry {
-        let sum: SummaryEntry = Default::default();
+    pub fn new() -> Summary {
+        let sum: Summary = Default::default();
         sum
     }
     /**
@@ -297,9 +297,9 @@ impl SummaryEntry {
      * ## Example
      *
      * ```
-     * use pkgsrc::SummaryEntry;
+     * use pkgsrc::Summary;
      *
-     * let mut sum = SummaryEntry::new();
+     * let mut sum = Summary::new();
      * sum.parse_entry("+REQUIRES", "/usr/lib/libSystem.B.dylib");
      * ```
      */
@@ -423,23 +423,23 @@ impl SummaryStream {
     }
 
     /**
-     * Return vector of parsed SummaryEntry records.
+     * Return vector of parsed Summary records.
      */
-    pub fn entries(&self) -> &Vec<SummaryEntry> {
+    pub fn entries(&self) -> &Vec<Summary> {
         &self.entries
     }
 
     /**
-     * Return mutable vector of parsed SummaryEntry records.
+     * Return mutable vector of parsed Summary records.
      */
-    pub fn entries_mut(&mut self) -> &mut Vec<SummaryEntry> {
+    pub fn entries_mut(&mut self) -> &mut Vec<Summary> {
         &mut self.entries
     }
 }
 
 impl Write for SummaryStream {
     /*
-     * Stream from our input buffer into SummaryEntry records.
+     * Stream from our input buffer into Summary records.
      *
      * There is probably a better way to handle this buffer, there's quite a
      * bit of copying/draining going on.  Some kind of circular buffer might be
@@ -472,7 +472,7 @@ impl Write for SummaryStream {
          * of summary entries.
          */
         for sum_entry in input_string.split_terminator("\n\n") {
-            let mut sum = SummaryEntry::new();
+            let mut sum = Summary::new();
             for line in sum_entry.lines() {
                 let v: Vec<&str> = line.splitn(2, '=').collect();
                 let key = v.get(0);
@@ -542,7 +542,7 @@ mod tests {
         std::io::copy(&mut pkginfo.as_bytes(), &mut pkgsummary);
         assert_eq!(pkgsummary.entries().len(), 1);
 
-        let mut pkgsum = SummaryEntry::new();
+        let mut pkgsum = Summary::new();
         pkgsum = pkgsummary.entries_mut().pop().expect("invalid");
         assert_eq!(pkgsum.description().len(), 2);
     }
