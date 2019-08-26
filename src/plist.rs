@@ -21,24 +21,24 @@
  */
 #[derive(Debug)]
 pub enum PlistCommand {
-    File = 0,
-    Cwd = 1,
-    Exec = 2, /* pkg_install calls this PLIST_CMD */
-    Chmod = 3,
-    Chown = 4,
-    Chgrp = 5,
-    Comment = 6,
-    Ignore = 7,
-    Name = 8,
-    UnExec = 9,
-    Src = 10,
-    Display = 11,
-    PkgDep = 12,
-    DirRm = 13,
-    Option = 14,
-    PkgCfl = 15,
-    BldDep = 16,
-    PkgDir = 17,
+    File,
+    Cwd,
+    Exec, /* pkg_install calls this PLIST_CMD */
+    Chmod,
+    Chown,
+    Chgrp,
+    Comment,
+    Ignore,
+    Name,
+    UnExec,
+    Src,
+    Display,
+    PkgDep,
+    DirRm,
+    Option,
+    PkgCfl,
+    BldDep,
+    PkgDir,
 }
 
 impl Default for PlistCommand {

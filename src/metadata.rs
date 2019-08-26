@@ -115,67 +115,67 @@ pub enum MetadataEntry {
     /**
      * Optional package build information stored in `+BUILD_INFO`.
      */
-    BuildInfo = 0,
+    BuildInfo,
     /**
      * Optional version information (usually CVS Id's) for the files used to
      * create the package stored in `+BUILD_VERSION`.
      */
-    BuildVersion = 1,
+    BuildVersion,
     /**
      * Single line description of the package stored in `+COMMENT`.
      */
-    Comment = 2,
+    Comment,
     /**
      * Packing list contents, also known as the `packlist` or `PLIST`, stored
      * in `+CONTENTS`.
      */
-    Contents = 3,
+    Contents,
     /**
      * Optional script executed upon deinstall, stored in `+DEINSTALL`.
      */
-    DeInstall = 4,
+    DeInstall,
     /**
      * Multi-line description of the package stored in `+DESC`.
      */
-    Desc = 5,
+    Desc,
     /**
      * Optional file, also known as `MESSAGE`, to be shown during package
      * install or deinstall, stored in `+DISPLAY`.
      */
-    Display = 6,
+    Display,
     /**
      * Optional script executed upon install, stored in `+INSTALL`.
      */
-    Install = 7,
+    Install,
     /**
      * Variables set by this package, currently only `automatic=yes` being
      * supported, stored in `+INSTALLED_INFO`.
      */
-    InstalledInfo = 8,
+    InstalledInfo,
     /**
      * Obsolete file used to pre-create directories prior to a package install,
      * stored in `+MTREE_DIRS`.
      */
-    MtreeDirs = 9,
+    MtreeDirs,
     /**
      * Optional marker that this package should not be deleted under normal
      * circumstances, stored in `+PRESERVE`.
      */
-    Preserve = 10,
+    Preserve,
     /**
      * Optional list of packages that are reverse dependencies of (i.e. depend
      * upon) this package, stored in `+REQUIRED_BY`.
      */
-    RequiredBy = 11,
+    RequiredBy,
     /**
      * Optional size of this package plus all of its dependencies, stored in
      * `+SIZE_ALL`.
      */
-    SizeAll = 12,
+    SizeAll,
     /**
      * Optional size of this package, stored in `+SIZE_ALL`.
      */
-    SizePkg = 13,
+    SizePkg,
 }
 
 impl Metadata {

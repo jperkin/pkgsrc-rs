@@ -29,8 +29,8 @@ use std::path::PathBuf;
  */
 #[derive(Debug)]
 pub enum DBType {
-    Files = 0,
-    Database = 1,
+    Files,
+    Database,
 }
 
 /**
