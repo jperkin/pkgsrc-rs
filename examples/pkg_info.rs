@@ -12,35 +12,24 @@
  * WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
  * ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
  * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+ *
+ * An example pkg_info(8) utility
  */
 
-/*!
- * # pkgsrc
- *
- * Implementation of pkg_install library and database routines in Rust.
- *
- * ## Goals
- *
- * The initial goals are to fully support existing pkg_install packages and the
- * files-based pkgdb, in tandem with developing
- * [pm](https://github.com/jperkin/pm), a Rust alternative to pkg_install and
- * pkgin.
- *
- * After that the aim is to replace the fragile and slow pkgdb backend with
- * sqlite which should provide much faster and more reliable queries and
- * updates.
- */
+use pkgsrc::{MetadataEntry, PkgDB};
+use std::path::Path;
 
-#![deny(missing_docs)]
+fn main() -> Result<(), std::io::Error> {
+    let pkgdb = PkgDB::open(Path::new("/opt/pkg/.pkgdb"))?;
 
-pub use crate::metadata::{Metadata, MetadataEntry};
-pub use crate::pkgdb::PkgDB;
-pub use crate::plist::Plist;
-pub use crate::pmatch::pkg_match;
-pub use crate::summary::{SummaryEntry, SummaryStream};
+    for pkg in pkgdb {
+        let pkg = pkg?;
+        println!(
+            "{:20} {}",
+            pkg.pkgname(),
+            pkg.read_metadata(MetadataEntry::Comment)?.trim()
+        );
+    }
 
-mod metadata;
-mod pkgdb;
-mod plist;
-mod pmatch;
-mod summary;
+    Ok(())
+}

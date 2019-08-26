@@ -10,12 +10,40 @@ This is being developed alongside [pm](https://github.com/jperkin/pm), a Rust
 implementation of a pkgsrc package manager.  Anything that handles lower level
 pkg\_install routines will be placed here.
 
+## Example
+
+This is a simple implementation of `pkg_info(8)` that supports the default
+output format, i.e. list all currently installed packages and their single-line
+comment.
+
+```rust
+use pkgsrc::{MetadataEntry, PkgDB};
+use std::path::Path;
+
+fn main() -> Result<(), std::io::Error> {
+    let pkgdb = PkgDB::open(Path::new("/var/db/pkg"))?;
+
+    for pkg in pkgdb {
+        let pkg = pkg?;
+        println!("{:20} {}",
+            pkg.pkgname(),
+            pkg.read_metadata(MetadataEntry::Comment)?.trim()
+        );
+    }
+
+    Ok(())
+}
+```
+
 ## Status
 
 * pkg\_match() is implemented and verified to be correct against a large input
   of matches.
 * Metadata handles "+\*" files contained in an archive and is able to verify
   that the archive contains a valid package.
+* PkgDB handles local pkg databases, currently supporting the regular
+  file-backed repository, but with flexible support for future sqlite3-backed
+  repositories.
 * Summary handles pkg\_summary(5) parsing and generation.
 
 
