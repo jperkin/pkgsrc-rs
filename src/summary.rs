@@ -45,7 +45,7 @@
  * Read the generated pkg_summary output from `pkg_info -Xa` and parse into a
  * new [`Summaries`] containing a [`Summary`] for each entry.
  *
- * ```
+ * ```no_run
  * use pkgsrc::summary;
  * use std::io::BufReader;
  * use std::process::{Command, Stdio};
