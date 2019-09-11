@@ -187,7 +187,7 @@ impl Plist {
              * Commands that must have zero arguments.
              */
             PlistCommand::Ignore => {
-                if !(linevec.get(1).is_none()) {
+                if linevec.get(1).is_some() {
                     return Err("PLIST command requires zero arguments");
                 }
             }
