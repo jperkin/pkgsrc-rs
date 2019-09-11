@@ -37,10 +37,9 @@ pub use crate::metadata::{Metadata, MetadataEntry};
 pub use crate::pkgdb::PkgDB;
 pub use crate::plist::Plist;
 pub use crate::pmatch::pkg_match;
-pub use crate::summary::{Summary, SummaryStream};
 
 mod metadata;
 mod pkgdb;
 mod plist;
 mod pmatch;
-mod summary;
+pub mod summary;

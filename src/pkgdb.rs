@@ -17,7 +17,6 @@
  */
 
 use crate::metadata::MetadataEntry;
-use crate::summary::Summary;
 use std::fs;
 use std::fs::ReadDir;
 use std::io;
