@@ -125,7 +125,6 @@
  * println!("{}", sum);
  * ```
  *
- * [`Entry`]: ../summary/enum.Entry.html
  * [`Summary`]: ../summary/struct.Summary.html
  * [`Summaries`]: ../summary/struct.Summaries.html
  * [`Display`]: https://doc.rust-lang.org/std/fmt/trait.Display.html
@@ -146,11 +145,11 @@ use unindent::unindent;
 
 /**
  * A type alias for the result from the creation of either a [`Summary`] or a
- * [`Entry`], with [`Error`] returned in [`Err`] variants.
+ * [`Summaries`], with [`SummaryError`] returned in [`Err`] variants.
  *
  * [`Summary`]: ../summary/struct.Summary.html
- * [`Entry`]: ../summary/enum.Entry.html
- * [`Error`]: ../summary/enum.Error.html
+ * [`Summaries`]: ../summary/struct.Summaries.html
+ * [`SummaryError`]: ../summary/enum.SummaryError.html
  * [`Err`]: https://doc.rust-lang.org/std/result/enum.Result.html#variant.Err
  */
 pub type Result<T> = std::result::Result<T, SummaryError>;
@@ -520,14 +519,6 @@ impl Summary {
                 entry.insert(val);
             }
         }
-        //self.entries.entry(var).and_modify(|e| *e = val).or_insert(val);
-        /*
-        if self.entries.contains_key(&var) {
-            self.entries.entry(var).and_modify(|e| *e = val);
-        } else {
-            self.entries.insert(var, val);
-        }
-        */
     }
 
     fn insert_or_push(&mut self, var: SummaryVariable, val: SummaryValue) {
@@ -2001,7 +1992,7 @@ impl FromStr for Summary {
 }
 
 /**
- * Enum containing possible reasons that parsing [`pkg_summary(5)`] failed
+ * Enum containing possible reasons that parsing [`pkg_summary(5)`] failed.
  *
  * [`pkg_summary(5)`]: https://netbsd.gw.com/cgi-bin/man-cgi?pkg_summary+5
  */
@@ -2016,11 +2007,13 @@ pub enum SummaryError {
      */
     Io(io::Error),
     /**
-     * The supplied line is not in the correct VARIABLE=VALUE format.
+     * The supplied line is not in the correct `VARIABLE=VALUE` format.
      */
     ParseLine(String),
     /**
-     * The supplied variable is not a valid pkg_summary(5) variable.
+     * The supplied variable is not a valid [`pkg_summary(5)`] variable.
+     *
+     * [`pkg_summary(5)`]: https://netbsd.gw.com/cgi-bin/man-cgi?pkg_summary+5
      */
     ParseVariable(String),
     /**
@@ -2038,47 +2031,47 @@ pub enum SummaryError {
 #[derive(Debug)]
 pub enum MissingVariable {
     /**
-     * Missing required BUILD_DATE variable.
+     * Missing required `BUILD_DATE` variable.
      */
     BuildDate,
     /**
-     * Missing required CATEGORIES variable.
+     * Missing required `CATEGORIES` variable.
      */
     Categories,
     /**
-     * Missing required COMMENT variable.
+     * Missing required `COMMENT` variable.
      */
     Comment,
     /**
-     * Missing required DESCRIPTION variable.
+     * Missing required `DESCRIPTION` variable.
      */
     Description,
     /**
-     * Missing required MACHINE_ARCH variable.
+     * Missing required `MACHINE_ARCH` variable.
      */
     MachineArch,
     /**
-     * Missing required OPSYS variable.
+     * Missing required `OPSYS` variable.
      */
     Opsys,
     /**
-     * Missing required OS_VERSION variable.
+     * Missing required `OS_VERSION` variable.
      */
     OsVersion,
     /**
-     * Missing required PKGNAME variable.
+     * Missing required `PKGNAME` variable.
      */
     Pkgname,
     /**
-     * Missing required PKGPATH variable.
+     * Missing required `PKGPATH` variable.
      */
     Pkgpath,
     /**
-     * Missing required PKGTOOLS_VERSION variable.
+     * Missing required `PKGTOOLS_VERSION` variable.
      */
     PkgtoolsVersion,
     /**
-     * Missing required SIZE_PKG variable.
+     * Missing required `SIZE_PKG` variable.
      */
     SizePkg,
 }
