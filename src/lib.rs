@@ -35,11 +35,10 @@
 
 pub use crate::metadata::{Metadata, MetadataEntry};
 pub use crate::pkgdb::PkgDB;
-pub use crate::plist::Plist;
 pub use crate::pmatch::pkg_match;
 
 mod metadata;
 mod pkgdb;
-mod plist;
+pub mod plist;
 mod pmatch;
 pub mod summary;
