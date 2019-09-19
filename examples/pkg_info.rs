@@ -18,9 +18,26 @@
 
 use pkgsrc::{MetadataEntry, PkgDB};
 use std::path::Path;
+use structopt::StructOpt;
+
+#[derive(Debug, StructOpt)]
+#[structopt(name = "pkg_info", about = "An example pkg_info(8) command")]
+pub struct OptArgs {
+    #[structopt(short = "K", long = "pkg-dbdir", help = "Set PKG_DBDIR")]
+    pkg_dbdir: Option<String>,
+    #[structopt(short = "v", long = "verbose", help = "Enable verbose output")]
+    verbose: bool,
+}
 
 fn main() -> Result<(), std::io::Error> {
-    let pkgdb = PkgDB::open(Path::new("/opt/pkg/.pkgdb"))?;
+    let cmd = OptArgs::from_args();
+
+    let dbpath = match cmd.pkg_dbdir {
+        Some(dir) => dir,
+        None => "/opt/pkg/.pkgdb".to_string(),
+    };
+
+    let pkgdb = PkgDB::open(Path::new(&dbpath))?;
 
     for pkg in pkgdb {
         let pkg = pkg?;
