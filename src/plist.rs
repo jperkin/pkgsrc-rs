@@ -652,6 +652,148 @@ impl Plist {
     }
 
     /**
+     * Return a vector containing a list of file entries as string slices.  Any
+     * files that come after an "@ignore" command are not listed.
+     */
+    pub fn files(&self) -> Vec<&OsStr> {
+        let mut ignore = false;
+        self.entries
+            .iter()
+            .filter_map(|entry| match entry {
+                PlistEntry::Ignore => {
+                    ignore = true;
+                    None
+                }
+                PlistEntry::File(file) => {
+                    if ignore {
+                        ignore = false;
+                        None
+                    } else {
+                        Some(file.as_os_str())
+                    }
+                }
+                _ => None,
+            })
+            .collect()
+    }
+
+    /**
+     * Return a vector containing a list of file entries including their prefix
+     * (as set by `@cwd`) as OsStrings.  Any files that come after an "@ignore"
+     * command are not listed.
+     */
+    pub fn files_prefixed(&self) -> Vec<OsString> {
+        let mut ignore = false;
+        let mut prefix: Option<OsString> = None;
+        self.entries
+            .iter()
+            .filter_map(|entry| match entry {
+                PlistEntry::Cwd(dir) => {
+                    prefix = Some(dir.to_os_string());
+                    None
+                }
+                PlistEntry::Ignore => {
+                    ignore = true;
+                    None
+                }
+                PlistEntry::File(file) => {
+                    if ignore {
+                        ignore = false;
+                        None
+                    } else {
+                        let mut path = OsString::new();
+                        match &prefix {
+                            Some(pfx) => {
+                                path.push(pfx);
+                            }
+                            None => {}
+                        }
+                        if !path.to_string_lossy().ends_with('/') {
+                            path.push("/");
+                        }
+                        path.push(file);
+                        Some(path)
+                    }
+                }
+                _ => None,
+            })
+            .collect()
+    }
+
+    /**
+     * Return a vector containing a list of PlistEntry entries that are used
+     * during an install procedure.  It is up to the caller to keep track of
+     * file metadata.
+     */
+    pub fn install_cmds(&self) -> Vec<&PlistEntry> {
+        let mut ignore = false;
+        self.entries
+            .iter()
+            .filter(|entry| match entry {
+                /*
+                 * Ignore the next file, usually (always?) a +METADATA file.
+                 */
+                PlistEntry::Ignore => {
+                    ignore = true;
+                    false
+                }
+                PlistEntry::File(_) => {
+                    if ignore {
+                        ignore = false;
+                        false
+                    } else {
+                        true
+                    }
+                }
+                PlistEntry::Cwd(_)
+                | PlistEntry::Exec(_)
+                | PlistEntry::Mode(_)
+                | PlistEntry::Owner(_)
+                | PlistEntry::Group(_)
+                | PlistEntry::PkgDir(_) => true,
+                _ => false,
+            })
+            .collect()
+    }
+
+    /**
+     * Return a vector containing a list of PlistEntry entries that are used
+     * during an uninstall procedure.  It is up to the caller to keep track of
+     * file metadata.
+     */
+    pub fn uninstall_cmds(&self) -> Vec<&PlistEntry> {
+        let mut ignore = false;
+        self.entries
+            .iter()
+            .filter(|entry| match entry {
+                /*
+                 * Ignore the next file, usually (always?) a +METADATA file.
+                 */
+                PlistEntry::Ignore => {
+                    ignore = true;
+                    false
+                }
+                PlistEntry::File(_) => {
+                    if ignore {
+                        ignore = false;
+                        false
+                    } else {
+                        true
+                    }
+                }
+                PlistEntry::Cwd(_)
+                | PlistEntry::UnExec(_)
+                | PlistEntry::Mode(_)
+                | PlistEntry::Owner(_)
+                | PlistEntry::Group(_)
+                | PlistEntry::PkgDir(_)
+                | PlistEntry::DirRm(_) => true,
+                _ => false,
+            })
+            .collect()
+    }
+
+    /**
      * Return bool indicating whether `@option preserve` has been set or not.
      */
     pub fn is_preserve(&self) -> bool {
@@ -1058,6 +1200,32 @@ mod tests {
         Ok(())
     }
 
+    /*
+     * Test functions that return file matches.
+     */
+    #[test]
+    fn test_files() -> Result<()> {
+        let input = unindent(
+            r#"
+            @cwd /opt/pkg
+            bin/good
+            @cwd /
+            bin/evil
+            @ignore
+            @cwd /tmp
+            +IGNORE_ME
+            @cwd /opt/pkg
+            bin/ok
+            "#,
+        );
+        let plist = Plist::from_bytes(&input.as_bytes())?;
+        assert_eq!(plist.files(), ["bin/good", "bin/evil", "bin/ok"]);
+        assert_eq!(
+            plist.files_prefixed(),
+            ["/opt/pkg/bin/good", "/bin/evil", "/opt/pkg/bin/ok"]
+        );
+        Ok(())
+    }
     /*
      * Test functions that return only the first match.
      */
