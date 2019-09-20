@@ -16,6 +16,9 @@
  * pkgdb.rs - handle the package database
  */
 
+/*!
+ * Module supporting the package database.  WIP.
+ */
 use crate::metadata::MetadataEntry;
 use std::fs;
 use std::fs::ReadDir;
@@ -28,7 +31,13 @@ use std::path::PathBuf;
  */
 #[derive(Debug)]
 pub enum DBType {
+    /**
+     * Standard pkg_install pkgdb using files.
+     */
     Files,
+    /**
+     * Future work to support sqlite3 backend.  Currently unimplemented.
+     */
     Database,
 }
 

@@ -16,8 +16,12 @@
  * An example pkg_info(8) utility
  */
 
-use pkgsrc::{MetadataEntry, PkgDB};
+use pkgsrc::pkgdb::{Package, PkgDB};
+use pkgsrc::plist::Plist;
+use pkgsrc::summary::{Result, Summary, SummaryVariable};
+use pkgsrc::MetadataEntry;
 use std::path::Path;
+use std::str::FromStr;
 use structopt::StructOpt;
 
 #[derive(Debug, StructOpt)]
@@ -27,9 +31,84 @@ pub struct OptArgs {
     pkg_dbdir: Option<String>,
     #[structopt(short = "v", long = "verbose", help = "Enable verbose output")]
     verbose: bool,
+    #[structopt(
+        short = "X",
+        long = "summary",
+        help = "Enable pkg_summary(5) output"
+    )]
+    sumout: bool,
 }
 
-fn main() -> Result<(), std::io::Error> {
+fn output_default(pkg: &Package) -> Result<()> {
+    println!(
+        "{:20} {}",
+        pkg.pkgname(),
+        pkg.read_metadata(MetadataEntry::Comment)?.trim()
+    );
+    Ok(())
+}
+
+fn output_summary(pkg: &Package) -> Result<()> {
+    let mut sum = Summary::new();
+    sum.set_pkgname(pkg.pkgname());
+    sum.set_comment(pkg.read_metadata(MetadataEntry::Comment)?.trim());
+    sum.set_size_pkg(
+        pkg.read_metadata(MetadataEntry::SizePkg)?
+            .trim()
+            .parse::<u64>()?,
+    );
+    let bi = pkg.read_metadata(MetadataEntry::BuildInfo)?;
+    for line in bi.lines() {
+        let v: Vec<&str> = line.splitn(2, '=').collect();
+        let key = match SummaryVariable::from_str(v[0]) {
+            Ok(k) => k,
+            Err(_) => continue,
+        };
+        match key {
+            SummaryVariable::BuildDate => sum.set_build_date(v[1]),
+            SummaryVariable::Categories => sum.set_categories(v[1]),
+            SummaryVariable::Homepage => sum.set_homepage(v[1]),
+            SummaryVariable::License => sum.set_license(v[1]),
+            SummaryVariable::MachineArch => sum.set_machine_arch(v[1]),
+            SummaryVariable::Opsys => sum.set_opsys(v[1]),
+            SummaryVariable::OsVersion => sum.set_os_version(v[1]),
+            SummaryVariable::PkgOptions => sum.set_pkg_options(v[1]),
+            SummaryVariable::Pkgpath => sum.set_pkgpath(v[1]),
+            SummaryVariable::PkgtoolsVersion => sum.set_pkgtools_version(v[1]),
+            SummaryVariable::PrevPkgpath => sum.set_prev_pkgpath(v[1]),
+            SummaryVariable::Provides => sum.push_provides(v[1]),
+            SummaryVariable::Requires => sum.push_requires(v[1]),
+            SummaryVariable::Supersedes => sum.push_supersedes(v[1]),
+            _ => {}
+        }
+    }
+    for line in pkg.read_metadata(MetadataEntry::Desc)?.lines() {
+        sum.push_description(line);
+    }
+
+    /*
+     * XXX: convert plist Result to summary Result
+     */
+    let plist = Plist::from_bytes(
+        pkg.read_metadata(MetadataEntry::Contents)?.as_bytes(),
+    );
+    let plist = match plist {
+        Ok(p) => p,
+        Err(e) => panic!("bad plist: {}", e),
+    };
+    for dep in plist.depends() {
+        sum.push_depends(dep);
+    }
+    for cfl in plist.conflicts() {
+        sum.push_conflicts(cfl);
+    }
+
+    println!("{}", sum);
+
+    Ok(())
+}
+
+fn main() -> Result<()> {
     let cmd = OptArgs::from_args();
 
     let dbpath = match cmd.pkg_dbdir {
@@ -41,11 +120,12 @@ fn main() -> Result<(), std::io::Error> {
 
     for pkg in pkgdb {
         let pkg = pkg?;
-        println!(
-            "{:20} {}",
-            pkg.pkgname(),
-            pkg.read_metadata(MetadataEntry::Comment)?.trim()
-        );
+
+        if cmd.sumout {
+            output_summary(&pkg)?;
+        } else {
+            output_default(&pkg)?;
+        }
     }
 
     Ok(())

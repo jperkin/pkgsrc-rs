@@ -34,11 +34,10 @@
 #![deny(missing_docs)]
 
 pub use crate::metadata::{Metadata, MetadataEntry};
-pub use crate::pkgdb::PkgDB;
 pub use crate::pmatch::pkg_match;
 
 mod metadata;
-mod pkgdb;
+pub mod pkgdb;
 pub mod plist;
 mod pmatch;
 pub mod summary;
