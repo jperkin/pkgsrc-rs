@@ -58,7 +58,7 @@ fn output_summary(pkg: &Package) -> Result<()> {
     sum.set_size_pkg(
         pkg.read_metadata(MetadataEntry::SizePkg)?
             .trim()
-            .parse::<u64>()?,
+            .parse::<i64>()?,
     );
     let bi = pkg.read_metadata(MetadataEntry::BuildInfo)?;
     for line in bi.lines() {

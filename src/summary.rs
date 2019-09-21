@@ -326,7 +326,7 @@ enum SummaryValue {
     /**
      * A single integer.
      */
-    I(u64),
+    I(i64),
     /**
      * An array of strings.
      */
@@ -486,7 +486,7 @@ impl Summary {
             None => None,
         }
     }
-    fn get_i(&self, var: SummaryVariable) -> Option<u64> {
+    fn get_i(&self, var: SummaryVariable) -> Option<i64> {
         match &self.entries.get(&var) {
             Some(entry) => match entry {
                 SummaryValue::I(i) => Some(*i),
@@ -759,7 +759,7 @@ impl Summary {
      * [`FileSize`]: ../summary/enum.SummaryVariable.html#variant.FileSize
      * [`None`]: https://doc.rust-lang.org/std/option/enum.Option.html#variant.None
      */
-    pub fn file_size(&self) -> Option<u64> {
+    pub fn file_size(&self) -> Option<i64> {
         self.get_i(SummaryVariable::FileSize)
     }
 
@@ -1188,7 +1188,7 @@ impl Summary {
      * [`SizePkg`]: ../summary/enum.SummaryVariable.html#variant.SizePkg
      * [`None`]: https://doc.rust-lang.org/std/option/enum.Option.html#variant.None
      */
-    pub fn size_pkg(&self) -> Option<u64> {
+    pub fn size_pkg(&self) -> Option<i64> {
         self.get_i(SummaryVariable::SizePkg)
     }
 
@@ -1450,7 +1450,7 @@ impl Summary {
      *
      * [`FileSize`]: ../summary/enum.SummaryVariable.html#variant.FileSize
      */
-    pub fn set_file_size(&mut self, file_size: u64) {
+    pub fn set_file_size(&mut self, file_size: i64) {
         self.insert_or_update(
             SummaryVariable::FileSize,
             SummaryValue::I(file_size),
@@ -1781,7 +1781,7 @@ impl Summary {
      *
      * [`SizePkg`]: ../summary/enum.SummaryVariable.html#variant.SizePkg
      */
-    pub fn set_size_pkg(&mut self, size_pkg: u64) {
+    pub fn set_size_pkg(&mut self, size_pkg: i64) {
         self.insert_or_update(
             SummaryVariable::SizePkg,
             SummaryValue::I(size_pkg),
@@ -2023,7 +2023,7 @@ impl FromStr for Summary {
                 SummaryVariable::FileCksum => sum.set_file_cksum(v[1]),
                 SummaryVariable::FileName => sum.set_file_name(v[1]),
                 SummaryVariable::FileSize => {
-                    sum.set_file_size(v[1].parse::<u64>()?)
+                    sum.set_file_size(v[1].parse::<i64>()?)
                 }
                 SummaryVariable::Homepage => sum.set_homepage(v[1]),
                 SummaryVariable::License => sum.set_license(v[1]),
@@ -2040,7 +2040,7 @@ impl FromStr for Summary {
                 SummaryVariable::Provides => sum.push_provides(v[1]),
                 SummaryVariable::Requires => sum.push_requires(v[1]),
                 SummaryVariable::SizePkg => {
-                    sum.set_size_pkg(v[1].parse::<u64>()?)
+                    sum.set_size_pkg(v[1].parse::<i64>()?)
                 }
                 SummaryVariable::Supersedes => sum.push_supersedes(v[1]),
             }
