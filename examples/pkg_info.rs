@@ -20,6 +20,7 @@ use pkgsrc::pkgdb::{Package, PkgDB};
 use pkgsrc::plist::Plist;
 use pkgsrc::summary::{Result, Summary, SummaryVariable};
 use pkgsrc::MetadataEntry;
+use regex::Regex;
 use std::path::Path;
 use std::str::FromStr;
 use structopt::StructOpt;
@@ -37,6 +38,8 @@ pub struct OptArgs {
         help = "Enable pkg_summary(5) output"
     )]
     sumout: bool,
+    #[structopt(parse(from_str))]
+    pkgmatch: Option<String>,
 }
 
 fn output_default(pkg: &Package) -> Result<()> {
@@ -110,6 +113,14 @@ fn output_summary(pkg: &Package) -> Result<()> {
 
 fn main() -> Result<()> {
     let cmd = OptArgs::from_args();
+    let mut pkgm: Option<Regex> = None;
+
+    if let Some(m) = cmd.pkgmatch {
+        match Regex::new(&m) {
+            Ok(p) => pkgm = Some(p),
+            Err(e) => panic!("bad regex: {}", e),
+        }
+    }
 
     let dbpath = match cmd.pkg_dbdir {
         Some(dir) => dir,
@@ -120,6 +131,12 @@ fn main() -> Result<()> {
 
     for pkg in pkgdb {
         let pkg = pkg?;
+
+        if let Some(m) = &pkgm {
+            if !m.is_match(pkg.pkgname()) {
+                continue;
+            }
+        }
 
         if cmd.sumout {
             output_summary(&pkg)?;
