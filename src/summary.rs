@@ -939,6 +939,104 @@ impl Summary {
     }
 
     /**
+     * Returns the package name portion of the [`Pkgname`] value, if set.  This
+     * is a required field.
+     *
+     * Returns [`None`] if unset, or if an empty string (which would indicate
+     * a badly formed package name).
+     *
+     * ## Example
+     *
+     * ```
+     * use pkgsrc::summary::Summary;
+     *
+     * let mut sum = Summary::new();
+     *
+     * sum.set_pkgname("test-pkg-1.0");
+     * assert_eq!(sum.pkgname(), Some("test-pkg-1.0"));
+     * assert_eq!(sum.pkgbase(), Some("test-pkg"));
+     * assert_eq!(sum.pkgversion(), Some("1.0"));
+     *
+     * sum.set_pkgname("-1.0");
+     * assert_eq!(sum.pkgname(), Some("-1.0"));
+     * assert_eq!(sum.pkgbase(), None);
+     * assert_eq!(sum.pkgversion(), Some("1.0"));
+     *
+     * sum.set_pkgname("test-pkg-");
+     * assert_eq!(sum.pkgname(), Some("test-pkg-"));
+     * assert_eq!(sum.pkgbase(), Some("test-pkg"));
+     * assert_eq!(sum.pkgversion(), None);
+     * ```
+     *
+     * [`Pkgname`]: ../summary/enum.SummaryVariable.html#variant.Pkgname
+     * [`None`]: https://doc.rust-lang.org/std/option/enum.Option.html#variant.None
+     */
+    pub fn pkgbase(&self) -> Option<&str> {
+        match self.get_s(SummaryVariable::Pkgname) {
+            Some(s) => match s.rfind('-') {
+                Some(i) => {
+                    if i == 0 {
+                        return None;
+                    }
+                    let (pkgbase, _) = s.split_at(i);
+                    Some(pkgbase)
+                }
+                None => None,
+            },
+            None => None,
+        }
+    }
+
+    /**
+     * Returns the package version portion of the [`Pkgname`] value, if set.
+     * This is a required field.
+     *
+     * Returns [`None`] if unset, or if an empty string (which would indicate
+     * a badly formed package name).
+     *
+     * ## Example
+     *
+     * ```
+     * use pkgsrc::summary::Summary;
+     *
+     * let mut sum = Summary::new();
+     *
+     * sum.set_pkgname("test-pkg-1.0");
+     * assert_eq!(sum.pkgname(), Some("test-pkg-1.0"));
+     * assert_eq!(sum.pkgbase(), Some("test-pkg"));
+     * assert_eq!(sum.pkgversion(), Some("1.0"));
+     *
+     * sum.set_pkgname("-1.0");
+     * assert_eq!(sum.pkgname(), Some("-1.0"));
+     * assert_eq!(sum.pkgbase(), None);
+     * assert_eq!(sum.pkgversion(), Some("1.0"));
+     *
+     * sum.set_pkgname("test-pkg-");
+     * assert_eq!(sum.pkgname(), Some("test-pkg-"));
+     * assert_eq!(sum.pkgbase(), Some("test-pkg"));
+     * assert_eq!(sum.pkgversion(), None);
+     * ```
+     *
+     * [`Pkgname`]: ../summary/enum.SummaryVariable.html#variant.Pkgname
+     * [`None`]: https://doc.rust-lang.org/std/option/enum.Option.html#variant.None
+     */
+    pub fn pkgversion(&self) -> Option<&str> {
+        match self.get_s(SummaryVariable::Pkgname) {
+            Some(s) => match s.rfind('-') {
+                Some(i) => {
+                    if i + 1 == s.len() {
+                        return None;
+                    }
+                    let (_, pkgver) = s.split_at(i + 1);
+                    Some(pkgver)
+                }
+                None => None,
+            },
+            None => None,
+        }
+    }
+
+    /**
      * Returns the [`Pkgpath`] value, if set.  This is a required field.
      *
      * Returns [`None`] if unset.
@@ -2371,6 +2469,28 @@ mod tests {
         }
     }
 
+    #[test]
+    fn test_pkgname() -> Result<()> {
+        let mut sum = Summary::new();
+
+        sum.set_pkgname("test-package-1.0nb2");
+        assert_eq!(sum.pkgname(), Some("test-package-1.0nb2"));
+        assert_eq!(sum.pkgbase(), Some("test-package"));
+        assert_eq!(sum.pkgversion(), Some("1.0nb2"));
+
+        sum.set_pkgname("test-package-");
+        assert_eq!(sum.pkgname(), Some("test-package-"));
+        assert_eq!(sum.pkgbase(), Some("test-package"));
+        assert_eq!(sum.pkgversion(), None);
+
+        sum.set_pkgname("-1.0nb2");
+        assert_eq!(sum.pkgname(), Some("-1.0nb2"));
+        assert_eq!(sum.pkgbase(), None);
+        assert_eq!(sum.pkgversion(), Some("1.0nb2"));
+
+        Ok(())
+    }
+
     /*
      * Test a complete pkg_summary entry, this will go through all of the
      * various functions and ensure everything is working correctly.
@@ -2432,6 +2552,8 @@ mod tests {
         assert_eq!(sum.os_version(), Some("18.7.0"));
         assert_eq!(sum.pkg_options(), Some("http2 idn inet6 ldap libssh2"));
         assert_eq!(sum.pkgname(), Some("testpkg-1.0"));
+        assert_eq!(sum.pkgbase(), Some("testpkg"));
+        assert_eq!(sum.pkgversion(), Some("1.0"));
         assert_eq!(sum.pkgpath(), Some("pkgtools/testpkg"));
         assert_eq!(sum.pkgtools_version(), Some("20091115"));
         assert_eq!(sum.prev_pkgpath(), Some("obsolete/testpkg"));
