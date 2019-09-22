@@ -161,7 +161,7 @@ pub type Result<T> = std::result::Result<T, SummaryError>;
  *
  * [`pkg_summary(5)`]: https://netbsd.gw.com/cgi-bin/man-cgi?pkg_summary+5
  */
-#[derive(Debug, Ord, PartialOrd, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, Ord, PartialOrd, PartialEq, Eq, Hash)]
 pub enum SummaryVariable {
     /**
      * `BUILD_DATE` (required).  The date and time when the package was built.
@@ -317,7 +317,7 @@ impl FromStr for SummaryVariable {
 /**
  * Valid pkg_summary(5) value types.
  */
-#[derive(Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
 enum SummaryValue {
     /**
      * A single string.
@@ -437,7 +437,7 @@ impl fmt::Display for Summary {
  *
  * [`pkg_summary(5)`]: https://netbsd.gw.com/cgi-bin/man-cgi?pkg_summary+5
  */
-#[derive(Debug, Default)]
+#[derive(Clone, Debug, Default)]
 pub struct Summary {
     entries: HashMap<SummaryVariable, SummaryValue>,
 }
@@ -2126,7 +2126,7 @@ pub enum SummaryError {
  *
  * [`pkg_summary(5)`]: https://netbsd.gw.com/cgi-bin/man-cgi?pkg_summary+5
  */
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub enum MissingVariable {
     /**
      * Missing required `BUILD_DATE` variable.
@@ -2324,7 +2324,7 @@ impl From<ParseIntError> for SummaryError {
  * [`Display`]: https://doc.rust-lang.org/std/fmt/trait.Display.html
  * [`Write`]: https://doc.rust-lang.org/std/io/trait.Write.html
  */
-#[derive(Debug, Default)]
+#[derive(Clone, Debug, Default)]
 pub struct Summaries {
     buf: Vec<u8>,
     entries: Vec<Summary>,
