@@ -689,6 +689,22 @@ impl Summary {
     }
 
     /**
+     * Helper function that returns the [`Description`] value, if set, as a
+     * single string joined together with newlines.
+     *
+     * Returns [`None`] if unset.
+     *
+     * [`Description`]: ../summary/enum.SummaryVariable.html#variant.Description
+     * [`None`]: https://doc.rust-lang.org/std/option/enum.Option.html#variant.None
+     */
+    pub fn description_as_str(&self) -> Option<String> {
+        match self.get_a(SummaryVariable::Description) {
+            Some(d) => Some(d.join("\n")),
+            None => None,
+        }
+    }
+
+    /**
      * Returns the [`FileCksum`] value, if set.  This is an optional field.
      *
      * Returns [`None`] if unset.
