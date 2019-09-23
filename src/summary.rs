@@ -33,9 +33,9 @@
  * pkg_summary entry.  A new [`Summary`] can also be created from package
  * metadata, using various functions that are provided.
  *
- * A collection of [`Summary`] entries can be stored in a [`Summaries`] struct,
+ * A collection of [`Summary`] entries can be stored in a [`SummaryStream`],
  * thus containing a complete pkg_summary file for a package repository.
- * [`Summaries`] implements both [`FromStr`] and [`Write`], so can easily be
+ * [`SummaryStream`] implements both [`FromStr`] and [`Write`], so can be
  * populated by streaming in a pkg_summary file.
  *
  * ## Examples
@@ -43,7 +43,7 @@
  * ### Read pkg_summary
  *
  * Read the generated pkg_summary output from `pkg_info -Xa` and parse into a
- * new [`Summaries`] containing a [`Summary`] for each entry.
+ * new [`SummaryStream`] containing a [`Summary`] for each entry.
  *
  * ```no_run
  * use pkgsrc::summary;
@@ -51,7 +51,7 @@
  * use std::process::{Command, Stdio};
  *
  * fn main() -> summary::Result<()> {
- *     let mut pkgsum = summary::Summaries::new();
+ *     let mut pkgsum = summary::SummaryStream::new();
  *
  *     /*
  *      * Read "pkg_info -Xa" output into a buffer.
@@ -64,7 +64,7 @@
  *     let mut pkg_info = BufReader::new(pkg_info.stdout.expect("failed"));
  *
  *     /*
- *      * Summaries implements the Write trait, so copying the data in will
+ *      * SummaryStream implements the Write trait, so copying the data in will
  *      * parse it into separate Summary entries and return a Result.
  *      */
  *     std::io::copy(&mut pkg_info, &mut pkgsum)?;
@@ -126,7 +126,7 @@
  * ```
  *
  * [`Summary`]: ../summary/struct.Summary.html
- * [`Summaries`]: ../summary/struct.Summaries.html
+ * [`SummaryStream`]: ../summary/struct.SummaryStream.html
  * [`Display`]: https://doc.rust-lang.org/std/fmt/trait.Display.html
  * [`FromStr`]: https://doc.rust-lang.org/std/str/trait.FromStr.html
  * [`Write`]: https://doc.rust-lang.org/std/io/trait.Write.html
@@ -145,10 +145,10 @@ use unindent::unindent;
 
 /**
  * A type alias for the result from the creation of either a [`Summary`] or a
- * [`Summaries`], with [`SummaryError`] returned in [`Err`] variants.
+ * [`SummaryStream`], with [`SummaryError`] returned in [`Err`] variants.
  *
  * [`Summary`]: ../summary/struct.Summary.html
- * [`Summaries`]: ../summary/struct.Summaries.html
+ * [`SummaryStream`]: ../summary/struct.SummaryStream.html
  * [`SummaryError`]: ../summary/enum.SummaryError.html
  * [`Err`]: https://doc.rust-lang.org/std/result/enum.Result.html#variant.Err
  */
@@ -2284,7 +2284,7 @@ impl From<ParseIntError> for SummaryError {
  * Each pkg_summary entry should be separated by a single blank line.
  *
  * The [`Write`] trait is implemented, and is the method by which an existing
- * pkg_summary file can be parsed into a new [`Summaries`].
+ * pkg_summary file can be parsed into a new [`SummaryStream`].
  *
  * [`Display`] is also implemented so printing the newly created collection
  * will result in a correctly formed pkg_summary file.
@@ -2292,10 +2292,10 @@ impl From<ParseIntError> for SummaryError {
  * ## Example
  *
  * ```
- * use pkgsrc::summary::Summaries;
+ * use pkgsrc::summary::SummaryStream;
  * use unindent::unindent;
  *
- * let mut pkgsummary = Summaries::new();
+ * let mut pkgsummary = SummaryStream::new();
  * let pkginfo = unindent(r#"
  *     BUILD_DATE=2019-08-12 15:58:02 +0100
  *     CATEGORIES=devel pkgtools
@@ -2336,22 +2336,22 @@ impl From<ParseIntError> for SummaryError {
  * ```
  *
  * [`pkg_summary(5)`]: https://netbsd.gw.com/cgi-bin/man-cgi?pkg_summary+5
- * [`Summaries`]: ../summary/struct.Summaries.html
+ * [`SummaryStream`]: ../summary/struct.SummaryStream.html
  * [`Display`]: https://doc.rust-lang.org/std/fmt/trait.Display.html
  * [`Write`]: https://doc.rust-lang.org/std/io/trait.Write.html
  */
 #[derive(Clone, Debug, Default)]
-pub struct Summaries {
+pub struct SummaryStream {
     buf: Vec<u8>,
     entries: Vec<Summary>,
 }
 
-impl Summaries {
+impl SummaryStream {
     /**
-     * Return a new Summaries with default values.
+     * Return a new SummaryStream with default values.
      */
-    pub fn new() -> Summaries {
-        Summaries {
+    pub fn new() -> SummaryStream {
+        SummaryStream {
             buf: vec![],
             entries: vec![],
         }
@@ -2372,7 +2372,7 @@ impl Summaries {
     }
 }
 
-impl fmt::Display for Summaries {
+impl fmt::Display for SummaryStream {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         for summary in self.entries() {
             writeln!(f, "{}", summary)?;
@@ -2381,7 +2381,7 @@ impl fmt::Display for Summaries {
     }
 }
 
-impl Write for Summaries {
+impl Write for SummaryStream {
     /*
      * Stream from our input buffer into Summary records.
      *
@@ -2586,10 +2586,10 @@ mod tests {
         assert_eq!(&pkginfo.as_bytes(), &sumout.as_bytes());
 
         /*
-         * Ensure Summaries works by faking up multiple entries that happen to
-         * be identical - it doesn't matter for the purpose of this test.
+         * Ensure SummaryStream works by faking up multiple entries that happen
+         * to be identical - it doesn't matter for the purpose of this test.
          */
-        let mut sums = Summaries::new();
+        let mut sums = SummaryStream::new();
         let input = format!("{}\n{}\n{}\n", pkginfo, pkginfo, pkginfo);
         std::io::copy(&mut input.as_bytes(), &mut sums)?;
         assert_eq!(sums.entries().len(), 3);
