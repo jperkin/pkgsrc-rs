@@ -1,7 +1,8 @@
 # pkgsrc-rs
 
-[![Build Status](https://travis-ci.org/jperkin/pkgsrc-rs.svg?branch=master)](https://travis-ci.org/jperkin/pkgsrc-rs)
-[![Crates.io](https://img.shields.io/crates/v/pkgsrc.svg?maxAge=2592000)](https://crates.io/crates/pkgsrc)
+[![Build Status](https://travis-ci.org/jperkin/pkgsrc-rs.svg)](https://travis-ci.org/jperkin/pkgsrc-rs)
+[![Downloads](https://img.shields.io/crates/d/pkgsrc.svg)](https://crates.io/crates/pkgsrc)
+[![Crates.io](https://img.shields.io/crates/v/pkgsrc.svg)](https://crates.io/crates/pkgsrc)
 [![Documentation](https://docs.rs/pkgsrc/badge.svg)](https://docs.rs/pkgsrc)
 
 A Rust interface to pkgsrc packages and the pkg\_install pkgdb.
