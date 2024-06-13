@@ -30,8 +30,6 @@ use structopt::StructOpt;
 pub struct OptArgs {
     #[structopt(short = "K", long = "pkg-dbdir", help = "Set PKG_DBDIR")]
     pkg_dbdir: Option<String>,
-    #[structopt(short = "v", long = "verbose", help = "Enable verbose output")]
-    verbose: bool,
     #[structopt(
         short = "X",
         long = "summary",

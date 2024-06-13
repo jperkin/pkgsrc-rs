@@ -43,7 +43,8 @@
  * assert_eq!(pkg_match("fo*-[0-9]*", "foobar-1.0"), true);
  * ```
  */
-use glob;
+
+use std::cmp::Ordering;
 
 fn alternate_match(pattern: &str, pkg: &str) -> bool {
     let mut found = false;
@@ -186,10 +187,10 @@ fn dewey_cmp(lhs: &str, op: &DeweyOp, rhs: &str) -> bool {
     /*
      * Make both vectors the same size, filling space with 0.
      */
-    if lhs_vec.len() < rhs_vec.len() {
-        lhs_vec.resize(rhs_vec.len(), 0);
-    } else if rhs_vec.len() < lhs_vec.len() {
-        rhs_vec.resize(lhs_vec.len(), 0);
+    match lhs_vec.len().cmp(&rhs_vec.len()) {
+        Ordering::Less => lhs_vec.resize(rhs_vec.len(), 0),
+        Ordering::Greater => rhs_vec.resize(lhs_vec.len(), 0),
+        Ordering::Equal => {},
     }
 
     /*
@@ -261,12 +262,12 @@ fn dewey_match(pattern: &str, pkg: &str) -> bool {
                 eprintln!("WARNING: Invalid dewey pattern: {}", pattern);
                 return false;
             }
-            if !dewey_cmp(&pkg_version, &op2, &pattern_version2) {
+            if !dewey_cmp(pkg_version, &op2, pattern_version2) {
                 return false;
             }
         }
     }
-    if !dewey_cmp(&pkg_version, &op, &pattern_version) {
+    if !dewey_cmp(pkg_version, &op, pattern_version) {
         return false;
     }
 
@@ -367,14 +368,14 @@ mod tests {
      */
     fn pkg_match_alternate() {
         /* Valid matches */
-        assert_eq!(pkg_match("a-{b,c}-{d{e,f},g}-h>=1", "a-b-de-h-2.0"), true);
-        assert_eq!(pkg_match("a-{b,c}-{d{e,f},g}-h>=1", "a-c-df-h-2.0"), true);
-        assert_eq!(pkg_match("a-{b,c}-{d{e,f},g}-h>=1", "a-c-g-h-2.0"), true);
+        assert!(pkg_match("a-{b,c}-{d{e,f},g}-h>=1", "a-b-de-h-2.0"));
+        assert!(pkg_match("a-{b,c}-{d{e,f},g}-h>=1", "a-c-df-h-2.0"));
+        assert!(pkg_match("a-{b,c}-{d{e,f},g}-h>=1", "a-c-g-h-2.0"));
         /* Glob matches cannot be used with dewey. */
-        assert_eq!(pkg_match("{foo,b?r}*-[0-9]*", "baring-1.0"), true);
+        assert!(pkg_match("{foo,b?r}*-[0-9]*", "baring-1.0"));
         /* Bad syntax */
-        assert_eq!(pkg_match("{foo,bar}}>=1", "foo-1.0"), false);
-        assert_eq!(pkg_match("{{foo,bar}>=1", "foo-1.0"), false);
+        assert!(!pkg_match("{foo,bar}}>=1", "foo-1.0"));
+        assert!(!pkg_match("{{foo,bar}>=1", "foo-1.0"));
     }
 
     /*
@@ -383,54 +384,54 @@ mod tests {
     #[test]
     fn pkg_match_dewey() {
         /* Valid version matches */
-        assert_eq!(pkg_match("foo>1", "foo-1.1"), true);
-        assert_eq!(pkg_match("foo>1", "foo-1.0pl1"), true);
-        assert_eq!(pkg_match("foo<1", "foo-1.0alpha1"), true);
-        assert_eq!(pkg_match("foo>=1", "foo-1.0"), true);
-        assert_eq!(pkg_match("foo<2", "foo-1.0"), true);
-        assert_eq!(pkg_match("foo>=1", "foo-1.0"), true);
-        assert_eq!(pkg_match("foo>=1<2", "foo-1.0"), true);
-        assert_eq!(pkg_match("foo>1<2", "foo-1.0nb2"), true);
+        assert!(pkg_match("foo>1", "foo-1.1"));
+        assert!(pkg_match("foo>1", "foo-1.0pl1"));
+        assert!(pkg_match("foo<1", "foo-1.0alpha1"));
+        assert!(pkg_match("foo>=1", "foo-1.0"));
+        assert!(pkg_match("foo<2", "foo-1.0"));
+        assert!(pkg_match("foo>=1", "foo-1.0"));
+        assert!(pkg_match("foo>=1<2", "foo-1.0"));
+        assert!(pkg_match("foo>1<2", "foo-1.0nb2"));
         /* Valid version non-matches */
-        assert_eq!(pkg_match("foo>1<2", "foo-2.5"), false);
-        assert_eq!(pkg_match("foo>1", "foo-0.5"), false);
-        assert_eq!(pkg_match("foo>1", "foo-1.0"), false);
-        assert_eq!(pkg_match("foo>1", "foo-1.0alpha1"), false);
-        assert_eq!(pkg_match("foo>1nb3", "foo-1.0nb2"), false);
-        assert_eq!(pkg_match("foo>1<2", "foo-0.5"), false);
-        assert_eq!(pkg_match("bar>=1", "foo-1.0"), false);
+        assert!(!pkg_match("foo>1<2", "foo-2.5"));
+        assert!(!pkg_match("foo>1", "foo-0.5"));
+        assert!(!pkg_match("foo>1", "foo-1.0"));
+        assert!(!pkg_match("foo>1", "foo-1.0alpha1"));
+        assert!(!pkg_match("foo>1nb3", "foo-1.0nb2"));
+        assert!(!pkg_match("foo>1<2", "foo-0.5"));
+        assert!(!pkg_match("bar>=1", "foo-1.0"));
         /*
          * This looks like a bad package name but we accept it, pkg_install
          * simply performs comparisons on any trailing characters.
          */
-        assert_eq!(pkg_match("foo>1.1", "foo-1.1blah2"), true);
-        assert_eq!(pkg_match("foo>1.1a2", "foo-1.1blah2"), true);
-        assert_eq!(pkg_match("foo>1.1c2", "foo-1.1blah2"), false);
+        assert!(pkg_match("foo>1.1", "foo-1.1blah2"));
+        assert!(pkg_match("foo>1.1a2", "foo-1.1blah2"));
+        assert!(!pkg_match("foo>1.1c2", "foo-1.1blah2"));
         /*
          * Bad patterns
          */
-        assert_eq!(pkg_match("foo>=1", "foo"), false);
-        assert_eq!(pkg_match("foo>", "foo"), false);
-        assert_eq!(pkg_match("foo>=1<2<3", "foo-1.0"), false);
-        assert_eq!(pkg_match("foo>=1<2>3", "foo-1.0"), false);
+        assert!(!pkg_match("foo>=1", "foo"));
+        assert!(!pkg_match("foo>", "foo"));
+        assert!(!pkg_match("foo>=1<2<3", "foo-1.0"));
+        assert!(!pkg_match("foo>=1<2>3", "foo-1.0"));
     }
 
     #[test]
     fn pkg_match_glob() {
-        assert_eq!(pkg_match("foo-[0-9]*", "foo-1.0"), true);
-        assert_eq!(pkg_match("fo?-[0-9]*", "foo-1.0"), true);
-        assert_eq!(pkg_match("fo*-[0-9]*", "foo-1.0"), true);
-        assert_eq!(pkg_match("?oo-[0-9]*", "foo-1.0"), true);
-        assert_eq!(pkg_match("*oo-[0-9]*", "foo-1.0"), true);
-        assert_eq!(pkg_match("foo-[0-9]", "foo-1"), true);
+        assert!(pkg_match("foo-[0-9]*", "foo-1.0"));
+        assert!(pkg_match("fo?-[0-9]*", "foo-1.0"));
+        assert!(pkg_match("fo*-[0-9]*", "foo-1.0"));
+        assert!(pkg_match("?oo-[0-9]*", "foo-1.0"));
+        assert!(pkg_match("*oo-[0-9]*", "foo-1.0"));
+        assert!(pkg_match("foo-[0-9]", "foo-1"));
 
-        assert_eq!(pkg_match("boo-[0-9]*", "foo-1.0"), false);
-        assert_eq!(pkg_match("bo?-[0-9]*", "foo-1.0"), false);
-        assert_eq!(pkg_match("bo*-[0-9]*", "foo-1.0"), false);
+        assert!(!pkg_match("boo-[0-9]*", "foo-1.0"));
+        assert!(!pkg_match("bo?-[0-9]*", "foo-1.0"));
+        assert!(!pkg_match("bo*-[0-9]*", "foo-1.0"));
 
-        assert_eq!(pkg_match("foo-[2-9]*", "foo-1.0"), false);
-        assert_eq!(pkg_match("fo-[0-9]*", "foo-1.0"), false);
-        assert_eq!(pkg_match("bar-[0-9]*", "foo-1.0"), false);
+        assert!(!pkg_match("foo-[2-9]*", "foo-1.0"));
+        assert!(!pkg_match("fo-[0-9]*", "foo-1.0"));
+        assert!(!pkg_match("bar-[0-9]*", "foo-1.0"));
     }
 
     /*
@@ -438,8 +439,8 @@ mod tests {
      */
     #[test]
     fn pkg_match_simple() {
-        assert_eq!(pkg_match("foo-1.0", "foo-1.0"), true);
-        assert_eq!(pkg_match("foo-1.1", "foo-1.0"), false);
-        assert_eq!(pkg_match("bar-1.0", "foo-1.0"), false);
+        assert!(pkg_match("foo-1.0", "foo-1.0"));
+        assert!(!pkg_match("foo-1.1", "foo-1.0"));
+        assert!(!pkg_match("bar-1.0", "foo-1.0"));
     }
 }

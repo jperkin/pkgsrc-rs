@@ -338,7 +338,7 @@ impl PlistEntry {
      * [`PlistEntry`]: ../plist/enum.PlistEntry.html
      */
     pub fn from_bytes(bytes: &[u8]) -> Result<PlistEntry> {
-        let line = OsStr::from_bytes(&bytes);
+        let line = OsStr::from_bytes(bytes);
         let end = bytes.len();
 
         /*
@@ -350,7 +350,7 @@ impl PlistEntry {
         let bytes = &bytes[0..end];
         let (mut idx, cmd) = match bytes.iter().position(|&c| c == b' ') {
             Some(i) => (i, String::from_utf8_lossy(&bytes[0..i]).into_owned()),
-            None => (0, String::from_utf8_lossy(&bytes).into_owned()),
+            None => (0, String::from_utf8_lossy(bytes).into_owned()),
         };
 
         /*
@@ -799,10 +799,7 @@ impl Plist {
     pub fn is_preserve(&self) -> bool {
         self.entries
             .iter()
-            .filter(|entry| match entry {
-                PlistEntry::PkgOpt(PlistOption::Preserve) => true,
-                _ => false,
-            })
+            .filter(|entry| matches!(entry, PlistEntry::PkgOpt(PlistOption::Preserve)))
             .count()
             > 0
     }
@@ -1035,7 +1032,7 @@ mod tests {
             +BUILD_INFO
             "#,
         );
-        let plist = Plist::from_bytes(&input.as_bytes())?;
+        let plist = Plist::from_bytes(input.as_bytes())?;
         assert_eq!(plist.depends().len(), 2);
         assert_eq!(plist.build_depends().len(), 2);
         assert_eq!(plist.conflicts().len(), 2);
@@ -1218,7 +1215,7 @@ mod tests {
             bin/ok
             "#,
         );
-        let plist = Plist::from_bytes(&input.as_bytes())?;
+        let plist = Plist::from_bytes(input.as_bytes())?;
         assert_eq!(plist.files(), ["bin/good", "bin/evil", "bin/ok"]);
         assert_eq!(
             plist.files_prefixed(),
@@ -1251,8 +1248,8 @@ mod tests {
      */
     #[test]
     fn test_preserve() -> Result<()> {
-        assert_eq!(plist!("@comment not set")?.is_preserve(), false);
-        assert_eq!(plist!("@option preserve")?.is_preserve(), true);
+        assert!(!plist!("@comment not set")?.is_preserve());
+        assert!(plist!("@option preserve")?.is_preserve());
 
         Ok(())
     }

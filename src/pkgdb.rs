@@ -23,7 +23,7 @@ use crate::metadata::MetadataEntry;
 use std::fs;
 use std::fs::ReadDir;
 use std::io;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 /**
  * Type of pkgdb.  Currently supported formats are `Files` for the legacy
@@ -97,7 +97,7 @@ impl PkgDB {
     /**
      * Ensure package directory is valid.  Only for `DBType::Files`.
      */
-    fn is_valid_pkgdir(&self, pkgdir: &std::path::PathBuf) -> bool {
+    fn is_valid_pkgdir(&self, pkgdir: &Path) -> bool {
         /*
          * Skip files such as pkg-vulnerabilities and pkgdb.byfile.db, we're
          * only interested in directories.

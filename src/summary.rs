@@ -344,7 +344,7 @@ impl SummaryValue {
         };
 
         match self {
-            SummaryValue::A(s) => s.extend_from_slice(&v),
+            SummaryValue::A(s) => s.extend_from_slice(v),
             _ => panic!("pushing only supported on A()"),
         }
     }
@@ -480,7 +480,7 @@ impl Summary {
     fn get_s(&self, var: SummaryVariable) -> Option<&str> {
         match &self.entries.get(&var) {
             Some(entry) => match entry {
-                SummaryValue::S(s) => Some(&s),
+                SummaryValue::S(s) => Some(s),
                 _ => panic!("internal error"),
             },
             None => None,
@@ -698,10 +698,7 @@ impl Summary {
      * [`None`]: https://doc.rust-lang.org/std/option/enum.Option.html#variant.None
      */
     pub fn description_as_str(&self) -> Option<String> {
-        match self.get_a(SummaryVariable::Description) {
-            Some(d) => Some(d.join("\n")),
-            None => None,
-        }
+        self.get_a(SummaryVariable::Description).map(|d| d.join("\n"))
     }
 
     /**
@@ -2418,7 +2415,7 @@ impl Write for SummaryStream {
          * of summary entries.
          */
         for sum_entry in input_string.split_terminator("\n\n") {
-            let sum = match Summary::from_str(&sum_entry) {
+            let sum = match Summary::from_str(sum_entry) {
                 Ok(s) => s,
                 Err(e) => {
                     return Err(io::Error::new(io::ErrorKind::InvalidData, e))
