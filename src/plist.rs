@@ -799,7 +799,9 @@ impl Plist {
     pub fn is_preserve(&self) -> bool {
         self.entries
             .iter()
-            .filter(|entry| matches!(entry, PlistEntry::PkgOpt(PlistOption::Preserve)))
+            .filter(|entry| {
+                matches!(entry, PlistEntry::PkgOpt(PlistOption::Preserve))
+            })
             .count()
             > 0
     }

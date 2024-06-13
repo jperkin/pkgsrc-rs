@@ -190,7 +190,7 @@ fn dewey_cmp(lhs: &str, op: &DeweyOp, rhs: &str) -> bool {
     match lhs_vec.len().cmp(&rhs_vec.len()) {
         Ordering::Less => lhs_vec.resize(rhs_vec.len(), 0),
         Ordering::Greater => rhs_vec.resize(lhs_vec.len(), 0),
-        Ordering::Equal => {},
+        Ordering::Equal => {}
     }
 
     /*

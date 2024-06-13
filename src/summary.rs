@@ -698,7 +698,8 @@ impl Summary {
      * [`None`]: https://doc.rust-lang.org/std/option/enum.Option.html#variant.None
      */
     pub fn description_as_str(&self) -> Option<String> {
-        self.get_a(SummaryVariable::Description).map(|d| d.join("\n"))
+        self.get_a(SummaryVariable::Description)
+            .map(|d| d.join("\n"))
     }
 
     /**
