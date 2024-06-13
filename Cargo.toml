@@ -9,7 +9,7 @@ license = "ISC"
 repository = "https://github.com/jperkin/pkgsrc-rs"
 homepage = "https://github.com/jperkin/pkgsrc-rs"
 documentation = "https://docs.rs/pkgsrc"
-edition = "2018"
+edition = "2021"
 
 [dependencies]
 ar = "0.7.0"
