@@ -38,6 +38,7 @@ pub use crate::pmatch::pkg_match;
 
 mod metadata;
 pub mod pkgdb;
+pub mod pkgpath;
 pub mod plist;
 mod pmatch;
 pub mod summary;
