@@ -36,6 +36,7 @@
 pub use crate::metadata::{Metadata, MetadataEntry};
 pub use crate::pmatch::pkg_match;
 
+pub mod digest;
 mod metadata;
 pub mod pkgdb;
 pub mod pkgpath;
