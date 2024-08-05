@@ -131,6 +131,17 @@ impl From<std::io::Error> for DigestError {
     }
 }
 
+impl fmt::Display for DigestError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            DigestError::Io(s) => write!(f, "I/O error: {}", s),
+            DigestError::Unsupported(s) => {
+                write!(f, "Unsupported digest: {}", s)
+            }
+        }
+    }
+}
+
 impl std::error::Error for DigestError {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         match self {
@@ -146,7 +157,7 @@ impl std::error::Error for DigestError {
  *
  * [`hashes`]: https://github.com/RustCrypto/hashes
  */
-#[derive(Debug, Eq, Hash, PartialEq)]
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub enum Digest {
     /**
      * Implements `BLAKE2s` hash support using `Blake2s256` from the
@@ -296,13 +307,14 @@ impl FromStr for Digest {
     }
 }
 
-impl fmt::Display for DigestError {
+impl fmt::Display for Digest {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
-            DigestError::Io(s) => write!(f, "I/O error: {}", s),
-            DigestError::Unsupported(s) => {
-                write!(f, "Unsupported digest: {}", s)
-            }
+            Digest::RMD160 => write!(f, "RMD160"),
+            Digest::BLAKE2s => write!(f, "BLAKE2s"),
+            Digest::SHA1 => write!(f, "SHA1"),
+            Digest::SHA256 => write!(f, "SHA256"),
+            Digest::SHA512 => write!(f, "SHA512"),
         }
     }
 }
