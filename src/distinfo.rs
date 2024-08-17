@@ -50,8 +50,8 @@
  *
  * As `distinfo` files can contain usernames and filenames that are not UTF-8
  * clean (for example ISO-8859), `from_bytes()` is the method used to parse
- * input, and the rcsid and filename portions are parsed as [`OsString`].
- * The remaining sections must be UTF-8 clean and are regular [`String`]s.
+ * input, and the rcsid and filename portions are parsed as [`OsString`].  The
+ * remaining sections must be UTF-8 clean and are regular [`String`]s.
  *
  * [`OsString`]: https://doc.rust-lang.org/std/ffi/struct.OsString.html
  * [`String`]: https://doc.rust-lang.org/std/string/struct.String.html
@@ -65,11 +65,11 @@ use std::path::{Path, PathBuf};
 use std::str::FromStr;
 
 /**
- * [`ChecksumEntry`] contains the [`Digest`] type and the [`String`] hash the
- * digest algorithm calculated for an associated [`FileEntry`].
+ * [`Checksum`] contains the [`Digest`] type and the [`String`] hash the digest
+ * algorithm calculated for an associated [`Entry`].
  */
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
-pub struct ChecksumEntry {
+pub struct Checksum {
     /**
      * The [`Digest`] type used for this entry.
      */
@@ -81,11 +81,11 @@ pub struct ChecksumEntry {
 }
 
 /**
- * [`FileEntry`] contains the information stored about each unique file listed
- * in the distinfo file.
+ * [`Entry`] contains the information stored about each unique file listed in
+ * the distinfo file.
  */
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
-pub struct FileEntry {
+pub struct Entry {
     /**
      * The filename stored as a [`PathBuf`].  This should not contain any
      * directory portion.
@@ -98,10 +98,10 @@ pub struct FileEntry {
      */
     pub size: u64,
     /**
-     * List of checksums, one [`ChecksumEntry`] entry per Digest type.  These
-     * are in order of appearance in the `distinfo` file.
+     * List of checksums, one [`Checksum`] entry per Digest type.  These are in
+     * order of appearance in the `distinfo` file.
      */
-    pub checksums: Vec<ChecksumEntry>,
+    pub checksums: Vec<Checksum>,
 }
 
 /**
@@ -110,7 +110,7 @@ pub struct FileEntry {
  * but is helpful for internally constructing an eventual [`Distinfo`].
  */
 #[derive(Debug, Eq, PartialEq)]
-enum LineEntry {
+enum Line {
     RcsId(OsString),
     Size(PathBuf, u64),
     Checksum(Digest, PathBuf, String),
@@ -138,16 +138,16 @@ pub struct Distinfo {
      */
     pub rcsid: Option<OsString>,
     /**
-     * A [`Vec`] of [`FileEntry`] entries for all distfiles used by the
+     * A [`Vec`] of [`Entry`] entries for all distfiles used by the
      * package.  These must store both checksums and size information.
      */
-    pub files: Vec<FileEntry>,
+    pub files: Vec<Entry>,
     /**
-     * A [`Vec`] of [`FileEntry`] entries for any pkgsrc patches applied
+     * A [`Vec`] of [`Entry`] entries for any pkgsrc patches applied
      * to the extracted source code.  These currently do not contain size
      * information.
      */
-    pub patches: Vec<FileEntry>,
+    pub patches: Vec<Entry>,
 }
 
 impl Distinfo {
@@ -171,13 +171,13 @@ impl Distinfo {
     /**
      * Return a [`Vec`] of references to distfile entries, if any.
      */
-    pub fn files(&self) -> Vec<&FileEntry> {
+    pub fn files(&self) -> Vec<&Entry> {
         self.files.iter().collect()
     }
     /**
      * Return a [`Vec`] of references to patchfile entries, if any.
      */
-    pub fn patches(&self) -> Vec<&FileEntry> {
+    pub fn patches(&self) -> Vec<&Entry> {
         self.patches.iter().collect()
     }
     /**
@@ -190,28 +190,28 @@ impl Distinfo {
             files: vec![],
             patches: vec![],
         };
-        let mut files: IndexMap<PathBuf, FileEntry> = IndexMap::new();
-        let mut patches: IndexMap<PathBuf, FileEntry> = IndexMap::new();
+        let mut files: IndexMap<PathBuf, Entry> = IndexMap::new();
+        let mut patches: IndexMap<PathBuf, Entry> = IndexMap::new();
         for line in bytes.split(|c| *c == b'\n') {
-            match LineEntry::from_bytes(line) {
+            match Line::from_bytes(line) {
                 /*
                  * We shouldn't encounter multiple RcsId entries, but if we do
                  * then last match wins.
                  */
-                LineEntry::RcsId(s) => distinfo.rcsid = Some(s),
-                LineEntry::Size(p, v) => {
+                Line::RcsId(s) => distinfo.rcsid = Some(s),
+                Line::Size(p, v) => {
                     match is_patchfile(&p) {
                         true => update_size(&mut patches, &p, v),
                         false => update_size(&mut files, &p, v),
                     };
                 }
-                LineEntry::Checksum(d, p, s) => {
+                Line::Checksum(d, p, s) => {
                     match is_patchfile(&p) {
                         true => update_checksum(&mut patches, &p, d, s),
                         false => update_checksum(&mut files, &p, d, s),
                     };
                 }
-                LineEntry::None => {}
+                Line::None => {}
             }
         }
         for (_, v) in files {
@@ -273,19 +273,18 @@ impl Distinfo {
 }
 
 fn update_checksum(
-    hash: &mut IndexMap<PathBuf, FileEntry>,
+    hash: &mut IndexMap<PathBuf, Entry>,
     p: &Path,
     d: Digest,
     c: String,
 ) {
     match hash.get_mut(p) {
-        Some(h) => h.checksums.push(ChecksumEntry { digest: d, hash: c }),
+        Some(h) => h.checksums.push(Checksum { digest: d, hash: c }),
         None => {
-            let v: Vec<ChecksumEntry> =
-                vec![ChecksumEntry { digest: d, hash: c }];
+            let v: Vec<Checksum> = vec![Checksum { digest: d, hash: c }];
             hash.insert(
                 p.to_path_buf(),
-                FileEntry {
+                Entry {
                     filename: p.to_path_buf(),
                     checksums: v,
                     ..Default::default()
@@ -295,13 +294,13 @@ fn update_checksum(
     };
 }
 
-fn update_size(hash: &mut IndexMap<PathBuf, FileEntry>, p: &Path, v: u64) {
+fn update_size(hash: &mut IndexMap<PathBuf, Entry>, p: &Path, v: u64) {
     match hash.get_mut(p) {
         Some(h) => h.size = v,
         None => {
             hash.insert(
                 p.to_path_buf(),
-                FileEntry {
+                Entry {
                     filename: p.to_path_buf(),
                     size: v,
                     ..Default::default()
@@ -311,8 +310,8 @@ fn update_size(hash: &mut IndexMap<PathBuf, FileEntry>, p: &Path, v: u64) {
     };
 }
 
-impl LineEntry {
-    fn from_bytes(bytes: &[u8]) -> LineEntry {
+impl Line {
+    fn from_bytes(bytes: &[u8]) -> Line {
         /*
          * Despite expecting a single line, handle embedded newlines anyway
          * to simplify things.  First valid (i.e. not None) match wins.
@@ -342,7 +341,7 @@ impl LineEntry {
              * string, there's no point matching an unexpanded "$NetBSD$".
              */
             if line.starts_with(b"$NetBSD: ") {
-                return LineEntry::RcsId(OsString::from_vec((*line).to_vec()));
+                return Line::RcsId(OsString::from_vec((*line).to_vec()));
             }
 
             /*
@@ -354,7 +353,7 @@ impl LineEntry {
              *
              * We just ignore the trailing "bytes" of "Size" lines.
              *
-             * If we see anything we don't like then LineEntry::None is
+             * If we see anything we don't like then Line::None is
              * immediately returned.
              */
             let mut field = 0;
@@ -369,7 +368,7 @@ impl LineEntry {
                 if field == 0 {
                     action = match String::from_utf8(s.to_vec()) {
                         Ok(s) => s,
-                        Err(_) => return LineEntry::None,
+                        Err(_) => return Line::None,
                     };
                 }
                 /* Record path from "(filename)" */
@@ -377,14 +376,14 @@ impl LineEntry {
                     if s[0] == b'(' && s[s.len() - 1] == b')' {
                         path.push(OsStr::from_bytes(&s[1..s.len() - 1]));
                     } else {
-                        return LineEntry::None;
+                        return Line::None;
                     }
                 }
                 /* Record size or hash */
                 if field == 3 {
                     value = match String::from_utf8(s.to_vec()) {
                         Ok(s) => s,
-                        Err(_) => return LineEntry::None,
+                        Err(_) => return Line::None,
                     }
                 }
                 field += 1;
@@ -395,17 +394,17 @@ impl LineEntry {
              */
             if action == "Size" {
                 match u64::from_str(&value) {
-                    Ok(n) => return LineEntry::Size(path, n),
-                    Err(_) => return LineEntry::None,
+                    Ok(n) => return Line::Size(path, n),
+                    Err(_) => return Line::None,
                 };
             } else {
                 match Digest::from_str(&action) {
-                    Ok(d) => return LineEntry::Checksum(d, path, value),
-                    Err(_) => return LineEntry::None,
+                    Ok(d) => return Line::Checksum(d, path, value),
+                    Err(_) => return Line::None,
                 }
             }
         }
-        LineEntry::None
+        Line::None
     }
 }
 
@@ -457,23 +456,23 @@ mod tests {
     #[test]
     fn test_line_rcsid() {
         let rcsid = "$NetBSD: distinfo,v 1.1 1970/01/01 01:01:01 ken Exp $";
-        let expected = LineEntry::RcsId(rcsid.into());
+        let expected = Line::RcsId(rcsid.into());
 
-        let entry = LineEntry::from_bytes(rcsid.as_bytes());
+        let entry = Line::from_bytes(rcsid.as_bytes());
         assert_eq!(entry, expected);
 
-        let entry = LineEntry::from_bytes(format!("   {rcsid}").as_bytes());
+        let entry = Line::from_bytes(format!("   {rcsid}").as_bytes());
         assert_eq!(entry, expected);
 
-        let entry = LineEntry::from_bytes(format!("\n\n {rcsid}").as_bytes());
+        let entry = Line::from_bytes(format!("\n\n {rcsid}").as_bytes());
         assert_eq!(entry, expected);
 
-        let entry = LineEntry::from_bytes(format!(" {rcsid}\n\n").as_bytes());
+        let entry = Line::from_bytes(format!(" {rcsid}\n\n").as_bytes());
         assert_eq!(entry, expected);
 
         /* Commented entry should return None */
-        let entry = LineEntry::from_bytes(format!("#{rcsid}").as_bytes());
-        assert_eq!(entry, LineEntry::None);
+        let entry = Line::from_bytes(format!("#{rcsid}").as_bytes());
+        assert_eq!(entry, Line::None);
     }
 
     #[test]
@@ -482,45 +481,45 @@ mod tests {
          * Regular entry
          */
         let i = "Size    (foo-1.2.3.tar.gz)    =    321     bytes";
-        let o = LineEntry::from_bytes(i.as_bytes());
-        assert_eq!(o, LineEntry::Size(PathBuf::from("foo-1.2.3.tar.gz"), 321));
+        let o = Line::from_bytes(i.as_bytes());
+        assert_eq!(o, Line::Size(PathBuf::from("foo-1.2.3.tar.gz"), 321));
 
         /*
          * Entry with extra whitespace is accepted, but in reality is likely
          * to be rejected by other tools.
          */
         let i = "Size    (foo-1.2.3.tar.gz)    =    321     bytes";
-        let o = LineEntry::from_bytes(i.as_bytes());
-        assert_eq!(o, LineEntry::Size(PathBuf::from("foo-1.2.3.tar.gz"), 321));
+        let o = Line::from_bytes(i.as_bytes());
+        assert_eq!(o, Line::Size(PathBuf::from("foo-1.2.3.tar.gz"), 321));
 
         /*
          * Invalid as it's missing "bytes", but accepted anyway.
          */
         let i = "Size (foo-1.2.3.tar.gz) = 123";
-        let o = LineEntry::from_bytes(i.as_bytes());
-        assert_eq!(o, LineEntry::Size(PathBuf::from("foo-1.2.3.tar.gz"), 123));
+        let o = Line::from_bytes(i.as_bytes());
+        assert_eq!(o, Line::Size(PathBuf::from("foo-1.2.3.tar.gz"), 123));
 
         /*
          * Check for u64 overflow
          */
         let i = "Size (a.tar.gz) = 18446744073709551615";
-        let o = LineEntry::from_bytes(i.as_bytes());
+        let o = Line::from_bytes(i.as_bytes());
         assert_eq!(
             o,
-            LineEntry::Size(PathBuf::from("a.tar.gz"), 18446744073709551615)
+            Line::Size(PathBuf::from("a.tar.gz"), 18446744073709551615)
         );
         let i = "Size (a.tar.gz) = 18446744073709551616";
-        let o = LineEntry::from_bytes(i.as_bytes());
-        assert_eq!(o, LineEntry::None);
+        let o = Line::from_bytes(i.as_bytes());
+        assert_eq!(o, Line::None);
     }
 
     #[test]
     fn test_line_digest() {
         let i = "BLAKE2s (pkgin-23.8.1.tar.gz) = ojnk";
-        let o = LineEntry::from_bytes(i.as_bytes());
+        let o = Line::from_bytes(i.as_bytes());
         assert_eq!(
             o,
-            LineEntry::Checksum(
+            Line::Checksum(
                 Digest::BLAKE2s,
                 PathBuf::from("pkgin-23.8.1.tar.gz"),
                 "ojnk".to_string()
@@ -530,12 +529,12 @@ mod tests {
 
     #[test]
     fn test_line_none() {
-        let o = LineEntry::from_bytes(format!("").as_bytes());
-        assert_eq!(o, LineEntry::None);
-        let o = LineEntry::from_bytes(format!("\n  \n\n").as_bytes());
-        assert_eq!(o, LineEntry::None);
-        let o = LineEntry::from_bytes(format!("#  \n\n").as_bytes());
-        assert_eq!(o, LineEntry::None);
+        let o = Line::from_bytes(format!("").as_bytes());
+        assert_eq!(o, Line::None);
+        let o = Line::from_bytes(format!("\n  \n\n").as_bytes());
+        assert_eq!(o, Line::None);
+        let o = Line::from_bytes(format!("#  \n\n").as_bytes());
+        assert_eq!(o, Line::None);
     }
 
     #[test]
