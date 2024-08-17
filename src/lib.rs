@@ -17,18 +17,7 @@
 /*!
  * # pkgsrc
  *
- * Implementation of pkg_install library and database routines in Rust.
- *
- * ## Goals
- *
- * The initial goals are to fully support existing pkg_install packages and the
- * files-based pkgdb, in tandem with developing
- * [pm](https://github.com/jperkin/pm), a Rust alternative to pkg_install and
- * pkgin.
- *
- * After that the aim is to replace the fragile and slow pkgdb backend with
- * sqlite which should provide much faster and more reliable queries and
- * updates.
+ * Interface to both the pkg_install database and pkgsrc mk infrastructure.
  */
 
 #![deny(missing_docs)]
@@ -37,6 +26,7 @@ pub use crate::metadata::{Metadata, MetadataEntry};
 pub use crate::pmatch::pkg_match;
 
 pub mod digest;
+pub mod distinfo;
 mod metadata;
 pub mod pkgdb;
 pub mod pkgpath;
