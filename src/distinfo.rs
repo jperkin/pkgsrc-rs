@@ -120,22 +120,44 @@ enum LineEntry {
 /**
  * [`Distinfo`] contains the contents of a `distinfo` file.
  *
- * The primary interface for populating a [`Distinfo`] is using the
- * [`from_bytes`] function.
+ * The primary interface for populating a [`Distinfo`] from an existing
+ * `distinfo` file is using the [`from_bytes`] function.  There is no error
+ * handling.  Any input that is unrecognised or not in the correct format is
+ * simply ignored.
  *
- * There is no error handling.  Any input that is unrecognised or not in the
- * correct format is simply ignored.
+ * To create a new `distinfo` file, use [`new`] and set the fields manually.
  *
  * [`from_bytes`]: Distinfo::from_bytes
+ * [`new`]: Distinfo::new
  */
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub struct Distinfo {
-    rcsid: Option<OsString>,
-    files: Vec<FileEntry>,
-    patches: Vec<FileEntry>,
+    /**
+     * An optional `$NetBSD: ... $` RCS Id.  As the username portion may
+     * contain e.g. ISO-8859 characters it is stored as an [`OsString`].
+     */
+    pub rcsid: Option<OsString>,
+    /**
+     * A [`Vec`] of [`FileEntry`] entries for all distfiles used by the
+     * package.  These must store both checksums and size information.
+     */
+    pub files: Vec<FileEntry>,
+    /**
+     * A [`Vec`] of [`FileEntry`] entries for any pkgsrc patches applied
+     * to the extracted source code.  These currently do not contain size
+     * information.
+     */
+    pub patches: Vec<FileEntry>,
 }
 
 impl Distinfo {
+    /**
+     * Return a new empty [`Distinfo`].
+     */
+    pub fn new() -> Distinfo {
+        let di: Distinfo = Default::default();
+        di
+    }
     /**
      * Return an [`Option`] containing either a valid `$NetBSD: ...` RCS Id
      * line, or None if one was not found.
