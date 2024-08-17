@@ -450,25 +450,17 @@ mod tests {
     use super::*;
 
     /*
-     * Test RcsId parsing, with and without additional whitespace and
-     * comments.
+     * Test RcsId parsing, with and without additional whitespace and comments.
      */
     #[test]
     fn test_line_rcsid() {
         let rcsid = "$NetBSD: distinfo,v 1.1 1970/01/01 01:01:01 ken Exp $";
-        let expected = Line::RcsId(rcsid.into());
+        let exp = Line::RcsId(rcsid.into());
 
-        let entry = Line::from_bytes(rcsid.as_bytes());
-        assert_eq!(entry, expected);
-
-        let entry = Line::from_bytes(format!("   {rcsid}").as_bytes());
-        assert_eq!(entry, expected);
-
-        let entry = Line::from_bytes(format!("\n\n {rcsid}").as_bytes());
-        assert_eq!(entry, expected);
-
-        let entry = Line::from_bytes(format!(" {rcsid}\n\n").as_bytes());
-        assert_eq!(entry, expected);
+        assert_eq!(Line::from_bytes(rcsid.as_bytes()), exp);
+        assert_eq!(Line::from_bytes(format!("     {rcsid}").as_bytes()), exp);
+        assert_eq!(Line::from_bytes(format!("\n\n {rcsid}").as_bytes()), exp);
+        assert_eq!(Line::from_bytes(format!(" {rcsid}\n\n").as_bytes()), exp);
 
         /* Commented entry should return None */
         let entry = Line::from_bytes(format!("#{rcsid}").as_bytes());
