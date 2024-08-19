@@ -130,7 +130,7 @@ enum Line {
  * [`from_bytes`]: Distinfo::from_bytes
  * [`new`]: Distinfo::new
  */
-#[derive(Debug, Default)]
+#[derive(Clone, Debug, Default)]
 pub struct Distinfo {
     /**
      * An optional `$NetBSD: ... $` RCS Id.  As the username portion may
