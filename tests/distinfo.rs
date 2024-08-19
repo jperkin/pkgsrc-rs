@@ -11,6 +11,17 @@ fn test_distinfo() {
     let file = fs::read(&distinfo).unwrap();
     let di = Distinfo::from_bytes(&file);
 
+    let mut pfile = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    pfile.push("tests/data/digest.txt");
+
+    match di.check_file(&pfile) {
+        Ok(_) => {}
+        Err(e) => {
+            eprintln!("ERROR: {e}");
+            assert!(false);
+        }
+    };
+
     assert_eq!(
         di.rcsid,
         Some(OsString::from(

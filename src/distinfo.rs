@@ -57,12 +57,15 @@
  * [`String`]: https://doc.rust-lang.org/std/string/struct.String.html
  */
 
-use crate::digest::Digest;
+use crate::digest::{Digest, DigestError};
 use indexmap::IndexMap;
 use std::ffi::{OsStr, OsString};
+use std::fs::File;
+use std::io;
 use std::os::unix::ffi::{OsStrExt, OsStringExt};
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
+use thiserror::Error;
 
 /**
  * [`Checksum`] contains the [`Digest`] type and the [`String`] hash the digest
@@ -150,6 +153,30 @@ pub struct Distinfo {
     pub patches: Vec<Entry>,
 }
 
+/**
+ * Possible errors returned by [`check_file`].
+ *
+ * [`check_file`]: Distinfo::check_file
+ */
+#[derive(Debug, Error)]
+pub enum CheckError {
+    /// Transparent [`io::Error`] error.
+    #[error(transparent)]
+    Io(#[from] io::Error),
+    /// Transparent [`Digest`] error.
+    #[error(transparent)]
+    Digest(#[from] DigestError),
+    /// File was not found as a valid entry in the current [`Distinfo`] struct.
+    #[error("File not found")]
+    NotFound,
+    /// Checksum mismatch, expected vs actual.
+    #[error("Checksum {1} mismatch for {0}: expected {2}, actual {3}")]
+    Checksum(PathBuf, Digest, String, String),
+    /// Size mismatch, expected vs actual.
+    #[error("Size mismatch: expected {0}, got {1}")]
+    Size(u64, u64),
+}
+
 impl Distinfo {
     /**
      * Return a new empty [`Distinfo`].
@@ -173,6 +200,45 @@ impl Distinfo {
      */
     pub fn get_file(&self, name: &PathBuf) -> Option<&Entry> {
         self.files.iter().find(|&e| e.filename == *name)
+    }
+    /**
+     * Pass the full path to a file to check as a [`PathBuf`] and verify that
+     * it passes all known checks that we hold for it, otherwise return a
+     * [`CheckError`].
+     */
+    pub fn check_file(&self, path: &PathBuf) -> Result<(), CheckError> {
+        let filename = match path.file_name() {
+            Some(s) => s,
+            None => return Err(CheckError::NotFound),
+        };
+        let file = PathBuf::from(&filename);
+        let distfile = match self.get_file(&file) {
+            Some(f) => f,
+            None => return Err(CheckError::NotFound),
+        };
+        /*
+         * Size check is less expensive than checksums so comes first.
+         */
+        if let Some(size) = &distfile.size {
+            let f = File::open(path)?;
+            let fsize = f.metadata()?.len();
+            if fsize != *size {
+                return Err(CheckError::Size(*size, fsize));
+            }
+        }
+        for c in &distfile.checksums {
+            let mut f = File::open(path)?;
+            let hash = c.digest.hash_file(&mut f)?;
+            if hash != c.hash {
+                return Err(CheckError::Checksum(
+                    file,
+                    c.digest.clone(),
+                    c.hash.clone(),
+                    hash,
+                ));
+            }
+        }
+        Ok(())
     }
     /**
      * Return a matching patch entry if found, otherwise [`None`].
