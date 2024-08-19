@@ -169,6 +169,18 @@ impl Distinfo {
         }
     }
     /**
+     * Return a matching distfile entry if found, otherwise [`None`].
+     */
+    pub fn get_file(&self, name: &PathBuf) -> Option<&Entry> {
+        self.files.iter().find(|&e| e.filename == *name)
+    }
+    /**
+     * Return a matching patch entry if found, otherwise [`None`].
+     */
+    pub fn get_patch(&self, name: &PathBuf) -> Option<&Entry> {
+        self.patches.iter().find(|&e| e.filename == *name)
+    }
+    /**
      * Return a [`Vec`] of references to distfile entries, if any.
      */
     pub fn files(&self) -> Vec<&Entry> {
@@ -546,5 +558,11 @@ mod tests {
                 "$NetBSD: distinfo,v 1.80 2024/05/27 23:27:10 riastradh Exp $"
             ))
         );
+        let f = di.get_file(&PathBuf::from("pkgin-23.8.1.tar.gz"));
+        assert!(matches!(f, Some(_)));
+        let p = di.get_patch(&PathBuf::from("patch-configure.ac"));
+        assert!(matches!(p, Some(_)));
+        assert_eq!(None, di.get_file(&PathBuf::from("foo-23.8.1.tar.gz")));
+        assert_eq!(None, di.get_patch(&PathBuf::from("patch-Makefile")));
     }
 }
