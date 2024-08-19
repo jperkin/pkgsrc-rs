@@ -173,8 +173,8 @@ pub enum CheckError {
     #[error("Checksum {1} mismatch for {0}: expected {2}, actual {3}")]
     Checksum(PathBuf, Digest, String, String),
     /// Size mismatch, expected vs actual.
-    #[error("Size mismatch: expected {0}, got {1}")]
-    Size(u64, u64),
+    #[error("Size mismatch for {0}: expected {1}, actual {2}")]
+    Size(PathBuf, u64, u64),
 }
 
 impl Distinfo {
@@ -223,7 +223,7 @@ impl Distinfo {
             let f = File::open(path)?;
             let fsize = f.metadata()?.len();
             if fsize != *size {
-                return Err(CheckError::Size(*size, fsize));
+                return Err(CheckError::Size(file, *size, fsize));
             }
         }
         for c in &distfile.checksums {
