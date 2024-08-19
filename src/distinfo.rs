@@ -96,7 +96,7 @@ pub struct Entry {
      * are distributed alongside the distinfo file and are not downloaded
      * separately, thus a single hash check is sufficient.
      */
-    pub size: u64,
+    pub size: Option<u64>,
     /**
      * List of checksums, one [`Checksum`] entry per Digest type.  These are in
      * order of appearance in the `distinfo` file.
@@ -260,10 +260,16 @@ impl Distinfo {
                     .as_bytes(),
                 );
             }
-            bytes.extend_from_slice(
-                format!("Size ({}) = {} bytes\n", q.filename.display(), q.size)
+            if let Some(size) = q.size {
+                bytes.extend_from_slice(
+                    format!(
+                        "Size ({}) = {} bytes\n",
+                        q.filename.display(),
+                        size
+                    )
                     .as_bytes(),
-            );
+                );
+            }
         }
 
         for q in &self.patches {
@@ -308,13 +314,13 @@ fn update_checksum(
 
 fn update_size(hash: &mut IndexMap<PathBuf, Entry>, p: &Path, v: u64) {
     match hash.get_mut(p) {
-        Some(h) => h.size = v,
+        Some(h) => h.size = Some(v),
         None => {
             hash.insert(
                 p.to_path_buf(),
                 Entry {
                     filename: p.to_path_buf(),
-                    size: v,
+                    size: Some(v),
                     ..Default::default()
                 },
             );

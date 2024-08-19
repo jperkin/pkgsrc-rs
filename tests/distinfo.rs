@@ -18,7 +18,7 @@ fn test_distinfo() {
         ))
     );
     assert_eq!(di.files[0].filename, PathBuf::from("patch-2.7.6.tar.xz"));
-    assert_eq!(di.files[0].size, 783756);
+    assert_eq!(di.files[0].size, Some(783756));
     assert_eq!(di.files[0].checksums[0].digest, Digest::BLAKE2s);
     assert_eq!(
         di.files[0].checksums[0].hash,
