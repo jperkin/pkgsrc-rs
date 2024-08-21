@@ -204,7 +204,9 @@ impl Distinfo {
     /**
      * Pass the full path to a file to check as a [`PathBuf`] and verify that
      * it passes all known checks that we hold for it, otherwise return a
-     * [`CheckError`].
+     * [`CheckError`].  To check just the size, use [`check_file_size`].
+     *
+     * [`check_file_size`]: Distinfo::check_file_size
      */
     pub fn check_file(&self, path: &PathBuf) -> Result<(), CheckError> {
         let filename = match path.file_name() {
@@ -236,6 +238,33 @@ impl Distinfo {
                     c.hash.clone(),
                     hash,
                 ));
+            }
+        }
+        Ok(())
+    }
+    /**
+     * Pass the full path to a file to check as a [`PathBuf`] and verify that
+     * it matches the size stored in the [`Distinfo`], otherwise return a
+     * [`CheckError`].  For full verification including checksums use
+     * [`check_file`].
+     *
+     * [`check_file`]: Distinfo::check_file
+     */
+    pub fn check_file_size(&self, path: &PathBuf) -> Result<(), CheckError> {
+        let filename = match path.file_name() {
+            Some(s) => s,
+            None => return Err(CheckError::NotFound),
+        };
+        let file = PathBuf::from(&filename);
+        let distfile = match self.get_file(&file) {
+            Some(f) => f,
+            None => return Err(CheckError::NotFound),
+        };
+        if let Some(size) = &distfile.size {
+            let f = File::open(path)?;
+            let fsize = f.metadata()?.len();
+            if fsize != *size {
+                return Err(CheckError::Size(file, *size, fsize));
             }
         }
         Ok(())
