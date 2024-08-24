@@ -405,8 +405,12 @@ impl Entry {
         }
         if let Some(size) = self.size {
             bytes.extend_from_slice(
-                format!("Size ({}) = {} bytes\n", self.filename.display(), size)
-                    .as_bytes(),
+                format!(
+                    "Size ({}) = {} bytes\n",
+                    self.filename.display(),
+                    size
+                )
+                .as_bytes(),
             );
         }
         bytes
