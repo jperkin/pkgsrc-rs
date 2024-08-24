@@ -385,6 +385,34 @@ impl Distinfo {
     }
 }
 
+impl Entry {
+    /**
+     * Convert [`Entry`] into a byte representation suitable for writing to
+     * a `distinfo` file.  The contents will be ordered as expected.
+     */
+    pub fn as_bytes(&self) -> Vec<u8> {
+        let mut bytes = Vec::new();
+        for c in &self.checksums {
+            bytes.extend_from_slice(
+                format!(
+                    "{} ({}) = {}\n",
+                    c.digest,
+                    self.filename.display(),
+                    c.hash
+                )
+                .as_bytes(),
+            );
+        }
+        if let Some(size) = self.size {
+            bytes.extend_from_slice(
+                format!("Size ({}) = {} bytes\n", self.filename.display(), size)
+                    .as_bytes(),
+            );
+        }
+        bytes
+    }
+}
+
 fn update_checksum(
     hash: &mut IndexMap<PathBuf, Entry>,
     p: &Path,
