@@ -125,11 +125,6 @@
  * println!("{}", sum);
  * ```
  *
- * [`Summary`]: ../summary/struct.Summary.html
- * [`SummaryStream`]: ../summary/struct.SummaryStream.html
- * [`Display`]: https://doc.rust-lang.org/std/fmt/trait.Display.html
- * [`FromStr`]: https://doc.rust-lang.org/std/str/trait.FromStr.html
- * [`Write`]: https://doc.rust-lang.org/std/io/trait.Write.html
  * [`pkg_summary(5)`]: https://netbsd.gw.com/cgi-bin/man-cgi?pkg_summary+5
  */
 use std::collections::{BTreeMap, HashMap};
@@ -146,11 +141,6 @@ use unindent::unindent;
 /**
  * A type alias for the result from the creation of either a [`Summary`] or a
  * [`SummaryStream`], with [`SummaryError`] returned in [`Err`] variants.
- *
- * [`Summary`]: ../summary/struct.Summary.html
- * [`SummaryStream`]: ../summary/struct.SummaryStream.html
- * [`SummaryError`]: ../summary/enum.SummaryError.html
- * [`Err`]: https://doc.rust-lang.org/std/result/enum.Result.html#variant.Err
  */
 pub type Result<T> = std::result::Result<T, SummaryError>;
 
@@ -546,8 +536,7 @@ impl Summary {
      * assert_eq!(Some(build_date.as_str()), sum.build_date());
      * ```
      *
-     * [`BuildDate`]: ../summary/enum.SummaryVariable.html#variant.BuildDate
-     * [`None`]: https://doc.rust-lang.org/std/option/enum.Option.html#variant.None
+     * [`BuildDate`]: SummaryVariable::BuildDate
      */
     pub fn build_date(&self) -> Option<&str> {
         self.get_s(SummaryVariable::BuildDate)
@@ -571,8 +560,7 @@ impl Summary {
      * assert_eq!(Some(categories.as_str()), sum.categories());
      * ```
      *
-     * [`Categories`]: ../summary/enum.SummaryVariable.html#variant.Categories
-     * [`None`]: https://doc.rust-lang.org/std/option/enum.Option.html#variant.None
+     * [`Categories`]: SummaryVariable::Categories
      */
     pub fn categories(&self) -> Option<&str> {
         self.get_s(SummaryVariable::Categories)
@@ -596,8 +584,7 @@ impl Summary {
      * assert_eq!(Some(comment.as_str()), sum.comment());
      * ```
      *
-     * [`Comment`]: ../summary/enum.SummaryVariable.html#variant.Comment
-     * [`None`]: https://doc.rust-lang.org/std/option/enum.Option.html#variant.None
+     * [`Comment`]: SummaryVariable::Comment
      */
     pub fn comment(&self) -> Option<&str> {
         self.get_s(SummaryVariable::Comment)
@@ -624,8 +611,7 @@ impl Summary {
      * assert_eq!(Some(conflicts.as_slice()), sum.conflicts());
      * ```
      *
-     * [`Conflicts`]: ../summary/enum.SummaryVariable.html#variant.Conflicts
-     * [`None`]: https://doc.rust-lang.org/std/option/enum.Option.html#variant.None
+     * [`Conflicts`]: SummaryVariable::Conflicts
      */
     pub fn conflicts(&self) -> Option<&[String]> {
         self.get_a(SummaryVariable::Conflicts)
@@ -652,8 +638,7 @@ impl Summary {
      * assert_eq!(Some(depends.as_slice()), sum.depends());
      * ```
      *
-     * [`Depends`]: ../summary/enum.SummaryVariable.html#variant.Depends
-     * [`None`]: https://doc.rust-lang.org/std/option/enum.Option.html#variant.None
+     * [`Depends`]: SummaryVariable::Depends
      */
     pub fn depends(&self) -> Option<&[String]> {
         self.get_a(SummaryVariable::Depends)
@@ -681,8 +666,7 @@ impl Summary {
      * assert_eq!(Some(description.as_slice()), sum.description());
      * ```
      *
-     * [`Description`]: ../summary/enum.SummaryVariable.html#variant.Description
-     * [`None`]: https://doc.rust-lang.org/std/option/enum.Option.html#variant.None
+     * [`Description`]: SummaryVariable::Description
      */
     pub fn description(&self) -> Option<&[String]> {
         self.get_a(SummaryVariable::Description)
@@ -694,8 +678,7 @@ impl Summary {
      *
      * Returns [`None`] if unset.
      *
-     * [`Description`]: ../summary/enum.SummaryVariable.html#variant.Description
-     * [`None`]: https://doc.rust-lang.org/std/option/enum.Option.html#variant.None
+     * [`Description`]: SummaryVariable::Description
      */
     pub fn description_as_str(&self) -> Option<String> {
         self.get_a(SummaryVariable::Description)
@@ -720,8 +703,7 @@ impl Summary {
      * assert_eq!(Some(cksum.as_str()), sum.file_cksum());
      * ```
      *
-     * [`FileCksum`]: ../summary/enum.SummaryVariable.html#variant.FileCksum
-     * [`None`]: https://doc.rust-lang.org/std/option/enum.Option.html#variant.None
+     * [`FileCksum`]: SummaryVariable::FileCksum
      */
     pub fn file_cksum(&self) -> Option<&str> {
         self.get_s(SummaryVariable::FileCksum)
@@ -745,8 +727,7 @@ impl Summary {
      * assert_eq!(Some(filename.as_str()), sum.file_name());
      * ```
      *
-     * [`FileName`]: ../summary/enum.SummaryVariable.html#variant.FileName
-     * [`None`]: https://doc.rust-lang.org/std/option/enum.Option.html#variant.None
+     * [`FileName`]: SummaryVariable::FileName
      */
     pub fn file_name(&self) -> Option<&str> {
         self.get_s(SummaryVariable::FileName)
@@ -770,8 +751,7 @@ impl Summary {
      * assert_eq!(Some(filesize), sum.file_size());
      * ```
      *
-     * [`FileSize`]: ../summary/enum.SummaryVariable.html#variant.FileSize
-     * [`None`]: https://doc.rust-lang.org/std/option/enum.Option.html#variant.None
+     * [`FileSize`]: SummaryVariable::FileSize
      */
     pub fn file_size(&self) -> Option<i64> {
         self.get_i(SummaryVariable::FileSize)
@@ -795,8 +775,7 @@ impl Summary {
      * assert_eq!(Some(homepage.as_str()), sum.homepage());
      * ```
      *
-     * [`Homepage`]: ../summary/enum.SummaryVariable.html#variant.Homepage
-     * [`None`]: https://doc.rust-lang.org/std/option/enum.Option.html#variant.None
+     * [`Homepage`]: SummaryVariable::Homepage
      */
     pub fn homepage(&self) -> Option<&str> {
         self.get_s(SummaryVariable::Homepage)
@@ -820,8 +799,7 @@ impl Summary {
      * assert_eq!(Some(license.as_str()), sum.license());
      * ```
      *
-     * [`License`]: ../summary/enum.SummaryVariable.html#variant.License
-     * [`None`]: https://doc.rust-lang.org/std/option/enum.Option.html#variant.None
+     * [`License`]: SummaryVariable::License
      */
     pub fn license(&self) -> Option<&str> {
         self.get_s(SummaryVariable::License)
@@ -845,8 +823,7 @@ impl Summary {
      * assert_eq!(Some(machine_arch.as_str()), sum.machine_arch());
      * ```
      *
-     * [`MachineArch`]: ../summary/enum.SummaryVariable.html#variant.MachineArch
-     * [`None`]: https://doc.rust-lang.org/std/option/enum.Option.html#variant.None
+     * [`MachineArch`]: SummaryVariable::MachineArch
      */
     pub fn machine_arch(&self) -> Option<&str> {
         self.get_s(SummaryVariable::MachineArch)
@@ -870,8 +847,7 @@ impl Summary {
      * assert_eq!(Some(opsys.as_str()), sum.opsys());
      * ```
      *
-     * [`Opsys`]: ../summary/enum.SummaryVariable.html#variant.Opsys
-     * [`None`]: https://doc.rust-lang.org/std/option/enum.Option.html#variant.None
+     * [`Opsys`]: SummaryVariable::Opsys
      */
     pub fn opsys(&self) -> Option<&str> {
         self.get_s(SummaryVariable::Opsys)
@@ -895,8 +871,7 @@ impl Summary {
      * assert_eq!(Some(os_version.as_str()), sum.os_version());
      * ```
      *
-     * [`OsVersion`]: ../summary/enum.SummaryVariable.html#variant.OsVersion
-     * [`None`]: https://doc.rust-lang.org/std/option/enum.Option.html#variant.None
+     * [`OsVersion`]: SummaryVariable::OsVersion
      */
     pub fn os_version(&self) -> Option<&str> {
         self.get_s(SummaryVariable::OsVersion)
@@ -920,8 +895,7 @@ impl Summary {
      * assert_eq!(Some(pkg_options.as_str()), sum.pkg_options());
      * ```
      *
-     * [`PkgOptions`]: ../summary/enum.SummaryVariable.html#variant.PkgOptions
-     * [`None`]: https://doc.rust-lang.org/std/option/enum.Option.html#variant.None
+     * [`PkgOptions`]: SummaryVariable::PkgOptions
      */
     pub fn pkg_options(&self) -> Option<&str> {
         self.get_s(SummaryVariable::PkgOptions)
@@ -945,8 +919,7 @@ impl Summary {
      * assert_eq!(Some(pkgname.as_str()), sum.pkgname());
      * ```
      *
-     * [`Pkgname`]: ../summary/enum.SummaryVariable.html#variant.Pkgname
-     * [`None`]: https://doc.rust-lang.org/std/option/enum.Option.html#variant.None
+     * [`Pkgname`]: SummaryVariable::Pkgname
      */
     pub fn pkgname(&self) -> Option<&str> {
         self.get_s(SummaryVariable::Pkgname)
@@ -982,8 +955,7 @@ impl Summary {
      * assert_eq!(sum.pkgversion(), None);
      * ```
      *
-     * [`Pkgname`]: ../summary/enum.SummaryVariable.html#variant.Pkgname
-     * [`None`]: https://doc.rust-lang.org/std/option/enum.Option.html#variant.None
+     * [`Pkgname`]: SummaryVariable::Pkgname
      */
     pub fn pkgbase(&self) -> Option<&str> {
         match self.get_s(SummaryVariable::Pkgname) {
@@ -1031,8 +1003,7 @@ impl Summary {
      * assert_eq!(sum.pkgversion(), None);
      * ```
      *
-     * [`Pkgname`]: ../summary/enum.SummaryVariable.html#variant.Pkgname
-     * [`None`]: https://doc.rust-lang.org/std/option/enum.Option.html#variant.None
+     * [`Pkgname`]: SummaryVariable::Pkgname
      */
     pub fn pkgversion(&self) -> Option<&str> {
         match self.get_s(SummaryVariable::Pkgname) {
@@ -1068,8 +1039,7 @@ impl Summary {
      * assert_eq!(Some(pkgpath.as_str()), sum.pkgpath());
      * ```
      *
-     * [`Pkgpath`]: ../summary/enum.SummaryVariable.html#variant.Pkgpath
-     * [`None`]: https://doc.rust-lang.org/std/option/enum.Option.html#variant.None
+     * [`Pkgpath`]: SummaryVariable::Pkgpath
      */
     pub fn pkgpath(&self) -> Option<&str> {
         self.get_s(SummaryVariable::Pkgpath)
@@ -1093,8 +1063,7 @@ impl Summary {
      * assert_eq!(Some(pkgtools_version.as_str()), sum.pkgtools_version());
      * ```
      *
-     * [`PkgtoolsVersion`]: ../summary/enum.SummaryVariable.html#variant.PkgtoolsVersion
-     * [`None`]: https://doc.rust-lang.org/std/option/enum.Option.html#variant.None
+     * [`PkgtoolsVersion`]: SummaryVariable::PkgtoolsVersion
      */
     pub fn pkgtools_version(&self) -> Option<&str> {
         self.get_s(SummaryVariable::PkgtoolsVersion)
@@ -1118,8 +1087,7 @@ impl Summary {
      * assert_eq!(Some(prev_pkgpath.as_str()), sum.prev_pkgpath());
      * ```
      *
-     * [`PrevPkgpath`]: ../summary/enum.SummaryVariable.html#variant.PrevPkgpath
-     * [`None`]: https://doc.rust-lang.org/std/option/enum.Option.html#variant.None
+     * [`PrevPkgpath`]: SummaryVariable::PrevPkgpath
      */
     pub fn prev_pkgpath(&self) -> Option<&str> {
         self.get_s(SummaryVariable::PrevPkgpath)
@@ -1146,8 +1114,7 @@ impl Summary {
      * assert_eq!(Some(provides.as_slice()), sum.provides());
      * ```
      *
-     * [`Provides`]: ../summary/enum.SummaryVariable.html#variant.Provides
-     * [`None`]: https://doc.rust-lang.org/std/option/enum.Option.html#variant.None
+     * [`Provides`]: SummaryVariable::Provides
      */
     pub fn provides(&self) -> Option<&[String]> {
         self.get_a(SummaryVariable::Provides)
@@ -1174,8 +1141,7 @@ impl Summary {
      * assert_eq!(Some(requires.as_slice()), sum.requires());
      * ```
      *
-     * [`Requires`]: ../summary/enum.SummaryVariable.html#variant.Requires
-     * [`None`]: https://doc.rust-lang.org/std/option/enum.Option.html#variant.None
+     * [`Requires`]: SummaryVariable::Requires
      */
     pub fn requires(&self) -> Option<&[String]> {
         self.get_a(SummaryVariable::Requires)
@@ -1199,8 +1165,7 @@ impl Summary {
      * assert_eq!(Some(size_pkg), sum.size_pkg());
      * ```
      *
-     * [`SizePkg`]: ../summary/enum.SummaryVariable.html#variant.SizePkg
-     * [`None`]: https://doc.rust-lang.org/std/option/enum.Option.html#variant.None
+     * [`SizePkg`]: SummaryVariable::SizePkg
      */
     pub fn size_pkg(&self) -> Option<i64> {
         self.get_i(SummaryVariable::SizePkg)
@@ -1227,8 +1192,7 @@ impl Summary {
      * assert_eq!(Some(supersedes.as_slice()), sum.supersedes());
      * ```
      *
-     * [`Supersedes`]: ../summary/enum.SummaryVariable.html#variant.Supersedes
-     * [`None`]: https://doc.rust-lang.org/std/option/enum.Option.html#variant.None
+     * [`Supersedes`]: SummaryVariable::Supersedes
      */
     pub fn supersedes(&self) -> Option<&[String]> {
         self.get_a(SummaryVariable::Supersedes)
@@ -1252,7 +1216,7 @@ impl Summary {
      * assert_eq!(Some(build_date.as_str()), sum.build_date());
      * ```
      *
-     * [`BuildDate`]: ../summary/enum.SummaryVariable.html#variant.BuildDate
+     * [`BuildDate`]: SummaryVariable::BuildDate
      */
     pub fn set_build_date(&mut self, build_date: &str) {
         self.insert_or_update(
@@ -1277,7 +1241,7 @@ impl Summary {
      * assert_eq!(Some(categories.as_str()), sum.categories());
      * ```
      *
-     * [`Categories`]: ../summary/enum.SummaryVariable.html#variant.Categories
+     * [`Categories`]: SummaryVariable::Categories
      */
     pub fn set_categories(&mut self, categories: &str) {
         self.insert_or_update(
@@ -1302,7 +1266,7 @@ impl Summary {
      * assert_eq!(Some(comment.as_str()), sum.comment());
      * ```
      *
-     * [`Comment`]: ../summary/enum.SummaryVariable.html#variant.Comment
+     * [`Comment`]: SummaryVariable::Comment
      */
     pub fn set_comment(&mut self, comment: &str) {
         self.insert_or_update(
@@ -1330,7 +1294,7 @@ impl Summary {
      * assert_eq!(Some(conflicts.as_slice()), sum.conflicts());
      * ```
      *
-     * [`Conflicts`]: ../summary/enum.SummaryVariable.html#variant.Conflicts
+     * [`Conflicts`]: SummaryVariable::Conflicts
      */
     pub fn set_conflicts(&mut self, conflicts: &[String]) {
         self.insert_or_update(
@@ -1358,7 +1322,7 @@ impl Summary {
      * assert_eq!(Some(depends.as_slice()), sum.depends());
      * ```
      *
-     * [`Depends`]: ../summary/enum.SummaryVariable.html#variant.Depends
+     * [`Depends`]: SummaryVariable::Depends
      */
     pub fn set_depends(&mut self, depends: &[String]) {
         self.insert_or_update(
@@ -1387,7 +1351,7 @@ impl Summary {
      * assert_eq!(Some(description.as_slice()), sum.description());
      * ```
      *
-     * [`Description`]: ../summary/enum.SummaryVariable.html#variant.Description
+     * [`Description`]: SummaryVariable::Description
      */
     pub fn set_description(&mut self, description: &[String]) {
         self.insert_or_update(
@@ -1412,7 +1376,7 @@ impl Summary {
      * assert_eq!(Some(cksum.as_str()), sum.file_cksum());
      * ```
      *
-     * [`FileCksum`]: ../summary/enum.SummaryVariable.html#variant.FileCksum
+     * [`FileCksum`]: SummaryVariable::FileCksum
      */
     pub fn set_file_cksum(&mut self, file_cksum: &str) {
         self.insert_or_update(
@@ -1437,7 +1401,7 @@ impl Summary {
      * assert_eq!(Some(filename.as_str()), sum.file_name());
      * ```
      *
-     * [`FileName`]: ../summary/enum.SummaryVariable.html#variant.FileName
+     * [`FileName`]: SummaryVariable::FileName
      */
     pub fn set_file_name(&mut self, file_name: &str) {
         self.insert_or_update(
@@ -1462,7 +1426,7 @@ impl Summary {
      * assert_eq!(Some(filesize), sum.file_size());
      * ```
      *
-     * [`FileSize`]: ../summary/enum.SummaryVariable.html#variant.FileSize
+     * [`FileSize`]: SummaryVariable::FileSize
      */
     pub fn set_file_size(&mut self, file_size: i64) {
         self.insert_or_update(
@@ -1487,7 +1451,7 @@ impl Summary {
      * assert_eq!(Some(homepage.as_str()), sum.homepage());
      * ```
      *
-     * [`Homepage`]: ../summary/enum.SummaryVariable.html#variant.Homepage
+     * [`Homepage`]: SummaryVariable::Homepage
      */
     pub fn set_homepage(&mut self, homepage: &str) {
         self.insert_or_update(
@@ -1512,7 +1476,7 @@ impl Summary {
      * assert_eq!(Some(license.as_str()), sum.license());
      * ```
      *
-     * [`License`]: ../summary/enum.SummaryVariable.html#variant.License
+     * [`License`]: SummaryVariable::License
      */
     pub fn set_license(&mut self, license: &str) {
         self.insert_or_update(
@@ -1537,7 +1501,7 @@ impl Summary {
      * assert_eq!(Some(machine_arch.as_str()), sum.machine_arch());
      * ```
      *
-     * [`MachineArch`]: ../summary/enum.SummaryVariable.html#variant.MachineArch
+     * [`MachineArch`]: SummaryVariable::MachineArch
      */
     pub fn set_machine_arch(&mut self, machine_arch: &str) {
         self.insert_or_update(
@@ -1562,7 +1526,7 @@ impl Summary {
      * assert_eq!(Some(opsys.as_str()), sum.opsys());
      * ```
      *
-     * [`Opsys`]: ../summary/enum.SummaryVariable.html#variant.Opsys
+     * [`Opsys`]: SummaryVariable::Opsys
      */
     pub fn set_opsys(&mut self, opsys: &str) {
         self.insert_or_update(
@@ -1587,7 +1551,7 @@ impl Summary {
      * assert_eq!(Some(os_version.as_str()), sum.os_version());
      * ```
      *
-     * [`OsVersion`]: ../summary/enum.SummaryVariable.html#variant.OsVersion
+     * [`OsVersion`]: SummaryVariable::OsVersion
      */
     pub fn set_os_version(&mut self, os_version: &str) {
         self.insert_or_update(
@@ -1612,7 +1576,7 @@ impl Summary {
      * assert_eq!(Some(pkg_options.as_str()), sum.pkg_options());
      * ```
      *
-     * [`PkgOptions`]: ../summary/enum.SummaryVariable.html#variant.PkgOptions
+     * [`PkgOptions`]: SummaryVariable::PkgOptions
      */
     pub fn set_pkg_options(&mut self, pkg_options: &str) {
         self.insert_or_update(
@@ -1637,7 +1601,7 @@ impl Summary {
      * assert_eq!(Some(pkgname.as_str()), sum.pkgname());
      * ```
      *
-     * [`Pkgname`]: ../summary/enum.SummaryVariable.html#variant.Pkgname
+     * [`Pkgname`]: SummaryVariable::Pkgname
      */
     pub fn set_pkgname(&mut self, pkgname: &str) {
         self.insert_or_update(
@@ -1662,7 +1626,7 @@ impl Summary {
      * assert_eq!(Some(pkgpath.as_str()), sum.pkgpath());
      * ```
      *
-     * [`Pkgpath`]: ../summary/enum.SummaryVariable.html#variant.Pkgpath
+     * [`Pkgpath`]: SummaryVariable::Pkgpath
      */
     pub fn set_pkgpath(&mut self, pkgpath: &str) {
         self.insert_or_update(
@@ -1687,7 +1651,7 @@ impl Summary {
      * assert_eq!(Some(pkgtools_version.as_str()), sum.pkgtools_version());
      * ```
      *
-     * [`PkgtoolsVersion`]: ../summary/enum.SummaryVariable.html#variant.PkgtoolsVersion
+     * [`PkgtoolsVersion`]: SummaryVariable::PkgtoolsVersion
      */
     pub fn set_pkgtools_version(&mut self, pkgtools_version: &str) {
         self.insert_or_update(
@@ -1712,7 +1676,7 @@ impl Summary {
      * assert_eq!(Some(prev_pkgpath.as_str()), sum.prev_pkgpath());
      * ```
      *
-     * [`PrevPkgpath`]: ../summary/enum.SummaryVariable.html#variant.PrevPkgpath
+     * [`PrevPkgpath`]: SummaryVariable::PrevPkgpath
      */
     pub fn set_prev_pkgpath(&mut self, prev_pkgpath: &str) {
         self.insert_or_update(
@@ -1740,7 +1704,7 @@ impl Summary {
      * assert_eq!(Some(provides.as_slice()), sum.provides());
      * ```
      *
-     * [`Provides`]: ../summary/enum.SummaryVariable.html#variant.Provides
+     * [`Provides`]: SummaryVariable::Provides
      */
     pub fn set_provides(&mut self, provides: &[String]) {
         self.insert_or_update(
@@ -1768,7 +1732,7 @@ impl Summary {
      * assert_eq!(Some(requires.as_slice()), sum.requires());
      * ```
      *
-     * [`Requires`]: ../summary/enum.SummaryVariable.html#variant.Requires
+     * [`Requires`]: SummaryVariable::Requires
      */
     pub fn set_requires(&mut self, requires: &[String]) {
         self.insert_or_update(
@@ -1793,7 +1757,7 @@ impl Summary {
      * assert_eq!(Some(size_pkg), sum.size_pkg());
      * ```
      *
-     * [`SizePkg`]: ../summary/enum.SummaryVariable.html#variant.SizePkg
+     * [`SizePkg`]: SummaryVariable::SizePkg
      */
     pub fn set_size_pkg(&mut self, size_pkg: i64) {
         self.insert_or_update(
@@ -1821,7 +1785,7 @@ impl Summary {
      * assert_eq!(Some(supersedes.as_slice()), sum.supersedes());
      * ```
      *
-     * [`Supersedes`]: ../summary/enum.SummaryVariable.html#variant.Supersedes
+     * [`Supersedes`]: SummaryVariable::Supersedes
      */
     pub fn set_supersedes(&mut self, supersedes: &[String]) {
         self.insert_or_update(
@@ -1851,7 +1815,7 @@ impl Summary {
      * assert_eq!(Some(conflicts.as_slice()), sum.conflicts());
      * ```
      *
-     * [`Conflicts`]: ../summary/enum.SummaryVariable.html#variant.Conflicts
+     * [`Conflicts`]: SummaryVariable::Conflicts
      */
     pub fn push_conflicts(&mut self, conflicts: &str) {
         self.insert_or_push(
@@ -1881,7 +1845,7 @@ impl Summary {
      * assert_eq!(Some(depends.as_slice()), sum.depends());
      * ```
      *
-     * [`Depends`]: ../summary/enum.SummaryVariable.html#variant.Depends
+     * [`Depends`]: SummaryVariable::Depends
      */
     pub fn push_depends(&mut self, depends: &str) {
         self.insert_or_push(
@@ -1913,7 +1877,7 @@ impl Summary {
      * assert_eq!(Some(description.as_slice()), sum.description());
      * ```
      *
-     * [`Description`]: ../summary/enum.SummaryVariable.html#variant.Description
+     * [`Description`]: SummaryVariable::Description
      */
     pub fn push_description(&mut self, description: &str) {
         self.insert_or_push(
@@ -1944,7 +1908,7 @@ impl Summary {
      * assert_eq!(Some(provides.as_slice()), sum.provides());
      * ```
      *
-     * [`Provides`]: ../summary/enum.SummaryVariable.html#variant.Provides
+     * [`Provides`]: SummaryVariable::Provides
      */
     pub fn push_provides(&mut self, provides: &str) {
         self.insert_or_push(
@@ -1975,7 +1939,7 @@ impl Summary {
      * assert_eq!(Some(requires.as_slice()), sum.requires());
      * ```
      *
-     * [`Requires`]: ../summary/enum.SummaryVariable.html#variant.Requires
+     * [`Requires`]: SummaryVariable::Requires
      */
     pub fn push_requires(&mut self, requires: &str) {
         self.insert_or_push(
@@ -2006,7 +1970,7 @@ impl Summary {
      * assert_eq!(Some(supersedes.as_slice()), sum.supersedes());
      * ```
      *
-     * [`Supersedes`]: ../summary/enum.SummaryVariable.html#variant.Supersedes
+     * [`Supersedes`]: SummaryVariable::Supersedes
      */
     pub fn push_supersedes(&mut self, supersedes: &str) {
         self.insert_or_push(
@@ -2333,10 +2297,8 @@ impl From<ParseIntError> for SummaryError {
  * }
  * ```
  *
- * [`pkg_summary(5)`]: https://netbsd.gw.com/cgi-bin/man-cgi?pkg_summary+5
- * [`SummaryStream`]: ../summary/struct.SummaryStream.html
  * [`Display`]: https://doc.rust-lang.org/std/fmt/trait.Display.html
- * [`Write`]: https://doc.rust-lang.org/std/io/trait.Write.html
+ * [`pkg_summary(5)`]: https://netbsd.gw.com/cgi-bin/man-cgi?pkg_summary+5
  */
 #[derive(Clone, Debug, Default)]
 pub struct SummaryStream {

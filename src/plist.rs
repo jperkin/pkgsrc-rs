@@ -100,11 +100,6 @@
  *      Ok(())
  * }
  * ```
- *
- * [`PlistEntry`]: ../plist/enum.PlistEntry.html
- * [`Plist`]: ../plist/struct.Plist.html
- * [`String`]: https://doc.rust-lang.org/std/string/struct.String.html
- * [`OsString`]: https://doc.rust-lang.org/std/ffi/struct.OsString.html
  */
 use std::error::Error;
 use std::ffi::{OsStr, OsString};
@@ -118,11 +113,6 @@ use unindent::unindent;
 /**
  * A type alias for the result from the creation of either a [`PlistEntry`] or
  * a [`Plist`], with [`Error`] returned in [`Err`] variants.
- *
- * [`PlistEntry`]: ../plist/enum.PlistEntry.html
- * [`Plist`]: ../plist/struct.Plist.html
- * [`Error`]: ../plist/enum.Error.html
- * [`Err`]: https://doc.rust-lang.org/std/result/enum.Result.html#variant.Err
  */
 pub type Result<T> = std::result::Result<T, PlistError>;
 
@@ -143,8 +133,6 @@ pub enum PlistError {
     IncorrectArguments(OsString),
     /**
      * Wrapped [`FromUtf8Error`] error when failing to parse valid UTF-8.
-     *
-     * [`FromUtf8Error`]: https://doc.rust-lang.org/std/string/struct.FromUtf8Error.html
      */
     Utf8(FromUtf8Error),
 }
@@ -201,7 +189,7 @@ impl From<FromUtf8Error> for PlistError {
  * }
  * ```
  *
- * [`from_bytes()`]: ../plist/enum.PlistEntry.html#method.from_bytes
+ * [`from_bytes()`]: PlistEntry::from_bytes
  */
 #[derive(Debug, Eq, PartialEq)]
 pub enum PlistEntry {
@@ -334,8 +322,6 @@ impl PlistEntry {
     /**
      * Construct a new [`PlistEntry`] from a stream of bytes representing a
      * line from a package list.
-     *
-     * [`PlistEntry`]: ../plist/enum.PlistEntry.html
      */
     pub fn from_bytes(bytes: &[u8]) -> Result<PlistEntry> {
         let line = OsStr::from_bytes(bytes);
@@ -472,8 +458,7 @@ impl PlistEntry {
  * }
  * ```
  *
- * [`from_bytes()`]: ../plist/enum.Plist.html#method.from_bytes
- * [`PlistEntry`]: ../plist/enum.PlistEntry.html
+ * [`from_bytes()`]: Plist::from_bytes
  */
 #[derive(Debug, Default, Eq, PartialEq)]
 pub struct Plist {
@@ -525,8 +510,6 @@ macro_rules! plist_find_first_osstr {
 impl Plist {
     /**
      * Return an empty new [`Plist`].
-     *
-     * [`Plist`]: ../plist/struct.Plist.html
      */
     pub fn new() -> Plist {
         let plist: Plist = Default::default();
@@ -536,8 +519,6 @@ impl Plist {
     /**
      * Construct a new [`Plist`] from a stream of bytes representing lines
      * from a package list.
-     *
-     * [`Plist`]: ../plist/struct.Plist.html
      */
     pub fn from_bytes(bytes: &[u8]) -> Result<Plist> {
         let mut plist = Plist::new();

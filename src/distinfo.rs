@@ -52,9 +52,6 @@
  * clean (for example ISO-8859), `from_bytes()` is the method used to parse
  * input, and the rcsid and filename portions are parsed as [`OsString`].  The
  * remaining sections must be UTF-8 clean and are regular [`String`]s.
- *
- * [`OsString`]: https://doc.rust-lang.org/std/ffi/struct.OsString.html
- * [`String`]: https://doc.rust-lang.org/std/string/struct.String.html
  */
 
 use crate::digest::{Digest, DigestError};

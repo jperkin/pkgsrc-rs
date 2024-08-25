@@ -72,7 +72,6 @@
  * }
  * ```
  *
- * [`Digest`]: ../digest/enum.Digest.html
  * [`RustCrypto`]: https://github.com/RustCrypto
  * [`digest`]: https://docs.rs/digest/latest/digest/
  * [`hashes`]: https://github.com/RustCrypto/hashes
@@ -86,18 +85,11 @@ use std::str::FromStr;
 /**
  * A type alias for the result from the creation of a [`Digest`], with
  * [`DigestError`] returned in [`Err`] variants.
- *
- * [`Digest`]: ../digest/enum.Digest.html
- * [`DigestError`]: ../digest/enum.DigestError.html
- * [`Err`]: https://doc.rust-lang.org/std/result/enum.Result.html#variant.Err
  */
 pub type DigestResult<T> = std::result::Result<T, DigestError>;
 
 /**
  * The [`DigestError`] enum contains all of the possible [`Digest`] errors.
- *
- * [`Digest`]: ../digest/enum.Digest.html
- * [`DigestError`]: ../digest/enum.DigestError.html
  */
 #[derive(Debug)]
 pub enum DigestError {

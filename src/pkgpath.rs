@@ -53,12 +53,8 @@
  * assert_eq!(PkgPath::new("/pkgtools/pkg_install"), Err(PkgPathError::InvalidPath));
  * ```
  *
- * [`PathBuf`]: https://doc.rust-lang.org/std/path/struct.PathBuf.html
- * [`Path`]: https://doc.rust-lang.org/std/path/struct.Path.html
- * [`PkgPathError`]: ../pkgpath/enum.PkgPathError.html
- * [`PkgPath`]: ../pkgpath/struct.PkgPath.html
- * [`as_full_path`]: ../pkgpath/struct.PkgPath.html#method.as_full_path
- * [`as_path`]: ../pkgpath/struct.PkgPath.html#method.as_path
+ * [`as_full_path`]: PkgPath::as_full_path
+ * [`as_path`]: PkgPath::as_path
  */
 
 use std::fmt;
@@ -68,10 +64,6 @@ use std::str::FromStr;
 /**
  * A type alias for the result from the creation of a [`PkgPath`], with
  * [`PkgPathError`] returned in [`Err`] variants.
- *
- * [`PkgPath`]: ../pkgpath/struct.PkgPath.html
- * [`PkgPathError`]: ../plist/enum.PkgPathError.html
- * [`Err`]: https://doc.rust-lang.org/std/result/enum.Result.html#variant.Err
  */
 pub type Result<T> = std::result::Result<T, PkgPathError>;
 
