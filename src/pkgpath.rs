@@ -61,6 +61,9 @@ use std::fmt;
 use std::path::{Component, Path, PathBuf};
 use std::str::FromStr;
 
+#[cfg(feature = "serde")]
+use serde::{Deserialize, Serialize};
+
 /**
  * A type alias for the result from the creation of a [`PkgPath`], with
  * [`PkgPathError`] returned in [`Err`] variants.
@@ -81,7 +84,8 @@ pub enum PkgPathError {
 /**
  * PkgPath
  */
-#[derive(Debug, PartialEq)]
+#[derive(Clone, Debug, Default, Eq, Hash, PartialEq)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct PkgPath {
     short: PathBuf,
     full: PathBuf,
