@@ -87,8 +87,9 @@ pub struct Checksum {
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct Entry {
     /**
-     * The filename stored as a [`PathBuf`].  This should not contain any
-     * directory portion.
+     * Path relative to a certain directory (usually `DISTDIR`) where this
+     * entry is stored.  This may contain a directory portion, for example if
+     * the package uses DIST_SUBDIR, as that is stored in the `distinfo` file.
      */
     pub filename: PathBuf,
     /**
@@ -206,26 +207,38 @@ impl Distinfo {
      * [`check_file_size`]: Distinfo::check_file_size
      */
     pub fn check_file(&self, path: &PathBuf) -> Result<(), CheckError> {
-        let filename = match path.file_name() {
-            Some(s) => s,
-            None => return Err(CheckError::NotFound),
-        };
-        let file = PathBuf::from(&filename);
-        let distfile = match self.get_file(&file) {
-            Some(f) => f,
+        let mut entry: Option<&Entry> = None;
+        /*
+         * distinfo files may include DIST_SUBDIR as part of the filename, so
+         * we need to try all path components.
+         */
+        let mut file = PathBuf::new();
+        for component in path.iter().rev() {
+            if file.parent().is_none() {
+                file = PathBuf::from(component);
+            } else {
+                file = PathBuf::from(component).join(file);
+            }
+            if let Some(e) = self.get_file(&file) {
+                entry = Some(e);
+                break;
+            };
+        }
+        let entry = match entry {
+            Some(e) => e,
             None => return Err(CheckError::NotFound),
         };
         /*
          * Size check is less expensive than checksums so comes first.
          */
-        if let Some(size) = &distfile.size {
+        if let Some(size) = &entry.size {
             let f = File::open(path)?;
             let fsize = f.metadata()?.len();
             if fsize != *size {
                 return Err(CheckError::Size(file, *size, fsize));
             }
         }
-        for c in &distfile.checksums {
+        for c in &entry.checksums {
             let mut f = File::open(path)?;
             let hash = c.digest.hash_file(&mut f)?;
             if hash != c.hash {
