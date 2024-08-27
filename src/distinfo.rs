@@ -137,18 +137,18 @@ pub struct Distinfo {
      * An optional `$NetBSD: ... $` RCS Id.  As the username portion may
      * contain e.g. ISO-8859 characters it is stored as an [`OsString`].
      */
-    pub rcsid: Option<OsString>,
+    rcsid: Option<OsString>,
     /**
-     * A [`Vec`] of [`Entry`] entries for all distfiles used by the
-     * package.  These must store both checksums and size information.
+     * A [`Vec`] of [`Entry`] entries for all source distfiles used by the
+     * package.  These should store both checksums and size information.
      */
-    pub files: Vec<Entry>,
+    distfiles: Vec<Entry>,
     /**
      * A [`Vec`] of [`Entry`] entries for any pkgsrc patches applied
      * to the extracted source code.  These currently do not contain size
      * information.
      */
-    pub patches: Vec<Entry>,
+    patchfiles: Vec<Entry>,
 }
 
 /**
@@ -196,8 +196,28 @@ impl Distinfo {
     /**
      * Return a matching distfile entry if found, otherwise [`None`].
      */
-    pub fn get_file(&self, name: &PathBuf) -> Option<&Entry> {
-        self.files.iter().find(|&e| e.filename == *name)
+    pub fn get_distfile(&self, name: &PathBuf) -> Option<&Entry> {
+        self.distfiles.iter().find(|&e| e.filename == *name)
+    }
+    /**
+     * Internal function to find an [`Entry`] in the current [`Distinfo`]
+     * given a [`Path`].  [`Distinfo`] distfile entries may include a
+     * directory component (`DIST_SUBDIR`) so we need to check all possible
+     * paths.
+     */
+    fn find_entry(&self, path: &Path) -> Result<&Entry, CheckError> {
+        let mut file = PathBuf::new();
+        for component in path.iter().rev() {
+            if file.parent().is_none() {
+                file = PathBuf::from(component);
+            } else {
+                file = PathBuf::from(component).join(file);
+            }
+            if let Some(e) = self.get_distfile(&file) {
+                return Ok(e);
+            };
+        }
+        Err(CheckError::NotFound)
     }
     /**
      * Pass the full path to a file to check as a [`PathBuf`] and verify that
@@ -207,35 +227,19 @@ impl Distinfo {
      * [`check_file_size`]: Distinfo::check_file_size
      */
     pub fn check_file(&self, path: &PathBuf) -> Result<(), CheckError> {
-        let mut entry: Option<&Entry> = None;
-        /*
-         * distinfo files may include DIST_SUBDIR as part of the filename, so
-         * we need to try all path components.
-         */
-        let mut file = PathBuf::new();
-        for component in path.iter().rev() {
-            if file.parent().is_none() {
-                file = PathBuf::from(component);
-            } else {
-                file = PathBuf::from(component).join(file);
-            }
-            if let Some(e) = self.get_file(&file) {
-                entry = Some(e);
-                break;
-            };
-        }
-        let entry = match entry {
-            Some(e) => e,
-            None => return Err(CheckError::NotFound),
-        };
+        let entry = self.find_entry(path)?;
         /*
          * Size check is less expensive than checksums so comes first.
          */
-        if let Some(size) = &entry.size {
+        if let Some(size) = entry.size {
             let f = File::open(path)?;
             let fsize = f.metadata()?.len();
-            if fsize != *size {
-                return Err(CheckError::Size(file, *size, fsize));
+            if fsize != size {
+                return Err(CheckError::Size(
+                    entry.filename.clone(),
+                    size,
+                    fsize,
+                ));
             }
         }
         for c in &entry.checksums {
@@ -243,7 +247,7 @@ impl Distinfo {
             let hash = c.digest.hash_file(&mut f)?;
             if hash != c.hash {
                 return Err(CheckError::Checksum(
-                    file,
+                    entry.filename.clone(),
                     c.digest.clone(),
                     c.hash.clone(),
                     hash,
@@ -266,7 +270,7 @@ impl Distinfo {
             None => return Err(CheckError::NotFound),
         };
         let file = PathBuf::from(&filename);
-        let distfile = match self.get_file(&file) {
+        let distfile = match self.get_distfile(&file) {
             Some(f) => f,
             None => return Err(CheckError::NotFound),
         };
@@ -282,20 +286,20 @@ impl Distinfo {
     /**
      * Return a matching patch entry if found, otherwise [`None`].
      */
-    pub fn get_patch(&self, name: &PathBuf) -> Option<&Entry> {
-        self.patches.iter().find(|&e| e.filename == *name)
+    pub fn get_patchfile(&self, name: &PathBuf) -> Option<&Entry> {
+        self.patchfiles.iter().find(|&e| e.filename == *name)
     }
     /**
      * Return a [`Vec`] of references to distfile entries, if any.
      */
-    pub fn files(&self) -> Vec<&Entry> {
-        self.files.iter().collect()
+    pub fn distfiles(&self) -> Vec<&Entry> {
+        self.distfiles.iter().collect()
     }
     /**
      * Return a [`Vec`] of references to patchfile entries, if any.
      */
-    pub fn patches(&self) -> Vec<&Entry> {
-        self.patches.iter().collect()
+    pub fn patchfiles(&self) -> Vec<&Entry> {
+        self.patchfiles.iter().collect()
     }
     /**
      * Read a [`Vec`] of [`u8`] bytes and parse for [`Distinfo`] entries.  If
@@ -304,11 +308,11 @@ impl Distinfo {
     pub fn from_bytes(bytes: &[u8]) -> Distinfo {
         let mut distinfo = Distinfo {
             rcsid: None,
-            files: vec![],
-            patches: vec![],
+            distfiles: vec![],
+            patchfiles: vec![],
         };
-        let mut files: IndexMap<PathBuf, Entry> = IndexMap::new();
-        let mut patches: IndexMap<PathBuf, Entry> = IndexMap::new();
+        let mut distfiles: IndexMap<PathBuf, Entry> = IndexMap::new();
+        let mut patchfiles: IndexMap<PathBuf, Entry> = IndexMap::new();
         for line in bytes.split(|c| *c == b'\n') {
             match Line::from_bytes(line) {
                 /*
@@ -318,24 +322,24 @@ impl Distinfo {
                 Line::RcsId(s) => distinfo.rcsid = Some(s),
                 Line::Size(p, v) => {
                     match is_patchfile(&p) {
-                        true => update_size(&mut patches, &p, v),
-                        false => update_size(&mut files, &p, v),
+                        true => update_size(&mut patchfiles, &p, v),
+                        false => update_size(&mut distfiles, &p, v),
                     };
                 }
                 Line::Checksum(d, p, s) => {
                     match is_patchfile(&p) {
-                        true => update_checksum(&mut patches, &p, d, s),
-                        false => update_checksum(&mut files, &p, d, s),
+                        true => update_checksum(&mut patchfiles, &p, d, s),
+                        false => update_checksum(&mut distfiles, &p, d, s),
                     };
                 }
                 Line::None => {}
             }
         }
-        for (_, v) in files {
-            distinfo.files.push(v);
+        for (_, v) in distfiles {
+            distinfo.distfiles.push(v);
         }
-        for (_, v) in patches {
-            distinfo.patches.push(v);
+        for (_, v) in patchfiles {
+            distinfo.patchfiles.push(v);
         }
 
         distinfo
@@ -353,7 +357,7 @@ impl Distinfo {
         }
         bytes.extend_from_slice("\n\n".as_bytes());
 
-        for q in &self.files {
+        for q in &self.distfiles {
             for c in &q.checksums {
                 bytes.extend_from_slice(
                     format!(
@@ -377,7 +381,7 @@ impl Distinfo {
             }
         }
 
-        for q in &self.patches {
+        for q in &self.patchfiles {
             for c in &q.checksums {
                 bytes.extend_from_slice(
                     format!(
@@ -701,11 +705,11 @@ mod tests {
                 "$NetBSD: distinfo,v 1.80 2024/05/27 23:27:10 riastradh Exp $"
             ))
         );
-        let f = di.get_file(&PathBuf::from("pkgin-23.8.1.tar.gz"));
+        let f = di.get_distfile(&PathBuf::from("pkgin-23.8.1.tar.gz"));
         assert!(matches!(f, Some(_)));
-        let p = di.get_patch(&PathBuf::from("patch-configure.ac"));
+        let p = di.get_patchfile(&PathBuf::from("patch-configure.ac"));
         assert!(matches!(p, Some(_)));
-        assert_eq!(None, di.get_file(&PathBuf::from("foo-23.8.1.tar.gz")));
-        assert_eq!(None, di.get_patch(&PathBuf::from("patch-Makefile")));
+        assert_eq!(None, di.get_distfile(&PathBuf::from("foo-23.8.1.tar.gz")));
+        assert_eq!(None, di.get_patchfile(&PathBuf::from("patch-Makefile")));
     }
 }
