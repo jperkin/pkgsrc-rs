@@ -33,6 +33,11 @@ fn test_distinfo_patchfile_checks() -> Result<(), CheckError> {
     let mut file = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     file.push("tests/data/patch-Makefile");
     di.check_file(&file)?;
+    /*
+     * XXX: missing Size entry is currently treated as Ok.  We should probably
+     * change this for this function given we are explicitly calling it.
+     */
+    di.check_file_size(&file)?;
 
     Ok(())
 }

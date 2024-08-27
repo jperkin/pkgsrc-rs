@@ -225,17 +225,17 @@ impl Distinfo {
         Err(CheckError::NotFound)
     }
     /**
-     * Pass the full path to a file to check as a [`PathBuf`] and verify that
-     * it passes all known checks that we hold for it, otherwise return a
-     * [`CheckError`].  To check just the size, use [`check_file_size`].
+     * Internal function to check an entry size.  Assumes that a valid entry
+     * has been found by find_entry() first.
      *
-     * [`check_file_size`]: Distinfo::check_file_size
+     * Currently a missing size entry is considered a pass.  This may well
+     * change in the future.
      */
-    pub fn check_file(&self, path: &PathBuf) -> Result<(), CheckError> {
-        let entry = self.find_entry(path)?;
-        /*
-         * Size check is less expensive than checksums so comes first.
-         */
+    fn check_size_internal(
+        &self,
+        path: &PathBuf,
+        entry: &Entry,
+    ) -> Result<(), CheckError> {
         if let Some(size) = entry.size {
             let f = File::open(path)?;
             let fsize = f.metadata()?.len();
@@ -247,6 +247,24 @@ impl Distinfo {
                 ));
             }
         }
+        Ok(())
+    }
+    /**
+     * Pass the full path to a file to check as a [`PathBuf`] and verify that
+     * it passes all known checks that we hold for it, otherwise return a
+     * [`CheckError`].  To check just the size, use [`check_file_size`].
+     *
+     * [`check_file_size`]: Distinfo::check_file_size
+     */
+    pub fn check_file(&self, path: &PathBuf) -> Result<(), CheckError> {
+        let entry = self.find_entry(path)?;
+        /*
+         * Size check is less expensive than checksums so comes first.
+         */
+        self.check_size_internal(path, entry)?;
+        /*
+         * Check checksums
+         */
         for c in &entry.checksums {
             let mut f = File::open(path)?;
             let hash = c.digest.hash_file(&mut f)?;
@@ -270,22 +288,8 @@ impl Distinfo {
      * [`check_file`]: Distinfo::check_file
      */
     pub fn check_file_size(&self, path: &PathBuf) -> Result<(), CheckError> {
-        let filename = match path.file_name() {
-            Some(s) => s,
-            None => return Err(CheckError::NotFound),
-        };
-        let file = PathBuf::from(&filename);
-        let distfile = match self.get_distfile(&file) {
-            Some(f) => f,
-            None => return Err(CheckError::NotFound),
-        };
-        if let Some(size) = &distfile.size {
-            let f = File::open(path)?;
-            let fsize = f.metadata()?.len();
-            if fsize != *size {
-                return Err(CheckError::Size(file, *size, fsize));
-            }
-        }
+        let entry = self.find_entry(path)?;
+        self.check_size_internal(path, entry)?;
         Ok(())
     }
     /**
