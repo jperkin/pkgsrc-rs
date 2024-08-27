@@ -16,6 +16,7 @@ fn test_distinfo_distfile_checks() -> Result<(), CheckError> {
     let mut file = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     file.push("tests/data/digest.txt");
     di.check_file(&file)?;
+    di.check_file_size(&file)?;
 
     Ok(())
 }
