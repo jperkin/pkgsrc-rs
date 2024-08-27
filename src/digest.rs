@@ -149,7 +149,7 @@ impl std::error::Error for DigestError {
  *
  * [`hashes`]: https://github.com/RustCrypto/hashes
  */
-#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum Digest {
     /**
      * Implements `BLAKE2s` hash support using `Blake2s256` from the
