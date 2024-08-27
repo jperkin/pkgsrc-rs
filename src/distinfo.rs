@@ -204,6 +204,8 @@ impl Distinfo {
      * given a [`Path`].  [`Distinfo`] distfile entries may include a
      * directory component (`DIST_SUBDIR`) so we need to check all possible
      * paths.
+     *
+     * Supports both distfiles and patchfiles.
      */
     fn find_entry(&self, path: &Path) -> Result<&Entry, CheckError> {
         let mut file = PathBuf::new();
@@ -214,6 +216,9 @@ impl Distinfo {
                 file = PathBuf::from(component).join(file);
             }
             if let Some(e) = self.get_distfile(&file) {
+                return Ok(e);
+            };
+            if let Some(e) = self.get_patchfile(&file) {
                 return Ok(e);
             };
         }

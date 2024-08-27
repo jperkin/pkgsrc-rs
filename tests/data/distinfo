@@ -6,6 +6,4 @@ Size (patch-2.7.6.tar.xz) = 783756 bytes
 BLAKE2s (digest.txt) = 555e56e8177159b7d7fe96d5068dcf5335b554b917c8daaa4c893ec4f04b5303
 SHA512 (digest.txt) = 1b8bd4264ac86f9535376965b3e94a622a4da4daf1f516184609541f9a12139e0accf24fd41bfab95114d0ba3fcfc589fa911e2597b29c3221b66898ae4cfa13
 Size (digest.txt) = 158 bytes
-SHA1 (patch-src_pch.c) = 0aed6cd0d64c380767c39908c388c91ddf3003d1
-SHA1 (patch-tests_Makefile.in) = f7fd200672b65f466a982084d2b907d32a8f0a77
-SHA1 (patch-tests_ed-style) = 7d7c2d04eddaab1d07c05022908a98ef9c984e08
+SHA1 (patch-Makefile) = cb8fb8c2db4b4edebd2ae259b554e766060a45ee
