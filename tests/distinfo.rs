@@ -59,6 +59,39 @@ fn test_distinfo_patchfile_checks() -> Result<(), CheckError> {
     Ok(())
 }
 
+/*
+ * Check errors from a bad distfile file.
+ */
+#[test]
+fn test_distinfo_bad_distinfo() -> Result<(), CheckError> {
+    let mut distinfo = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    distinfo.push("tests/data/distinfo.bad");
+    let di = Distinfo::from_bytes(&fs::read(&distinfo).unwrap());
+
+    let mut file = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    file.push("tests/data/digest.txt");
+
+    assert!(matches!(
+        di.verify_size(&file),
+        Err(CheckError::Size(_, _, _))
+    ));
+    assert!(matches!(
+        di.verify_checksum(&file, Digest::BLAKE2s),
+        Err(CheckError::Checksum(_, _, _, _))
+    ));
+    assert!(matches!(
+        di.verify_checksums(&file),
+        Err(CheckError::Checksum(_, _, _, _))
+    ));
+    /* Size is checked first. */
+    assert!(matches!(
+        di.verify_all(&file),
+        Err(CheckError::Size(_, _, _))
+    ));
+
+    Ok(())
+}
+
 #[test]
 fn test_distinfo_contents() -> Result<(), CheckError> {
     let mut distinfo = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
