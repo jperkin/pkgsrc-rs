@@ -122,7 +122,7 @@ fn test_distinfo_contents() -> Result<(), CheckError> {
     assert_eq!(di.patchfiles()[0].checksums[0].digest, Digest::SHA1);
     assert_eq!(
         di.patchfiles()[0].checksums[0].hash,
-        "cb8fb8c2db4b4edebd2ae259b554e766060a45ee"
+        "ab5ce8a374d3aca7948eecabc35386d8195e3fbf"
     );
 
     Ok(())

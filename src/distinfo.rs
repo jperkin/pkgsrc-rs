@@ -269,7 +269,10 @@ impl Distinfo {
                 continue;
             }
             let mut f = File::open(path)?;
-            let hash = c.digest.hash_file(&mut f)?;
+            let hash = match is_patchfile(path) {
+                true => c.digest.hash_patch(&mut f)?,
+                false => c.digest.hash_file(&mut f)?,
+            };
             if hash != c.hash {
                 return Err(CheckError::Checksum(
                     entry.filename.clone(),
@@ -294,7 +297,10 @@ impl Distinfo {
     ) -> Result<(), CheckError> {
         for c in &entry.checksums {
             let mut f = File::open(path)?;
-            let hash = c.digest.hash_file(&mut f)?;
+            let hash = match is_patchfile(path) {
+                true => c.digest.hash_patch(&mut f)?,
+                false => c.digest.hash_file(&mut f)?,
+            };
             if hash != c.hash {
                 return Err(CheckError::Checksum(
                     entry.filename.clone(),
@@ -657,10 +663,12 @@ impl Line {
 }
 
 /*
- * Verify that a supplied path is a valid patch file.  Returns a String
- * containing the patch filename if so, otherwise None.
+ * Determine whether a supplied path is a patch file.
  */
-fn is_patchfile(p: &Path) -> bool {
+fn is_patchfile(path: &Path) -> bool {
+    let Some(p) = path.file_name() else {
+        return false;
+    };
     let s = p.to_string_lossy();
     /*
      * Skip local patches or temporary patch files created by e.g. mkpatches.
