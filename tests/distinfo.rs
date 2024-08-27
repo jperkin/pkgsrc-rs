@@ -15,8 +15,15 @@ fn test_distinfo_distfile_checks() -> Result<(), CheckError> {
 
     let mut file = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     file.push("tests/data/digest.txt");
-    di.check_file(&file)?;
-    di.check_file_size(&file)?;
+    di.verify_size(&file)?;
+    di.verify_checksum(&file, Digest::SHA512)?;
+    di.verify_checksum(&file, Digest::BLAKE2s)?;
+    assert!(matches!(
+        di.verify_checksum(&file, Digest::RMD160),
+        Err(CheckError::MissingChecksum(_, _))
+    ));
+    di.verify_checksums(&file)?;
+    di.verify_all(&file)?;
 
     Ok(())
 }
@@ -32,12 +39,22 @@ fn test_distinfo_patchfile_checks() -> Result<(), CheckError> {
 
     let mut file = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     file.push("tests/data/patch-Makefile");
-    di.check_file(&file)?;
     /*
-     * XXX: missing Size entry is currently treated as Ok.  We should probably
-     * change this for this function given we are explicitly calling it.
+     * Patches don't have size information.  If explicitly calling
+     * verify_size() then it's an error, calling verify_all() it is not, only
+     * valid tests are counted.
      */
-    di.check_file_size(&file)?;
+    assert!(matches!(
+        di.verify_size(&file),
+        Err(CheckError::MissingSize(_))
+    ));
+    di.verify_checksum(&file, Digest::SHA1)?;
+    assert!(matches!(
+        di.verify_checksum(&file, Digest::BLAKE2s),
+        Err(CheckError::MissingChecksum(_, _))
+    ));
+    di.verify_checksums(&file)?;
+    di.verify_all(&file)?;
 
     Ok(())
 }
@@ -91,7 +108,7 @@ fn test_distinfo_subdir() -> Result<(), CheckError> {
     let mut file = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     file.push("tests/data/subdir/subfile.txt");
 
-    di.check_file(&file)?;
+    di.verify_all(&file)?;
 
     Ok(())
 }
