@@ -8,22 +8,24 @@ use std::path::PathBuf;
  * Perform size and checksum tests against a distfile entry.
  */
 #[test]
-fn test_distinfo_distfile_checks() -> Result<(), CheckError> {
+fn test_distinfo_distfile_checks() -> Result<(), VerifyError> {
     let mut distinfo = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     distinfo.push("tests/data/distinfo");
     let di = Distinfo::from_bytes(&fs::read(&distinfo).unwrap());
 
     let mut file = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     file.push("tests/data/digest.txt");
+
     di.verify_size(&file)?;
     di.verify_checksum(&file, Digest::SHA512)?;
     di.verify_checksum(&file, Digest::BLAKE2s)?;
     assert!(matches!(
         di.verify_checksum(&file, Digest::RMD160),
-        Err(CheckError::MissingChecksum(_, _))
+        Err(VerifyError::MissingChecksum(_, _))
     ));
-    di.verify_checksums(&file)?;
-    di.verify_all(&file)?;
+    for result in di.verify_checksums(&file) {
+        assert!(result.is_ok());
+    }
 
     Ok(())
 }
@@ -32,29 +34,26 @@ fn test_distinfo_distfile_checks() -> Result<(), CheckError> {
  * Perform checksum tests against a patchfile entry.
  */
 #[test]
-fn test_distinfo_patchfile_checks() -> Result<(), CheckError> {
+fn test_distinfo_patchfile_checks() -> Result<(), VerifyError> {
     let mut distinfo = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     distinfo.push("tests/data/distinfo");
     let di = Distinfo::from_bytes(&fs::read(&distinfo).unwrap());
 
     let mut file = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     file.push("tests/data/patch-Makefile");
-    /*
-     * Patches don't have size information.  If explicitly calling
-     * verify_size() then it's an error, calling verify_all() it is not, only
-     * valid tests are counted.
-     */
+
     assert!(matches!(
         di.verify_size(&file),
-        Err(CheckError::MissingSize(_))
+        Err(VerifyError::MissingSize(_))
     ));
     di.verify_checksum(&file, Digest::SHA1)?;
     assert!(matches!(
         di.verify_checksum(&file, Digest::BLAKE2s),
-        Err(CheckError::MissingChecksum(_, _))
+        Err(VerifyError::MissingChecksum(_, _))
     ));
-    di.verify_checksums(&file)?;
-    di.verify_all(&file)?;
+    for result in di.verify_checksums(&file) {
+        assert!(result.is_ok());
+    }
 
     Ok(())
 }
@@ -63,7 +62,7 @@ fn test_distinfo_patchfile_checks() -> Result<(), CheckError> {
  * Check errors from a bad distfile file.
  */
 #[test]
-fn test_distinfo_bad_distinfo() -> Result<(), CheckError> {
+fn test_distinfo_bad_distinfo() -> Result<(), VerifyError> {
     let mut distinfo = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     distinfo.push("tests/data/distinfo.bad");
     let di = Distinfo::from_bytes(&fs::read(&distinfo).unwrap());
@@ -73,27 +72,52 @@ fn test_distinfo_bad_distinfo() -> Result<(), CheckError> {
 
     assert!(matches!(
         di.verify_size(&file),
-        Err(CheckError::Size(_, _, _))
+        Err(VerifyError::Size(_, _, _))
     ));
     assert!(matches!(
         di.verify_checksum(&file, Digest::BLAKE2s),
-        Err(CheckError::Checksum(_, _, _, _))
+        Err(VerifyError::Checksum(_, _, _, _))
     ));
     assert!(matches!(
-        di.verify_checksums(&file),
-        Err(CheckError::Checksum(_, _, _, _))
+        di.verify_checksum(&file, Digest::SHA512),
+        Err(VerifyError::MissingChecksum(_, _))
     ));
-    /* Size is checked first. */
     assert!(matches!(
-        di.verify_all(&file),
-        Err(CheckError::Size(_, _, _))
+        di.verify_checksums(&file)[0],
+        Err(VerifyError::Checksum(_, _, _, _))
+    ));
+
+    Ok(())
+}
+
+/*
+ * Verify that trying to check a file that isn't listed in distinfo results in
+ * a NotFound error, by trying to pass the distinfo file itself as input.
+ */
+#[test]
+fn test_distinfo_notfound() -> Result<(), VerifyError> {
+    let mut distinfo = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    distinfo.push("tests/data/distinfo");
+    let di = Distinfo::from_bytes(&fs::read(&distinfo).unwrap());
+
+    assert!(matches!(
+        di.verify_size(&distinfo),
+        Err(VerifyError::NotFound)
+    ));
+    assert!(matches!(
+        di.verify_checksum(&distinfo, Digest::BLAKE2s),
+        Err(VerifyError::NotFound)
+    ));
+    assert!(matches!(
+        di.verify_checksums(&distinfo)[0],
+        Err(VerifyError::NotFound)
     ));
 
     Ok(())
 }
 
 #[test]
-fn test_distinfo_contents() -> Result<(), CheckError> {
+fn test_distinfo_contents() -> Result<(), VerifyError> {
     let mut distinfo = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     distinfo.push("tests/data/distinfo");
     let di = Distinfo::from_bytes(&fs::read(&distinfo).unwrap());
@@ -133,7 +157,7 @@ fn test_distinfo_contents() -> Result<(), CheckError> {
  * handled correctly.
  */
 #[test]
-fn test_distinfo_subdir() -> Result<(), CheckError> {
+fn test_distinfo_subdir() -> Result<(), VerifyError> {
     let mut distinfo = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     distinfo.push("tests/data/distinfo.subdir");
     let di = Distinfo::from_bytes(&fs::read(&distinfo).unwrap());
@@ -141,7 +165,12 @@ fn test_distinfo_subdir() -> Result<(), CheckError> {
     let mut file = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     file.push("tests/data/subdir/subfile.txt");
 
-    di.verify_all(&file)?;
+    assert_eq!(di.verify_size(&file).unwrap(), 158);
+
+    let results = di.verify_checksums(&file);
+    assert_eq!(results.len(), 2);
+    assert!(matches!(results[0], Ok(Digest::BLAKE2s)));
+    assert!(matches!(results[1], Ok(Digest::SHA512)));
 
     Ok(())
 }

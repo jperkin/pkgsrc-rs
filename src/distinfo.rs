@@ -152,12 +152,10 @@ pub struct Distinfo {
 }
 
 /**
- * Possible errors returned by [`verify_all`].
- *
- * [`verify_all`]: Distinfo::verify_all
+ * Possible errors returned by verification functions.
  */
 #[derive(Debug, Error)]
-pub enum CheckError {
+pub enum VerifyError {
     /// Transparent [`io::Error`] error.
     #[error(transparent)]
     Io(#[from] io::Error),
@@ -213,7 +211,7 @@ impl Distinfo {
      *
      * Supports both distfiles and patchfiles.
      */
-    fn find_entry(&self, path: &Path) -> Result<&Entry, CheckError> {
+    fn find_entry(&self, path: &Path) -> Result<&Entry, VerifyError> {
         let mut file = PathBuf::new();
         for component in path.iter().rev() {
             if file.parent().is_none() {
@@ -228,31 +226,7 @@ impl Distinfo {
                 return Ok(e);
             };
         }
-        Err(CheckError::NotFound)
-    }
-    /**
-     * Internal function to check an entry size.  Assumes that a valid entry
-     * has been found by find_entry() first.
-     */
-    fn verify_size_internal(
-        &self,
-        path: &PathBuf,
-        entry: &Entry,
-    ) -> Result<(), CheckError> {
-        if let Some(size) = entry.size {
-            let f = File::open(path)?;
-            let fsize = f.metadata()?.len();
-            if fsize != size {
-                return Err(CheckError::Size(
-                    entry.filename.clone(),
-                    size,
-                    fsize,
-                ));
-            } else {
-                return Ok(());
-            }
-        }
-        Err(CheckError::MissingSize(path.to_path_buf()))
+        Err(VerifyError::NotFound)
     }
     /**
      * Internal function to check a specific hash.  Assumes that a valid entry
@@ -263,7 +237,7 @@ impl Distinfo {
         path: &PathBuf,
         entry: &Entry,
         digest: Digest,
-    ) -> Result<(), CheckError> {
+    ) -> Result<Digest, VerifyError> {
         for c in &entry.checksums {
             if digest != c.digest {
                 continue;
@@ -274,108 +248,78 @@ impl Distinfo {
                 false => c.digest.hash_file(&mut f)?,
             };
             if hash != c.hash {
-                return Err(CheckError::Checksum(
+                return Err(VerifyError::Checksum(
                     entry.filename.clone(),
-                    c.digest.clone(),
+                    c.digest,
                     c.hash.clone(),
                     hash,
                 ));
             } else {
-                return Ok(());
+                return Ok(digest);
             }
         }
-        Err(CheckError::MissingChecksum(path.to_path_buf(), digest))
+        Err(VerifyError::MissingChecksum(path.to_path_buf(), digest))
     }
     /**
-     * Internal function to check all known hashes.  Assumes that a valid entry
-     * has been found by find_entry() first.
+     * Pass the full path to a file to check as a [`PathBuf`] and verify that
+     * it matches the size stored in the [`Distinfo`].
+     *
+     * Returns the size if [`Ok`], otherwise return a [`VerifyError`].
      */
-    fn verify_checksums_internal(
-        &self,
-        path: &PathBuf,
-        entry: &Entry,
-    ) -> Result<(), CheckError> {
-        for c in &entry.checksums {
-            let mut f = File::open(path)?;
-            let hash = match is_patchfile(path) {
-                true => c.digest.hash_patch(&mut f)?,
-                false => c.digest.hash_file(&mut f)?,
-            };
-            if hash != c.hash {
-                return Err(CheckError::Checksum(
+    pub fn verify_size(&self, path: &PathBuf) -> Result<u64, VerifyError> {
+        let entry = self.find_entry(path)?;
+        if let Some(size) = entry.size {
+            let f = File::open(path)?;
+            let fsize = f.metadata()?.len();
+            if fsize != size {
+                return Err(VerifyError::Size(
                     entry.filename.clone(),
-                    c.digest.clone(),
-                    c.hash.clone(),
-                    hash,
+                    size,
+                    fsize,
                 ));
+            } else {
+                return Ok(size);
             }
         }
-        Ok(())
+        Err(VerifyError::MissingSize(path.to_path_buf()))
     }
     /**
      * Pass the full path to a file to check as a [`PathBuf`] and verify that
-     * it passes all known checks that we hold for it, otherwise return a
-     * [`CheckError`].  To check just the size, use [`verify_size`].
+     * it matches a specific [`Digest`] checksum stored in the [`Distinfo`].
      *
-     * [`verify_size`]: Distinfo::verify_size
-     */
-    pub fn verify_all(&self, path: &PathBuf) -> Result<(), CheckError> {
-        let entry = self.find_entry(path)?;
-        /*
-         * Size check is less expensive than checksums so comes first, and
-         * allow size entries to be missing (verify_size() is more strict)
-         * so that patch entries work as expected.
-         */
-        match self.verify_size_internal(path, entry) {
-            Ok(_) => {}
-            Err(CheckError::MissingSize(_)) => {}
-            Err(e) => return Err(e),
-        };
-        self.verify_checksums_internal(path, entry)?;
-        Ok(())
-    }
-    /**
-     * Pass the full path to a file to check as a [`PathBuf`] and verify that
-     * it matches the size stored in the [`Distinfo`], otherwise return a
-     * [`CheckError`].  For full verification including checksums use
-     * [`verify_all`].
+     * Return the [`Digest`] if [`Ok`], otherwise return a [`VerifyError`].
      *
-     * [`verify_all`]: Distinfo::verify_all
-     */
-    pub fn verify_size(&self, path: &PathBuf) -> Result<(), CheckError> {
-        let entry = self.find_entry(path)?;
-        self.verify_size_internal(path, entry)?;
-        Ok(())
-    }
-    /**
-     * Pass the full path to a file to check as a [`PathBuf`] and verify that
-     * it matches a specific [`Digest`] checksum stored in the [`Distinfo`],
-     * otherwise return a [`CheckError`].  For full verification including
-     * size use [`verify_all`].
+     * To verify all stored checksums use use [`verify_checksums`].
      *
-     * [`verify_all`]: Distinfo::verify_all
+     * [`verify_checksums`]: Distinfo::verify_checksums
      */
     pub fn verify_checksum(
         &self,
         path: &PathBuf,
         digest: Digest,
-    ) -> Result<(), CheckError> {
+    ) -> Result<Digest, VerifyError> {
         let entry = self.find_entry(path)?;
-        self.verify_checksum_internal(path, entry, digest)?;
-        Ok(())
+        self.verify_checksum_internal(path, entry, digest)
     }
     /**
      * Pass the full path to a file to check as a [`PathBuf`] and verify that
-     * it matches all of the checksums stored in the [`Distinfo`], otherwise
-     * return a [`CheckError`].  For full verification including size use
-     * [`verify_all`].
-     *
-     * [`verify_all`]: Distinfo::verify_all
+     * it matches all of the checksums stored in the [`Distinfo`].  Returns a
+     * [`Vec`] of [`Result`]s containing the [`Digest`] if [`Ok`], otherwise
+     * return a [`VerifyError`].
      */
-    pub fn verify_checksums(&self, path: &PathBuf) -> Result<(), CheckError> {
-        let entry = self.find_entry(path)?;
-        self.verify_checksums_internal(path, entry)?;
-        Ok(())
+    pub fn verify_checksums(
+        &self,
+        path: &PathBuf,
+    ) -> Vec<Result<Digest, VerifyError>> {
+        let entry = match self.find_entry(path) {
+            Ok(entry) => entry,
+            Err(e) => return vec![Err(e)],
+        };
+        let mut results = vec![];
+        for c in &entry.checksums {
+            results.push(self.verify_checksum_internal(path, entry, c.digest));
+        }
+        results
     }
 
     /**
