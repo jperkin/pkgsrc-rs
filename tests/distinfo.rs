@@ -17,7 +17,7 @@ fn test_distinfo() -> Result<(), CheckError> {
     assert_eq!(
         di.rcsid(),
         Some(OsString::from(
-            "$NetBSD: distinfo,v 1.15 2021/10/26 10:17:59 nia Exp $"
+            "$NetBSD: distinfo,v 1.1 1970/01/01 00:00:00 ken Exp $"
         ))
         .as_ref()
     );
