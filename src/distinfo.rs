@@ -105,6 +105,127 @@ pub struct Entry {
     pub checksums: Vec<Checksum>,
 }
 
+impl Entry {
+    /**
+     * Pass the full path to a file to check as a [`PathBuf`] and verify that
+     * it matches the size stored in the [`Distinfo`].
+     *
+     * Returns the size if [`Ok`], otherwise return a [`VerifyError`].
+     */
+    pub fn verify_size(&self, path: &PathBuf) -> Result<u64, VerifyError> {
+        if let Some(size) = self.size {
+            let f = File::open(path)?;
+            let fsize = f.metadata()?.len();
+            if fsize != size {
+                return Err(VerifyError::Size(
+                    self.filename.clone(),
+                    size,
+                    fsize,
+                ));
+            } else {
+                return Ok(size);
+            }
+        }
+        Err(VerifyError::MissingSize(path.to_path_buf()))
+    }
+
+    /**
+     * Internal function to check a specific hash.
+     */
+    fn verify_checksum_internal(
+        &self,
+        path: &PathBuf,
+        digest: Digest,
+    ) -> Result<Digest, VerifyError> {
+        for c in &self.checksums {
+            if digest != c.digest {
+                continue;
+            }
+            let mut f = File::open(path)?;
+            let hash = match is_patchfile(path) {
+                true => c.digest.hash_patch(&mut f)?,
+                false => c.digest.hash_file(&mut f)?,
+            };
+            if hash != c.hash {
+                return Err(VerifyError::Checksum(
+                    self.filename.clone(),
+                    c.digest,
+                    c.hash.clone(),
+                    hash,
+                ));
+            } else {
+                return Ok(digest);
+            }
+        }
+        Err(VerifyError::MissingChecksum(path.to_path_buf(), digest))
+    }
+
+    /**
+     * Pass the full path to a file to check as a [`PathBuf`] and verify that
+     * it matches a specific [`Digest`] checksum stored in the [`Distinfo`].
+     *
+     * Return the [`Digest`] if [`Ok`], otherwise return a [`VerifyError`].
+     *
+     * To verify all stored checksums use use [`verify_checksums`].
+     *
+     * [`verify_checksums`]: Distinfo::verify_checksums
+     */
+    pub fn verify_checksum(
+        &self,
+        path: &PathBuf,
+        digest: Digest,
+    ) -> Result<Digest, VerifyError> {
+        self.verify_checksum_internal(path, digest)
+    }
+
+    /**
+     * Pass the full path to a file to check as a [`PathBuf`] and verify that
+     * it matches all of the checksums stored in the [`Distinfo`].  Returns a
+     * [`Vec`] of [`Result`]s containing the [`Digest`] if [`Ok`], otherwise
+     * return a [`VerifyError`].
+     */
+    pub fn verify_checksums(
+        &self,
+        path: &PathBuf,
+    ) -> Vec<Result<Digest, VerifyError>> {
+        let mut results = vec![];
+        for c in &self.checksums {
+            results.push(self.verify_checksum_internal(path, c.digest));
+        }
+        results
+    }
+
+    /**
+     * Convert [`Entry`] into a byte representation suitable for writing to
+     * a `distinfo` file.  The contents will be ordered as expected.
+     */
+    pub fn as_bytes(&self) -> Vec<u8> {
+        let mut bytes = Vec::new();
+        for c in &self.checksums {
+            bytes.extend_from_slice(
+                format!(
+                    "{} ({}) = {}\n",
+                    c.digest,
+                    self.filename.display(),
+                    c.hash
+                )
+                .as_bytes(),
+            );
+        }
+        if let Some(size) = self.size {
+            bytes.extend_from_slice(
+                format!(
+                    "Size ({}) = {} bytes\n",
+                    self.filename.display(),
+                    size
+                )
+                .as_bytes(),
+            );
+        }
+        bytes
+    }
+}
+
 /**
  * Parse a single `distinfo` line into a valid line type.  This is an
  * intermediate format, as it doesn't serve any useful function to the user,
@@ -187,6 +308,7 @@ impl Distinfo {
         let di: Distinfo = Default::default();
         di
     }
+
     /**
      * Return an [`Option`] containing either a valid `$NetBSD: ...` RCS Id
      * line, or None if one was not found.
@@ -197,8 +319,9 @@ impl Distinfo {
             None => None,
         }
     }
+
     /**
-     * Return a matching distfile entry if found, otherwise [`None`].
+     * Return a matching distfile [`Entry`] if found, otherwise [`None`].
      */
     pub fn get_distfile(&self, name: &PathBuf) -> Option<&Entry> {
         self.distfiles.iter().find(|&e| e.filename == *name)
@@ -206,8 +329,8 @@ impl Distinfo {
     /**
      * Internal function to find an [`Entry`] in the current [`Distinfo`]
      * given a [`Path`].  [`Distinfo`] distfile entries may include a
-     * directory component (`DIST_SUBDIR`) so we need to check all possible
-     * paths.
+     * directory component (`DIST_SUBDIR`) so this function checks all
+     * possible paths.
      *
      * Supports both distfiles and patchfiles.
      */
@@ -228,38 +351,7 @@ impl Distinfo {
         }
         Err(VerifyError::NotFound)
     }
-    /**
-     * Internal function to check a specific hash.  Assumes that a valid entry
-     * has been found by find_entry() first.
-     */
-    fn verify_checksum_internal(
-        &self,
-        path: &PathBuf,
-        entry: &Entry,
-        digest: Digest,
-    ) -> Result<Digest, VerifyError> {
-        for c in &entry.checksums {
-            if digest != c.digest {
-                continue;
-            }
-            let mut f = File::open(path)?;
-            let hash = match is_patchfile(path) {
-                true => c.digest.hash_patch(&mut f)?,
-                false => c.digest.hash_file(&mut f)?,
-            };
-            if hash != c.hash {
-                return Err(VerifyError::Checksum(
-                    entry.filename.clone(),
-                    c.digest,
-                    c.hash.clone(),
-                    hash,
-                ));
-            } else {
-                return Ok(digest);
-            }
-        }
-        Err(VerifyError::MissingChecksum(path.to_path_buf(), digest))
-    }
+
     /**
      * Pass the full path to a file to check as a [`PathBuf`] and verify that
      * it matches the size stored in the [`Distinfo`].
@@ -268,21 +360,9 @@ impl Distinfo {
      */
     pub fn verify_size(&self, path: &PathBuf) -> Result<u64, VerifyError> {
         let entry = self.find_entry(path)?;
-        if let Some(size) = entry.size {
-            let f = File::open(path)?;
-            let fsize = f.metadata()?.len();
-            if fsize != size {
-                return Err(VerifyError::Size(
-                    entry.filename.clone(),
-                    size,
-                    fsize,
-                ));
-            } else {
-                return Ok(size);
-            }
-        }
-        Err(VerifyError::MissingSize(path.to_path_buf()))
+        entry.verify_size(path)
     }
+
     /**
      * Pass the full path to a file to check as a [`PathBuf`] and verify that
      * it matches a specific [`Digest`] checksum stored in the [`Distinfo`].
@@ -299,8 +379,9 @@ impl Distinfo {
         digest: Digest,
     ) -> Result<Digest, VerifyError> {
         let entry = self.find_entry(path)?;
-        self.verify_checksum_internal(path, entry, digest)
+        entry.verify_checksum_internal(path, digest)
     }
+
     /**
      * Pass the full path to a file to check as a [`PathBuf`] and verify that
      * it matches all of the checksums stored in the [`Distinfo`].  Returns a
@@ -317,7 +398,7 @@ impl Distinfo {
         };
         let mut results = vec![];
         for c in &entry.checksums {
-            results.push(self.verify_checksum_internal(path, entry, c.digest));
+            results.push(entry.verify_checksum_internal(path, c.digest));
         }
         results
     }
@@ -434,38 +515,6 @@ impl Distinfo {
             }
         }
 
-        bytes
-    }
-}
-
-impl Entry {
-    /**
-     * Convert [`Entry`] into a byte representation suitable for writing to
-     * a `distinfo` file.  The contents will be ordered as expected.
-     */
-    pub fn as_bytes(&self) -> Vec<u8> {
-        let mut bytes = Vec::new();
-        for c in &self.checksums {
-            bytes.extend_from_slice(
-                format!(
-                    "{} ({}) = {}\n",
-                    c.digest,
-                    self.filename.display(),
-                    c.hash
-                )
-                .as_bytes(),
-            );
-        }
-        if let Some(size) = self.size {
-            bytes.extend_from_slice(
-                format!(
-                    "Size ({}) = {} bytes\n",
-                    self.filename.display(),
-                    size
-                )
-                .as_bytes(),
-            );
-        }
         bytes
     }
 }
