@@ -412,6 +412,30 @@ impl Distinfo {
     }
 
     /**
+     * Calculate size of a [`PathBuf`].
+     */
+    pub fn calculate_size(path: &PathBuf) -> Result<u64, DistinfoError> {
+        let file = File::open(path)?;
+        Ok(file.metadata()?.len())
+    }
+
+    /**
+     * Calculate [`Digest`] hash for a [`Path`].  The hash will differ depending on the
+     * [`EntryType`] of the supplied path.
+     */
+    pub fn calculate_checksum(
+        path: &Path,
+        digest: Digest,
+    ) -> Result<String, DistinfoError> {
+        let filetype = EntryType::from(path);
+        let mut f = File::open(path)?;
+        match filetype {
+            EntryType::Distfile => Ok(digest.hash_file(&mut f)?),
+            EntryType::Patchfile => Ok(digest.hash_patch(&mut f)?),
+        }
+    }
+
+    /**
      * Internal function to find an [`Entry`] in the current [`Distinfo`]
      * given a [`Path`].  [`Distinfo`] distfile entries may include a
      * directory component (`DIST_SUBDIR`) so this function checks all
