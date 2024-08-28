@@ -80,6 +80,18 @@ pub struct Checksum {
     pub hash: String,
 }
 
+impl Checksum {
+    /**
+     * Create a new empty [`Checksum`] entry using the specified [`Digest`].
+     */
+    pub fn new(digest: Digest) -> Checksum {
+        Checksum {
+            digest,
+            hash: String::new(),
+        }
+    }
+}
+
 /**
  * Type of this [`Entry`], either [`Distfile`] (the default) or [`Patchfile`].
  *
@@ -433,6 +445,27 @@ impl Distinfo {
             EntryType::Distfile => Ok(digest.hash_file(&mut f)?),
             EntryType::Patchfile => Ok(digest.hash_patch(&mut f)?),
         }
+    }
+
+    /**
+     * Adds a new [`Entry`] to the [`Distinfo`].  Returns a [`bool`]
+     * indicating whether the entry was newly created or not.  As the
+     * underlying collection is an [`IndexMap`], if an entry with the same
+     * [`Path`] already exists then its values are updated.
+     */
+    pub fn insert(&mut self, path: &Path, checksums: Vec<Checksum>) -> bool {
+        let filetype = EntryType::from(path);
+        let map = match filetype {
+            EntryType::Distfile => &mut self.distfiles,
+            EntryType::Patchfile => &mut self.patchfiles,
+        };
+        let entry = Entry {
+            filename: path.to_path_buf(),
+            size: None,
+            checksums,
+            filetype,
+        };
+        map.insert(path.to_path_buf(), entry).is_none()
     }
 
     /**
@@ -845,5 +878,21 @@ mod tests {
         assert!(matches!(p, Some(_)));
         assert_eq!(None, di.get_distfile(&PathBuf::from("foo-23.8.1.tar.gz")));
         assert_eq!(None, di.get_patchfile(&PathBuf::from("patch-Makefile")));
+    }
+
+    #[test]
+    fn test_construct() {
+        let mut di = Distinfo::new();
+        let mut c: Vec<Checksum> = Vec::new();
+        c.push(Checksum::new(Digest::BLAKE2s));
+        c.push(Checksum::new(Digest::SHA512));
+        assert_eq!(di.insert(&PathBuf::from("foo"), c.clone()), true);
+        assert_eq!(di.insert(&PathBuf::from("foo"), c.clone()), false);
+        di.insert(
+            &PathBuf::from("patch-Makefile"),
+            vec![Checksum::new(Digest::SHA1)],
+        );
+        assert_eq!(di.distfiles()[0].filetype, EntryType::Distfile);
+        assert_eq!(di.patchfiles()[0].filetype, EntryType::Patchfile);
     }
 }
