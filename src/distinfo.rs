@@ -260,16 +260,17 @@ pub struct Distinfo {
      */
     rcsid: Option<OsString>,
     /**
-     * A [`Vec`] of [`Entry`] entries for all source distfiles used by the
-     * package.  These should store both checksums and size information.
+     * An [`IndexMap`] of [`Entry`] entries for all source distfiles used by
+     * the package, keyed by [`PathBuf`].  These should store both checksums
+     * and size information.
      */
-    distfiles: Vec<Entry>,
+    distfiles: IndexMap<PathBuf, Entry>,
     /**
-     * A [`Vec`] of [`Entry`] entries for any pkgsrc patches applied
-     * to the extracted source code.  These currently do not contain size
-     * information.
+     * An [`IndexMap`] of [`Entry`] entries for any pkgsrc patches applied to
+     * the extracted source code, keyed by [`PathBuf`].  These currently do
+     * not contain size information.
      */
-    patchfiles: Vec<Entry>,
+    patchfiles: IndexMap<PathBuf, Entry>,
 }
 
 /**
@@ -324,8 +325,30 @@ impl Distinfo {
      * Return a matching distfile [`Entry`] if found, otherwise [`None`].
      */
     pub fn get_distfile(&self, name: &PathBuf) -> Option<&Entry> {
-        self.distfiles.iter().find(|&e| e.filename == *name)
+        self.distfiles.get(name)
     }
+
+    /**
+     * Return a matching patchfile [`Entry`] if found, otherwise [`None`].
+     */
+    pub fn get_patchfile(&self, name: &PathBuf) -> Option<&Entry> {
+        self.patchfiles.get(name)
+    }
+
+    /**
+     * Return a [`Vec`] of references to distfile entries, if any.
+     */
+    pub fn distfiles(&self) -> Vec<&Entry> {
+        self.distfiles.values().collect()
+    }
+
+    /**
+     * Return a [`Vec`] of references to patchfile entries, if any.
+     */
+    pub fn patchfiles(&self) -> Vec<&Entry> {
+        self.patchfiles.values().collect()
+    }
+
     /**
      * Internal function to find an [`Entry`] in the current [`Distinfo`]
      * given a [`Path`].  [`Distinfo`] distfile entries may include a
@@ -404,35 +427,11 @@ impl Distinfo {
     }
 
     /**
-     * Return a matching patch entry if found, otherwise [`None`].
-     */
-    pub fn get_patchfile(&self, name: &PathBuf) -> Option<&Entry> {
-        self.patchfiles.iter().find(|&e| e.filename == *name)
-    }
-    /**
-     * Return a [`Vec`] of references to distfile entries, if any.
-     */
-    pub fn distfiles(&self) -> Vec<&Entry> {
-        self.distfiles.iter().collect()
-    }
-    /**
-     * Return a [`Vec`] of references to patchfile entries, if any.
-     */
-    pub fn patchfiles(&self) -> Vec<&Entry> {
-        self.patchfiles.iter().collect()
-    }
-    /**
      * Read a [`Vec`] of [`u8`] bytes and parse for [`Distinfo`] entries.  If
      * nothing is found then an empty [`Distinfo`] is returned.
      */
     pub fn from_bytes(bytes: &[u8]) -> Distinfo {
-        let mut distinfo = Distinfo {
-            rcsid: None,
-            distfiles: vec![],
-            patchfiles: vec![],
-        };
-        let mut distfiles: IndexMap<PathBuf, Entry> = IndexMap::new();
-        let mut patchfiles: IndexMap<PathBuf, Entry> = IndexMap::new();
+        let mut distinfo = Distinfo::new();
         for line in bytes.split(|c| *c == b'\n') {
             match Line::from_bytes(line) {
                 /*
@@ -442,28 +441,26 @@ impl Distinfo {
                 Line::RcsId(s) => distinfo.rcsid = Some(s),
                 Line::Size(p, v) => {
                     match is_patchfile(&p) {
-                        true => update_size(&mut patchfiles, &p, v),
-                        false => update_size(&mut distfiles, &p, v),
+                        true => update_size(&mut distinfo.patchfiles, &p, v),
+                        false => update_size(&mut distinfo.distfiles, &p, v),
                     };
                 }
                 Line::Checksum(d, p, s) => {
                     match is_patchfile(&p) {
-                        true => update_checksum(&mut patchfiles, &p, d, s),
-                        false => update_checksum(&mut distfiles, &p, d, s),
+                        true => {
+                            update_checksum(&mut distinfo.patchfiles, &p, d, s)
+                        }
+                        false => {
+                            update_checksum(&mut distinfo.distfiles, &p, d, s)
+                        }
                     };
                 }
                 Line::None => {}
             }
         }
-        for (_, v) in distfiles {
-            distinfo.distfiles.push(v);
-        }
-        for (_, v) in patchfiles {
-            distinfo.patchfiles.push(v);
-        }
-
         distinfo
     }
+
     /**
      * Convert [`Distinfo`] into a byte representation suitable for writing to
      * a `distinfo` file.  The contents will be ordered as expected.
@@ -477,7 +474,7 @@ impl Distinfo {
         }
         bytes.extend_from_slice("\n\n".as_bytes());
 
-        for q in &self.distfiles {
+        for q in self.distfiles.values() {
             for c in &q.checksums {
                 bytes.extend_from_slice(
                     format!(
@@ -501,7 +498,7 @@ impl Distinfo {
             }
         }
 
-        for q in &self.patchfiles {
+        for q in self.patchfiles.values() {
             for c in &q.checksums {
                 bytes.extend_from_slice(
                     format!(
