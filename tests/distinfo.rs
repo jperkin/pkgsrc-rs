@@ -8,7 +8,7 @@ use std::path::PathBuf;
  * Perform size and checksum tests against a distfile entry.
  */
 #[test]
-fn test_distinfo_distfile_checks() -> Result<(), VerifyError> {
+fn test_distinfo_distfile_checks() -> Result<(), DistinfoError> {
     let mut distinfo = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     distinfo.push("tests/data/distinfo");
     let di = Distinfo::from_bytes(&fs::read(&distinfo).unwrap());
@@ -21,7 +21,7 @@ fn test_distinfo_distfile_checks() -> Result<(), VerifyError> {
     di.verify_checksum(&file, Digest::BLAKE2s)?;
     assert!(matches!(
         di.verify_checksum(&file, Digest::RMD160),
-        Err(VerifyError::MissingChecksum(_, _))
+        Err(DistinfoError::MissingChecksum(_, _))
     ));
     for result in di.verify_checksums(&file) {
         assert!(result.is_ok());
@@ -34,7 +34,7 @@ fn test_distinfo_distfile_checks() -> Result<(), VerifyError> {
  * Perform checksum tests against a patchfile entry.
  */
 #[test]
-fn test_distinfo_patchfile_checks() -> Result<(), VerifyError> {
+fn test_distinfo_patchfile_checks() -> Result<(), DistinfoError> {
     let mut distinfo = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     distinfo.push("tests/data/distinfo");
     let di = Distinfo::from_bytes(&fs::read(&distinfo).unwrap());
@@ -44,12 +44,12 @@ fn test_distinfo_patchfile_checks() -> Result<(), VerifyError> {
 
     assert!(matches!(
         di.verify_size(&file),
-        Err(VerifyError::MissingSize(_))
+        Err(DistinfoError::MissingSize(_))
     ));
     di.verify_checksum(&file, Digest::SHA1)?;
     assert!(matches!(
         di.verify_checksum(&file, Digest::BLAKE2s),
-        Err(VerifyError::MissingChecksum(_, _))
+        Err(DistinfoError::MissingChecksum(_, _))
     ));
     for result in di.verify_checksums(&file) {
         assert!(result.is_ok());
@@ -62,7 +62,7 @@ fn test_distinfo_patchfile_checks() -> Result<(), VerifyError> {
  * Check errors from a bad distfile file.
  */
 #[test]
-fn test_distinfo_bad_distinfo() -> Result<(), VerifyError> {
+fn test_distinfo_bad_distinfo() -> Result<(), DistinfoError> {
     let mut distinfo = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     distinfo.push("tests/data/distinfo.bad");
     let di = Distinfo::from_bytes(&fs::read(&distinfo).unwrap());
@@ -72,19 +72,19 @@ fn test_distinfo_bad_distinfo() -> Result<(), VerifyError> {
 
     assert!(matches!(
         di.verify_size(&file),
-        Err(VerifyError::Size(_, _, _))
+        Err(DistinfoError::Size(_, _, _))
     ));
     assert!(matches!(
         di.verify_checksum(&file, Digest::BLAKE2s),
-        Err(VerifyError::Checksum(_, _, _, _))
+        Err(DistinfoError::Checksum(_, _, _, _))
     ));
     assert!(matches!(
         di.verify_checksum(&file, Digest::SHA512),
-        Err(VerifyError::MissingChecksum(_, _))
+        Err(DistinfoError::MissingChecksum(_, _))
     ));
     assert!(matches!(
         di.verify_checksums(&file)[0],
-        Err(VerifyError::Checksum(_, _, _, _))
+        Err(DistinfoError::Checksum(_, _, _, _))
     ));
 
     Ok(())
@@ -95,29 +95,29 @@ fn test_distinfo_bad_distinfo() -> Result<(), VerifyError> {
  * a NotFound error, by trying to pass the distinfo file itself as input.
  */
 #[test]
-fn test_distinfo_notfound() -> Result<(), VerifyError> {
+fn test_distinfo_notfound() -> Result<(), DistinfoError> {
     let mut distinfo = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     distinfo.push("tests/data/distinfo");
     let di = Distinfo::from_bytes(&fs::read(&distinfo).unwrap());
 
     assert!(matches!(
         di.verify_size(&distinfo),
-        Err(VerifyError::NotFound)
+        Err(DistinfoError::NotFound)
     ));
     assert!(matches!(
         di.verify_checksum(&distinfo, Digest::BLAKE2s),
-        Err(VerifyError::NotFound)
+        Err(DistinfoError::NotFound)
     ));
     assert!(matches!(
         di.verify_checksums(&distinfo)[0],
-        Err(VerifyError::NotFound)
+        Err(DistinfoError::NotFound)
     ));
 
     Ok(())
 }
 
 #[test]
-fn test_distinfo_contents() -> Result<(), VerifyError> {
+fn test_distinfo_contents() -> Result<(), DistinfoError> {
     let mut distinfo = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     distinfo.push("tests/data/distinfo");
     let di = Distinfo::from_bytes(&fs::read(&distinfo).unwrap());
@@ -157,7 +157,7 @@ fn test_distinfo_contents() -> Result<(), VerifyError> {
  * handled correctly.
  */
 #[test]
-fn test_distinfo_subdir() -> Result<(), VerifyError> {
+fn test_distinfo_subdir() -> Result<(), DistinfoError> {
     let mut distinfo = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     distinfo.push("tests/data/distinfo.subdir");
     let di = Distinfo::from_bytes(&fs::read(&distinfo).unwrap());

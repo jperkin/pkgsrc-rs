@@ -172,14 +172,14 @@ impl Entry {
      * Pass the full path to a file to check as a [`PathBuf`] and verify that
      * it matches the size stored in the [`Distinfo`].
      *
-     * Returns the size if [`Ok`], otherwise return a [`VerifyError`].
+     * Returns the size if [`Ok`], otherwise return a [`DistinfoError`].
      */
-    pub fn verify_size(&self, path: &PathBuf) -> Result<u64, VerifyError> {
+    pub fn verify_size(&self, path: &PathBuf) -> Result<u64, DistinfoError> {
         if let Some(size) = self.size {
             let f = File::open(path)?;
             let fsize = f.metadata()?.len();
             if fsize != size {
-                return Err(VerifyError::Size(
+                return Err(DistinfoError::Size(
                     self.filename.clone(),
                     size,
                     fsize,
@@ -188,7 +188,7 @@ impl Entry {
                 return Ok(size);
             }
         }
-        Err(VerifyError::MissingSize(path.to_path_buf()))
+        Err(DistinfoError::MissingSize(path.to_path_buf()))
     }
 
     /**
@@ -198,7 +198,7 @@ impl Entry {
         &self,
         path: &PathBuf,
         digest: Digest,
-    ) -> Result<Digest, VerifyError> {
+    ) -> Result<Digest, DistinfoError> {
         for c in &self.checksums {
             if digest != c.digest {
                 continue;
@@ -209,7 +209,7 @@ impl Entry {
                 EntryType::Patchfile => c.digest.hash_patch(&mut f)?,
             };
             if hash != c.hash {
-                return Err(VerifyError::Checksum(
+                return Err(DistinfoError::Checksum(
                     self.filename.clone(),
                     c.digest,
                     c.hash.clone(),
@@ -219,14 +219,14 @@ impl Entry {
                 return Ok(digest);
             }
         }
-        Err(VerifyError::MissingChecksum(path.to_path_buf(), digest))
+        Err(DistinfoError::MissingChecksum(path.to_path_buf(), digest))
     }
 
     /**
      * Pass the full path to a file to check as a [`PathBuf`] and verify that
      * it matches a specific [`Digest`] checksum stored in the [`Distinfo`].
      *
-     * Return the [`Digest`] if [`Ok`], otherwise return a [`VerifyError`].
+     * Return the [`Digest`] if [`Ok`], otherwise return a [`DistinfoError`].
      *
      * To verify all stored checksums use use [`verify_checksums`].
      *
@@ -236,7 +236,7 @@ impl Entry {
         &self,
         path: &PathBuf,
         digest: Digest,
-    ) -> Result<Digest, VerifyError> {
+    ) -> Result<Digest, DistinfoError> {
         self.verify_checksum_internal(path, digest)
     }
 
@@ -244,12 +244,12 @@ impl Entry {
      * Pass the full path to a file to check as a [`PathBuf`] and verify that
      * it matches all of the checksums stored in the [`Distinfo`].  Returns a
      * [`Vec`] of [`Result`]s containing the [`Digest`] if [`Ok`], otherwise
-     * return a [`VerifyError`].
+     * return a [`DistinfoError`].
      */
     pub fn verify_checksums(
         &self,
         path: &PathBuf,
-    ) -> Vec<Result<Digest, VerifyError>> {
+    ) -> Vec<Result<Digest, DistinfoError>> {
         let mut results = vec![];
         for c in &self.checksums {
             results.push(self.verify_checksum_internal(path, c.digest));
@@ -336,10 +336,10 @@ pub struct Distinfo {
 }
 
 /**
- * Possible errors returned by verification functions.
+ * Possible errors returned by various [`Distinfo`] operations.
  */
 #[derive(Debug, Error)]
-pub enum VerifyError {
+pub enum DistinfoError {
     /// Transparent [`io::Error`] error.
     #[error(transparent)]
     Io(#[from] io::Error),
@@ -419,7 +419,7 @@ impl Distinfo {
      *
      * Supports both distfiles and patchfiles.
      */
-    fn find_entry(&self, path: &Path) -> Result<&Entry, VerifyError> {
+    fn find_entry(&self, path: &Path) -> Result<&Entry, DistinfoError> {
         let mut file = PathBuf::new();
         for component in path.iter().rev() {
             if file.parent().is_none() {
@@ -434,7 +434,7 @@ impl Distinfo {
                 return Ok(e);
             };
         }
-        Err(VerifyError::NotFound)
+        Err(DistinfoError::NotFound)
     }
 
     /**
@@ -489,9 +489,9 @@ impl Distinfo {
      * Pass the full path to a file to check as a [`PathBuf`] and verify that
      * it matches the size stored in the [`Distinfo`].
      *
-     * Returns the size if [`Ok`], otherwise return a [`VerifyError`].
+     * Returns the size if [`Ok`], otherwise return a [`DistinfoError`].
      */
-    pub fn verify_size(&self, path: &PathBuf) -> Result<u64, VerifyError> {
+    pub fn verify_size(&self, path: &PathBuf) -> Result<u64, DistinfoError> {
         let entry = self.find_entry(path)?;
         entry.verify_size(path)
     }
@@ -500,7 +500,7 @@ impl Distinfo {
      * Pass the full path to a file to check as a [`PathBuf`] and verify that
      * it matches a specific [`Digest`] checksum stored in the [`Distinfo`].
      *
-     * Return the [`Digest`] if [`Ok`], otherwise return a [`VerifyError`].
+     * Return the [`Digest`] if [`Ok`], otherwise return a [`DistinfoError`].
      *
      * To verify all stored checksums use use [`verify_checksums`].
      *
@@ -510,7 +510,7 @@ impl Distinfo {
         &self,
         path: &PathBuf,
         digest: Digest,
-    ) -> Result<Digest, VerifyError> {
+    ) -> Result<Digest, DistinfoError> {
         let entry = self.find_entry(path)?;
         entry.verify_checksum_internal(path, digest)
     }
@@ -519,12 +519,12 @@ impl Distinfo {
      * Pass the full path to a file to check as a [`PathBuf`] and verify that
      * it matches all of the checksums stored in the [`Distinfo`].  Returns a
      * [`Vec`] of [`Result`]s containing the [`Digest`] if [`Ok`], otherwise
-     * return a [`VerifyError`].
+     * return a [`DistinfoError`].
      */
     pub fn verify_checksums(
         &self,
         path: &PathBuf,
-    ) -> Vec<Result<Digest, VerifyError>> {
+    ) -> Vec<Result<Digest, DistinfoError>> {
         let entry = match self.find_entry(path) {
             Ok(entry) => entry,
             Err(e) => return vec![Err(e)],
