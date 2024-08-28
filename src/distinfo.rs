@@ -81,6 +81,64 @@ pub struct Checksum {
 }
 
 /**
+ * Type of this [`Entry`], either [`Distfile`] (the default) or [`Patchfile`].
+ *
+ * [`Distfile`]: EntryType::Distfile
+ * [`Patchfile`]: EntryType::Patchfile
+ */
+#[derive(Clone, Debug, Default, Eq, Hash, PartialEq)]
+pub enum EntryType {
+    /**
+     * A source distribution file.
+     */
+    #[default]
+    Distfile,
+    /**
+     * A pkgsrc patch file.
+     */
+    Patchfile,
+}
+
+impl From<&Path> for EntryType {
+    /*
+     * Determine whether a supplied path is a distfile or patchfile.  Unless
+     * absolutely sure this is a valid patchfile, default to distfile.
+     */
+    fn from(path: &Path) -> Self {
+        let Some(p) = path.file_name() else {
+            return EntryType::Distfile;
+        };
+        let s = p.to_string_lossy();
+        /*
+         * Skip local patches or temporary patch files created by e.g. mkpatches.
+         */
+        if s.starts_with("patch-local-")
+            || s.ends_with(".orig")
+            || s.ends_with(".rej")
+            || s.ends_with("~")
+        {
+            return EntryType::Distfile;
+        }
+        /*
+         * Match valid patch filenames.
+         */
+        if s.starts_with("patch-")
+            || (s.starts_with("emul-") && s.contains("-patch-"))
+        {
+            /*
+             * This is really janky, but we need to skip distfiles for devel/patch
+             * itself, e.g. "patch-2.7.6.tar.xz".
+             */
+            if !s.contains(".tar.") {
+                return EntryType::Patchfile;
+            }
+        }
+
+        EntryType::Distfile
+    }
+}
+
+/**
  * [`Entry`] contains the information stored about each unique file listed in
  * the distinfo file.
  */
@@ -103,6 +161,10 @@ pub struct Entry {
      * order of appearance in the `distinfo` file.
      */
     pub checksums: Vec<Checksum>,
+    /**
+     * Whether this entry is a distfile or a patchfile.
+     */
+    pub filetype: EntryType,
 }
 
 impl Entry {
@@ -142,9 +204,9 @@ impl Entry {
                 continue;
             }
             let mut f = File::open(path)?;
-            let hash = match is_patchfile(path) {
-                true => c.digest.hash_patch(&mut f)?,
-                false => c.digest.hash_file(&mut f)?,
+            let hash = match self.filetype {
+                EntryType::Distfile => c.digest.hash_file(&mut f)?,
+                EntryType::Patchfile => c.digest.hash_patch(&mut f)?,
             };
             if hash != c.hash {
                 return Err(VerifyError::Checksum(
@@ -376,6 +438,54 @@ impl Distinfo {
     }
 
     /**
+     * Internal functions to update or insert entries in the current
+     * [`Distinfo`], given a [`Path`] and its value data.
+     */
+    fn update_size(&mut self, path: &Path, size: u64) {
+        let filetype = EntryType::from(path);
+        let map = match filetype {
+            EntryType::Distfile => &mut self.distfiles,
+            EntryType::Patchfile => &mut self.patchfiles,
+        };
+        match map.get_mut(path) {
+            Some(entry) => entry.size = Some(size),
+            None => {
+                map.insert(
+                    path.to_path_buf(),
+                    Entry {
+                        filename: path.to_path_buf(),
+                        size: Some(size),
+                        filetype,
+                        ..Default::default()
+                    },
+                );
+            }
+        };
+    }
+    fn update_checksum(&mut self, path: &Path, digest: Digest, hash: String) {
+        let filetype = EntryType::from(path);
+        let map = match filetype {
+            EntryType::Distfile => &mut self.distfiles,
+            EntryType::Patchfile => &mut self.patchfiles,
+        };
+        match map.get_mut(path) {
+            Some(entry) => entry.checksums.push(Checksum { digest, hash }),
+            None => {
+                let v: Vec<Checksum> = vec![Checksum { digest, hash }];
+                map.insert(
+                    path.to_path_buf(),
+                    Entry {
+                        filename: path.to_path_buf(),
+                        checksums: v,
+                        filetype,
+                        ..Default::default()
+                    },
+                );
+            }
+        };
+    }
+
+    /**
      * Pass the full path to a file to check as a [`PathBuf`] and verify that
      * it matches the size stored in the [`Distinfo`].
      *
@@ -440,20 +550,10 @@ impl Distinfo {
                  */
                 Line::RcsId(s) => distinfo.rcsid = Some(s),
                 Line::Size(p, v) => {
-                    match is_patchfile(&p) {
-                        true => update_size(&mut distinfo.patchfiles, &p, v),
-                        false => update_size(&mut distinfo.distfiles, &p, v),
-                    };
+                    distinfo.update_size(&p, v);
                 }
                 Line::Checksum(d, p, s) => {
-                    match is_patchfile(&p) {
-                        true => {
-                            update_checksum(&mut distinfo.patchfiles, &p, d, s)
-                        }
-                        false => {
-                            update_checksum(&mut distinfo.distfiles, &p, d, s)
-                        }
-                    };
+                    distinfo.update_checksum(&p, d, s);
                 }
                 Line::None => {}
             }
@@ -514,44 +614,6 @@ impl Distinfo {
 
         bytes
     }
-}
-
-fn update_checksum(
-    hash: &mut IndexMap<PathBuf, Entry>,
-    p: &Path,
-    d: Digest,
-    c: String,
-) {
-    match hash.get_mut(p) {
-        Some(h) => h.checksums.push(Checksum { digest: d, hash: c }),
-        None => {
-            let v: Vec<Checksum> = vec![Checksum { digest: d, hash: c }];
-            hash.insert(
-                p.to_path_buf(),
-                Entry {
-                    filename: p.to_path_buf(),
-                    checksums: v,
-                    ..Default::default()
-                },
-            );
-        }
-    };
-}
-
-fn update_size(hash: &mut IndexMap<PathBuf, Entry>, p: &Path, v: u64) {
-    match hash.get_mut(p) {
-        Some(h) => h.size = Some(v),
-        None => {
-            hash.insert(
-                p.to_path_buf(),
-                Entry {
-                    filename: p.to_path_buf(),
-                    size: Some(v),
-                    ..Default::default()
-                },
-            );
-        }
-    };
 }
 
 impl Line {
@@ -650,45 +712,6 @@ impl Line {
         }
         Line::None
     }
-}
-
-/*
- * Determine whether a supplied path is a patch file.
- */
-fn is_patchfile(path: &Path) -> bool {
-    let Some(p) = path.file_name() else {
-        return false;
-    };
-    let s = p.to_string_lossy();
-    /*
-     * Skip local patches or temporary patch files created by e.g. mkpatches.
-     */
-    if s.starts_with("patch-local-")
-        || s.ends_with(".orig")
-        || s.ends_with(".rej")
-        || s.ends_with("~")
-    {
-        return false;
-    }
-    /*
-     * Match valid patch filenames.
-     */
-    if s.starts_with("patch-")
-        || (s.starts_with("emul-") && s.contains("-patch-"))
-    {
-        /*
-         * This is really janky, but we need to skip distfiles for devel/patch
-         * itself, e.g. "patch-2.7.6.tar.xz".
-         */
-        if !s.contains(".tar.") {
-            return true;
-        }
-    }
-
-    /*
-     * Anything else is invalid.
-     */
-    false
 }
 
 #[cfg(test)]
