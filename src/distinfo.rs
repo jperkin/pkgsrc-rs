@@ -84,7 +84,7 @@ pub struct Checksum {
  * [`Entry`] contains the information stored about each unique file listed in
  * the distinfo file.
  */
-#[derive(Clone, Debug, Default, Eq, PartialEq)]
+#[derive(Clone, Debug, Default, Eq, Hash, PartialEq)]
 pub struct Entry {
     /**
      * Path relative to a certain directory (usually `DISTDIR`) where this
