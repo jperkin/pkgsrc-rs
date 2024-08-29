@@ -900,16 +900,34 @@ mod tests {
     #[test]
     fn test_construct() {
         let mut di = Distinfo::new();
-        let mut c: Vec<Checksum> = Vec::new();
-        c.push(Checksum::new(Digest::BLAKE2s));
-        c.push(Checksum::new(Digest::SHA512));
-        assert_eq!(di.insert(&PathBuf::from("foo"), c.clone()), true);
-        assert_eq!(di.insert(&PathBuf::from("foo"), c.clone()), false);
-        di.insert(
-            &PathBuf::from("patch-Makefile"),
-            vec![Checksum::new(Digest::SHA1)],
-        );
+
+        let mut distsums: Vec<Checksum> = Vec::new();
+        distsums.push(Checksum::new(Digest::BLAKE2s, String::new()));
+        distsums.push(Checksum::new(Digest::SHA512, String::new()));
+
+        let distfile = PathBuf::from("foo.tar.gz");
+        let distpath = PathBuf::from("/distfiles/foo.tar.gz");
+
+        let entry = Entry::new(distfile, distpath, distsums, None);
+
+        /* First insert is created, returns true */
+        assert_eq!(di.insert(entry.clone()), true);
+
+        /* Second insert is an update, returns false */
+        assert_eq!(di.insert(entry.clone()), false);
+
         assert_eq!(di.distfiles()[0].filetype, EntryType::Distfile);
+        assert_eq!(di.distfiles().len(), 1);
+
+        let mut patchsums: Vec<Checksum> = Vec::new();
+        patchsums.push(Checksum::new(Digest::SHA1, String::new()));
+
+        let patchfile = PathBuf::from("patch-Makefile");
+        let patchpath = PathBuf::from("patches/patch-Makefile");
+
+        di.insert(Entry::new(patchfile, patchpath, patchsums, None));
+
+        assert_eq!(di.patchfiles().len(), 1);
         assert_eq!(di.patchfiles()[0].filetype, EntryType::Patchfile);
     }
 }
