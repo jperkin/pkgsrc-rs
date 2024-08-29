@@ -475,24 +475,14 @@ impl Distinfo {
     }
 
     /**
-     * Adds a new [`Entry`] to the [`Distinfo`].  Returns a [`bool`]
-     * indicating whether the entry was newly created or not.  As the
-     * underlying collection is an [`IndexMap`], if an entry with the same
-     * [`Path`] already exists then its values are updated.
+     * Insert a populated [`Entry`] into the [`Distinfo`].
      */
-    pub fn insert(&mut self, path: &Path, checksums: Vec<Checksum>) -> bool {
-        let filetype = EntryType::from(path);
-        let map = match filetype {
+    pub fn insert(&mut self, entry: Entry) -> bool {
+        let map = match entry.filetype {
             EntryType::Distfile => &mut self.distfiles,
             EntryType::Patchfile => &mut self.patchfiles,
         };
-        let entry = Entry {
-            filename: path.to_path_buf(),
-            size: None,
-            checksums,
-            filetype,
-        };
-        map.insert(path.to_path_buf(), entry).is_none()
+        map.insert(entry.filename.clone(), entry).is_none()
     }
 
     /**
