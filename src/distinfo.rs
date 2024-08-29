@@ -84,11 +84,8 @@ impl Checksum {
     /**
      * Create a new empty [`Checksum`] entry using the specified [`Digest`].
      */
-    pub fn new(digest: Digest) -> Checksum {
-        Checksum {
-            digest,
-            hash: String::new(),
-        }
+    pub fn new(digest: Digest, hash: String) -> Checksum {
+        Checksum { digest, hash }
     }
 }
 
