@@ -486,14 +486,15 @@ impl Distinfo {
     }
 
     /**
-     * Internal function to find an [`Entry`] in the current [`Distinfo`]
-     * given a [`Path`].  [`Distinfo`] distfile entries may include a
-     * directory component (`DIST_SUBDIR`) so this function checks all
-     * possible paths.
+     * Find an [`Entry`] in the current [`Distinfo`] given a [`Path`].
+     * [`Distinfo`] distfile entries may include a directory component
+     * (`DIST_SUBDIR`) so applications can't simply look up by filename.
      *
-     * Supports both distfiles and patchfiles.
+     * This function iterates over the [`Path`] in reverse, adding any leading
+     * components until an entry is found, or returns [`NotFound`].
      */
-    fn find_entry(&self, path: &Path) -> Result<&Entry, DistinfoError> {
+    pub fn find_entry(&self, path: &Path) -> Result<&Entry, DistinfoError> {
+        let filetype = EntryType::from(path);
         let mut file = PathBuf::new();
         for component in path.iter().rev() {
             if file.parent().is_none() {
@@ -501,12 +502,18 @@ impl Distinfo {
             } else {
                 file = PathBuf::from(component).join(file);
             }
-            if let Some(e) = self.get_distfile(&file) {
-                return Ok(e);
-            };
-            if let Some(e) = self.get_patchfile(&file) {
-                return Ok(e);
-            };
+            match filetype {
+                EntryType::Distfile => {
+                    if let Some(entry) = self.get_distfile(&file) {
+                        return Ok(entry);
+                    }
+                }
+                EntryType::Patchfile => {
+                    if let Some(entry) = self.get_patchfile(&file) {
+                        return Ok(entry);
+                    }
+                }
+            }
         }
         Err(DistinfoError::NotFound)
     }
