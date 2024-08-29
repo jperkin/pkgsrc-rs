@@ -156,9 +156,15 @@ pub struct Entry {
     /**
      * Path relative to a certain directory (usually `DISTDIR`) where this
      * entry is stored.  This may contain a directory portion, for example if
-     * the package uses DIST_SUBDIR, as that is stored in the `distinfo` file.
+     * the package uses DIST_SUBDIR.  This is the string that will be stored
+     * in the resulting `distinfo` file.
      */
     pub filename: PathBuf,
+    /**
+     * Full path to filename.  This is not used in the `distinfo` file but is
+     * stored here for processing purposes.
+     */
+    pub filepath: PathBuf,
     /**
      * File size.  This field is not currently used for patch files, as they
      * are distributed alongside the distinfo file and are not downloaded
