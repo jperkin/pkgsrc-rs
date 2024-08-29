@@ -184,6 +184,24 @@ pub struct Entry {
 
 impl Entry {
     /**
+     * Create a new [`Entry`].
+     */
+    pub fn new(
+        filename: PathBuf,
+        filepath: PathBuf,
+        checksums: Vec<Checksum>,
+        size: Option<u64>,
+    ) -> Entry {
+        let filetype = EntryType::from(filename.as_path());
+        Entry {
+            filename,
+            filepath,
+            checksums,
+            size,
+            filetype,
+        }
+    }
+    /**
      * Pass the full path to a file to check as a [`PathBuf`] and verify that
      * it matches the size stored in the [`Distinfo`].
      *
