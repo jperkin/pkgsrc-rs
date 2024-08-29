@@ -396,6 +396,12 @@ impl Distinfo {
     }
 
     /**
+     * Set the rcsid value.
+     */
+    pub fn set_rcsid(&mut self, rcsid: &OsString) {
+        self.rcsid = Some(rcsid.clone());
+    }
+    /**
      * Return a matching distfile [`Entry`] if found, otherwise [`None`].
      */
     pub fn get_distfile(&self, name: &PathBuf) -> Option<&Entry> {
