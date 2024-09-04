@@ -921,12 +921,12 @@ mod tests {
                 "$NetBSD: distinfo,v 1.80 2024/05/27 23:27:10 riastradh Exp $"
             ))
         );
-        let f = di.get_distfile(&PathBuf::from("pkgin-23.8.1.tar.gz"));
+        let f = di.get_distfile("pkgin-23.8.1.tar.gz");
         assert!(matches!(f, Some(_)));
-        let p = di.get_patchfile(&PathBuf::from("patch-configure.ac"));
+        let p = di.get_patchfile("patch-configure.ac");
         assert!(matches!(p, Some(_)));
-        assert_eq!(None, di.get_distfile(&PathBuf::from("foo-23.8.1.tar.gz")));
-        assert_eq!(None, di.get_patchfile(&PathBuf::from("patch-Makefile")));
+        assert_eq!(None, di.get_distfile("foo-23.8.1.tar.gz"));
+        assert_eq!(None, di.get_patchfile("patch-Makefile"));
     }
 
     #[test]
@@ -937,10 +937,8 @@ mod tests {
         distsums.push(Checksum::new(Digest::BLAKE2s, String::new()));
         distsums.push(Checksum::new(Digest::SHA512, String::new()));
 
-        let distfile = PathBuf::from("foo.tar.gz");
-        let distpath = PathBuf::from("/distfiles/foo.tar.gz");
-
-        let entry = Entry::new(distfile, distpath, distsums, None);
+        let entry =
+            Entry::new("foo.tar.gz", "/distfiles/foo.tar.gz", distsums, None);
 
         /* First insert is created, returns true */
         assert_eq!(di.insert(entry.clone()), true);
@@ -954,10 +952,12 @@ mod tests {
         let mut patchsums: Vec<Checksum> = Vec::new();
         patchsums.push(Checksum::new(Digest::SHA1, String::new()));
 
-        let patchfile = PathBuf::from("patch-Makefile");
-        let patchpath = PathBuf::from("patches/patch-Makefile");
-
-        di.insert(Entry::new(patchfile, patchpath, patchsums, None));
+        di.insert(Entry::new(
+            "patch-Makefile",
+            "patches/patch-Makefile",
+            patchsums,
+            None,
+        ));
 
         assert_eq!(di.patchfiles().len(), 1);
         assert_eq!(di.patchfiles()[0].filetype, EntryType::Patchfile);
