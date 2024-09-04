@@ -108,13 +108,13 @@ pub enum EntryType {
     Patchfile,
 }
 
-impl From<&Path> for EntryType {
+impl<P: AsRef<Path>> From<P> for EntryType {
     /*
      * Determine whether a supplied path is a distfile or patchfile.  Unless
      * absolutely sure this is a valid patchfile, default to distfile.
      */
-    fn from(path: &Path) -> Self {
-        let Some(p) = path.file_name() else {
+    fn from(path: P) -> Self {
+        let Some(p) = path.as_ref().file_name() else {
             return EntryType::Distfile;
         };
         let s = p.to_string_lossy();
@@ -186,16 +186,20 @@ impl Entry {
     /**
      * Create a new [`Entry`].
      */
-    pub fn new(
-        filename: PathBuf,
-        filepath: PathBuf,
+    pub fn new<P1, P2>(
+        filename: P1,
+        filepath: P2,
         checksums: Vec<Checksum>,
         size: Option<u64>,
-    ) -> Entry {
-        let filetype = EntryType::from(filename.as_path());
+    ) -> Entry
+    where
+        P1: AsRef<Path>,
+        P2: AsRef<Path>,
+    {
+        let filetype = EntryType::from(filename.as_ref());
         Entry {
-            filename,
-            filepath,
+            filename: filename.as_ref().to_path_buf(),
+            filepath: filepath.as_ref().to_path_buf(),
             checksums,
             size,
             filetype,
@@ -207,7 +211,10 @@ impl Entry {
      *
      * Returns the size if [`Ok`], otherwise return a [`DistinfoError`].
      */
-    pub fn verify_size(&self, path: &PathBuf) -> Result<u64, DistinfoError> {
+    pub fn verify_size<P: AsRef<Path>>(
+        &self,
+        path: P,
+    ) -> Result<u64, DistinfoError> {
         if let Some(size) = self.size {
             let f = File::open(path)?;
             let fsize = f.metadata()?.len();
@@ -221,15 +228,15 @@ impl Entry {
                 return Ok(size);
             }
         }
-        Err(DistinfoError::MissingSize(path.to_path_buf()))
+        Err(DistinfoError::MissingSize(path.as_ref().to_path_buf()))
     }
 
     /**
      * Internal function to check a specific hash.
      */
-    fn verify_checksum_internal(
+    fn verify_checksum_internal<P: AsRef<Path>>(
         &self,
-        path: &PathBuf,
+        path: P,
         digest: Digest,
     ) -> Result<Digest, DistinfoError> {
         for c in &self.checksums {
@@ -252,7 +259,10 @@ impl Entry {
                 return Ok(digest);
             }
         }
-        Err(DistinfoError::MissingChecksum(path.to_path_buf(), digest))
+        Err(DistinfoError::MissingChecksum(
+            path.as_ref().to_path_buf(),
+            digest,
+        ))
     }
 
     /**
@@ -265,9 +275,9 @@ impl Entry {
      *
      * [`verify_checksums`]: Distinfo::verify_checksums
      */
-    pub fn verify_checksum(
+    pub fn verify_checksum<P: AsRef<Path>>(
         &self,
-        path: &PathBuf,
+        path: P,
         digest: Digest,
     ) -> Result<Digest, DistinfoError> {
         self.verify_checksum_internal(path, digest)
@@ -279,13 +289,14 @@ impl Entry {
      * [`Vec`] of [`Result`]s containing the [`Digest`] if [`Ok`], otherwise
      * return a [`DistinfoError`].
      */
-    pub fn verify_checksums(
+    pub fn verify_checksums<P: AsRef<Path>>(
         &self,
-        path: &PathBuf,
+        path: P,
     ) -> Vec<Result<Digest, DistinfoError>> {
         let mut results = vec![];
         for c in &self.checksums {
-            results.push(self.verify_checksum_internal(path, c.digest));
+            results
+                .push(self.verify_checksum_internal(path.as_ref(), c.digest));
         }
         results
     }
@@ -425,15 +436,15 @@ impl Distinfo {
     /**
      * Return a matching distfile [`Entry`] if found, otherwise [`None`].
      */
-    pub fn get_distfile(&self, name: &PathBuf) -> Option<&Entry> {
-        self.distfiles.get(name)
+    pub fn get_distfile<P: AsRef<Path>>(&self, path: P) -> Option<&Entry> {
+        self.distfiles.get(path.as_ref())
     }
 
     /**
      * Return a matching patchfile [`Entry`] if found, otherwise [`None`].
      */
-    pub fn get_patchfile(&self, name: &PathBuf) -> Option<&Entry> {
-        self.patchfiles.get(name)
+    pub fn get_patchfile<P: AsRef<Path>>(&self, path: P) -> Option<&Entry> {
+        self.patchfiles.get(path.as_ref())
     }
 
     /**
@@ -453,7 +464,9 @@ impl Distinfo {
     /**
      * Calculate size of a [`PathBuf`].
      */
-    pub fn calculate_size(path: &PathBuf) -> Result<u64, DistinfoError> {
+    pub fn calculate_size<P: AsRef<Path>>(
+        path: P,
+    ) -> Result<u64, DistinfoError> {
         let file = File::open(path)?;
         Ok(file.metadata()?.len())
     }
@@ -462,11 +475,11 @@ impl Distinfo {
      * Calculate [`Digest`] hash for a [`Path`].  The hash will differ depending on the
      * [`EntryType`] of the supplied path.
      */
-    pub fn calculate_checksum(
-        path: &Path,
+    pub fn calculate_checksum<P: AsRef<Path>>(
+        path: P,
         digest: Digest,
     ) -> Result<String, DistinfoError> {
-        let filetype = EntryType::from(path);
+        let filetype = EntryType::from(path.as_ref());
         let mut f = File::open(path)?;
         match filetype {
             EntryType::Distfile => Ok(digest.hash_file(&mut f)?),
@@ -493,10 +506,13 @@ impl Distinfo {
      * This function iterates over the [`Path`] in reverse, adding any leading
      * components until an entry is found, or returns [`NotFound`].
      */
-    pub fn find_entry(&self, path: &Path) -> Result<&Entry, DistinfoError> {
-        let filetype = EntryType::from(path);
+    pub fn find_entry<P: AsRef<Path>>(
+        &self,
+        path: P,
+    ) -> Result<&Entry, DistinfoError> {
+        let filetype = EntryType::from(path.as_ref());
         let mut file = PathBuf::new();
-        for component in path.iter().rev() {
+        for component in path.as_ref().iter().rev() {
             if file.parent().is_none() {
                 file = PathBuf::from(component);
             } else {
@@ -522,19 +538,19 @@ impl Distinfo {
      * Internal functions to update or insert entries in the current
      * [`Distinfo`], given a [`Path`] and its value data.
      */
-    fn update_size(&mut self, path: &Path, size: u64) {
-        let filetype = EntryType::from(path);
+    fn update_size<P: AsRef<Path>>(&mut self, path: P, size: u64) {
+        let filetype = EntryType::from(path.as_ref());
         let map = match filetype {
             EntryType::Distfile => &mut self.distfiles,
             EntryType::Patchfile => &mut self.patchfiles,
         };
-        match map.get_mut(path) {
+        match map.get_mut(path.as_ref()) {
             Some(entry) => entry.size = Some(size),
             None => {
                 map.insert(
-                    path.to_path_buf(),
+                    path.as_ref().to_path_buf(),
                     Entry {
-                        filename: path.to_path_buf(),
+                        filename: path.as_ref().to_path_buf(),
                         size: Some(size),
                         filetype,
                         ..Default::default()
@@ -543,20 +559,25 @@ impl Distinfo {
             }
         };
     }
-    fn update_checksum(&mut self, path: &Path, digest: Digest, hash: String) {
-        let filetype = EntryType::from(path);
+    fn update_checksum<P: AsRef<Path>>(
+        &mut self,
+        path: P,
+        digest: Digest,
+        hash: String,
+    ) {
+        let filetype = EntryType::from(path.as_ref());
         let map = match filetype {
             EntryType::Distfile => &mut self.distfiles,
             EntryType::Patchfile => &mut self.patchfiles,
         };
-        match map.get_mut(path) {
+        match map.get_mut(path.as_ref()) {
             Some(entry) => entry.checksums.push(Checksum { digest, hash }),
             None => {
                 let v: Vec<Checksum> = vec![Checksum { digest, hash }];
                 map.insert(
-                    path.to_path_buf(),
+                    path.as_ref().to_path_buf(),
                     Entry {
-                        filename: path.to_path_buf(),
+                        filename: path.as_ref().to_path_buf(),
                         checksums: v,
                         filetype,
                         ..Default::default()
@@ -572,8 +593,11 @@ impl Distinfo {
      *
      * Returns the size if [`Ok`], otherwise return a [`DistinfoError`].
      */
-    pub fn verify_size(&self, path: &PathBuf) -> Result<u64, DistinfoError> {
-        let entry = self.find_entry(path)?;
+    pub fn verify_size<P: AsRef<Path>>(
+        &self,
+        path: P,
+    ) -> Result<u64, DistinfoError> {
+        let entry = self.find_entry(path.as_ref())?;
         entry.verify_size(path)
     }
 
@@ -587,12 +611,12 @@ impl Distinfo {
      *
      * [`verify_checksums`]: Distinfo::verify_checksums
      */
-    pub fn verify_checksum(
+    pub fn verify_checksum<P: AsRef<Path>>(
         &self,
-        path: &PathBuf,
+        path: P,
         digest: Digest,
     ) -> Result<Digest, DistinfoError> {
-        let entry = self.find_entry(path)?;
+        let entry = self.find_entry(path.as_ref())?;
         entry.verify_checksum_internal(path, digest)
     }
 
@@ -602,17 +626,18 @@ impl Distinfo {
      * [`Vec`] of [`Result`]s containing the [`Digest`] if [`Ok`], otherwise
      * return a [`DistinfoError`].
      */
-    pub fn verify_checksums(
+    pub fn verify_checksums<P: AsRef<Path>>(
         &self,
-        path: &PathBuf,
+        path: P,
     ) -> Vec<Result<Digest, DistinfoError>> {
-        let entry = match self.find_entry(path) {
+        let entry = match self.find_entry(path.as_ref()) {
             Ok(entry) => entry,
             Err(e) => return vec![Err(e)],
         };
         let mut results = vec![];
         for c in &entry.checksums {
-            results.push(entry.verify_checksum_internal(path, c.digest));
+            results
+                .push(entry.verify_checksum_internal(path.as_ref(), c.digest));
         }
         results
     }
