@@ -217,7 +217,7 @@ fn dewey_cmp(lhs: &str, op: &DeweyOp, rhs: &str) -> bool {
  */
 fn dewey_match(pattern: &str, pkg: &str) -> bool {
     /* Extract package name and version comparison from pattern */
-    let mut pattern_idx = match pattern.find(|c: char| c == '<' || c == '>') {
+    let mut pattern_idx = match pattern.find(['<', '>']) {
         Some(i) => i,
         None => return false,
     };
