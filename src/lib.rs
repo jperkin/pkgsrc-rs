@@ -25,6 +25,7 @@
 pub use crate::metadata::{Metadata, MetadataEntry};
 pub use crate::pmatch::pkg_match;
 
+pub mod depend;
 pub mod digest;
 pub mod distinfo;
 mod metadata;
