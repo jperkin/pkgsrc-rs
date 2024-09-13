@@ -159,6 +159,13 @@ pub enum Digest {
      */
     BLAKE2s,
     /**
+     * Implements `MD5` hash support using `md5` from the [`md5`]
+     * crate.
+     *
+     * [`md5`]: https://docs.rs/md5/
+     */
+    MD5,
+    /**
      * Implements `RMD160` hash support using `Ripemd160` from the [`ripemd`]
      * crate.
      *
@@ -249,8 +256,9 @@ impl Digest {
      */
     pub fn hash_file(&self, file: &mut File) -> DigestResult<String> {
         match self {
-            Digest::RMD160 => hash_file_internal::<ripemd::Ripemd160>(file),
             Digest::BLAKE2s => hash_file_internal::<blake2::Blake2s256>(file),
+            Digest::MD5 => hash_file_internal::<md5::Md5>(file),
+            Digest::RMD160 => hash_file_internal::<ripemd::Ripemd160>(file),
             Digest::SHA1 => hash_file_internal::<sha1::Sha1>(file),
             Digest::SHA256 => hash_file_internal::<sha2::Sha256>(file),
             Digest::SHA512 => hash_file_internal::<sha2::Sha512>(file),
@@ -263,8 +271,9 @@ impl Digest {
      */
     pub fn hash_patch(&self, file: &mut File) -> DigestResult<String> {
         match self {
-            Digest::RMD160 => hash_patch_internal::<ripemd::Ripemd160>(file),
             Digest::BLAKE2s => hash_patch_internal::<blake2::Blake2s256>(file),
+            Digest::MD5 => hash_patch_internal::<md5::Md5>(file),
+            Digest::RMD160 => hash_patch_internal::<ripemd::Ripemd160>(file),
             Digest::SHA1 => hash_patch_internal::<sha1::Sha1>(file),
             Digest::SHA256 => hash_patch_internal::<sha2::Sha256>(file),
             Digest::SHA512 => hash_patch_internal::<sha2::Sha512>(file),
@@ -275,8 +284,9 @@ impl Digest {
      */
     pub fn hash_str(&self, s: &str) -> DigestResult<String> {
         match self {
-            Digest::RMD160 => hash_str_internal::<ripemd::Ripemd160>(s),
             Digest::BLAKE2s => hash_str_internal::<blake2::Blake2s256>(s),
+            Digest::MD5 => hash_str_internal::<md5::Md5>(s),
+            Digest::RMD160 => hash_str_internal::<ripemd::Ripemd160>(s),
             Digest::SHA1 => hash_str_internal::<sha1::Sha1>(s),
             Digest::SHA256 => hash_str_internal::<sha2::Sha256>(s),
             Digest::SHA512 => hash_str_internal::<sha2::Sha512>(s),
@@ -290,6 +300,7 @@ impl FromStr for Digest {
     fn from_str(s: &str) -> DigestResult<Self> {
         match s.to_lowercase().as_str() {
             "blake2s" => Ok(Digest::BLAKE2s),
+            "md5" => Ok(Digest::MD5),
             "rmd160" => Ok(Digest::RMD160),
             "sha1" => Ok(Digest::SHA1),
             "sha256" => Ok(Digest::SHA256),
@@ -302,8 +313,9 @@ impl FromStr for Digest {
 impl fmt::Display for Digest {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
-            Digest::RMD160 => write!(f, "RMD160"),
             Digest::BLAKE2s => write!(f, "BLAKE2s"),
+            Digest::MD5 => write!(f, "MD5"),
+            Digest::RMD160 => write!(f, "RMD160"),
             Digest::SHA1 => write!(f, "SHA1"),
             Digest::SHA256 => write!(f, "SHA256"),
             Digest::SHA512 => write!(f, "SHA512"),
