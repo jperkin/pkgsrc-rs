@@ -78,7 +78,6 @@
  */
 
 use std::fmt;
-use std::fs::File;
 use std::io::{BufReader, Read};
 use std::str::FromStr;
 
@@ -194,11 +193,11 @@ pub enum Digest {
     SHA512,
 }
 
-fn hash_file_internal<D: digest::Digest + std::io::Write>(
-    file: &mut File,
+fn hash_file_internal<R: Read, D: digest::Digest + std::io::Write>(
+    reader: &mut R,
 ) -> DigestResult<String> {
     let mut hasher = D::new();
-    std::io::copy(file, &mut hasher)?;
+    std::io::copy(reader, &mut hasher)?;
     let hash = hasher
         .finalize()
         .iter()
@@ -209,11 +208,11 @@ fn hash_file_internal<D: digest::Digest + std::io::Write>(
     Ok(hash)
 }
 
-fn hash_patch_internal<D: digest::Digest + std::io::Write>(
-    file: &mut File,
+fn hash_patch_internal<R: Read, D: digest::Digest + std::io::Write>(
+    reader: &mut R,
 ) -> DigestResult<String> {
     let mut hasher = D::new();
-    let mut r = BufReader::new(file);
+    let mut r = BufReader::new(reader);
     let mut s = String::new();
     r.read_to_string(&mut s)?;
 
@@ -254,14 +253,18 @@ impl Digest {
      * Hash a file.  The full contents of the file are hashed, it is not
      * processed in any way.  Suitable for distfiles.
      */
-    pub fn hash_file(&self, file: &mut File) -> DigestResult<String> {
+    pub fn hash_file<R: Read>(&self, reader: &mut R) -> DigestResult<String> {
         match self {
-            Digest::BLAKE2s => hash_file_internal::<blake2::Blake2s256>(file),
-            Digest::MD5 => hash_file_internal::<md5::Md5>(file),
-            Digest::RMD160 => hash_file_internal::<ripemd::Ripemd160>(file),
-            Digest::SHA1 => hash_file_internal::<sha1::Sha1>(file),
-            Digest::SHA256 => hash_file_internal::<sha2::Sha256>(file),
-            Digest::SHA512 => hash_file_internal::<sha2::Sha512>(file),
+            Digest::BLAKE2s => {
+                hash_file_internal::<_, blake2::Blake2s256>(reader)
+            }
+            Digest::MD5 => hash_file_internal::<_, md5::Md5>(reader),
+            Digest::RMD160 => {
+                hash_file_internal::<_, ripemd::Ripemd160>(reader)
+            }
+            Digest::SHA1 => hash_file_internal::<_, sha1::Sha1>(reader),
+            Digest::SHA256 => hash_file_internal::<_, sha2::Sha256>(reader),
+            Digest::SHA512 => hash_file_internal::<_, sha2::Sha512>(reader),
         }
     }
 
@@ -269,14 +272,18 @@ impl Digest {
      * Hash a pkgsrc patch file.  Any lines containing `$NetBSD` are skipped,
      * so that CVS Id expansion does not change the hash.
      */
-    pub fn hash_patch(&self, file: &mut File) -> DigestResult<String> {
+    pub fn hash_patch<R: Read>(&self, reader: &mut R) -> DigestResult<String> {
         match self {
-            Digest::BLAKE2s => hash_patch_internal::<blake2::Blake2s256>(file),
-            Digest::MD5 => hash_patch_internal::<md5::Md5>(file),
-            Digest::RMD160 => hash_patch_internal::<ripemd::Ripemd160>(file),
-            Digest::SHA1 => hash_patch_internal::<sha1::Sha1>(file),
-            Digest::SHA256 => hash_patch_internal::<sha2::Sha256>(file),
-            Digest::SHA512 => hash_patch_internal::<sha2::Sha512>(file),
+            Digest::BLAKE2s => {
+                hash_patch_internal::<_, blake2::Blake2s256>(reader)
+            }
+            Digest::MD5 => hash_patch_internal::<_, md5::Md5>(reader),
+            Digest::RMD160 => {
+                hash_patch_internal::<_, ripemd::Ripemd160>(reader)
+            }
+            Digest::SHA1 => hash_patch_internal::<_, sha1::Sha1>(reader),
+            Digest::SHA256 => hash_patch_internal::<_, sha2::Sha256>(reader),
+            Digest::SHA512 => hash_patch_internal::<_, sha2::Sha512>(reader),
         }
     }
     /**
