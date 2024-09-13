@@ -288,12 +288,12 @@ impl FromStr for Digest {
     type Err = DigestError;
 
     fn from_str(s: &str) -> DigestResult<Self> {
-        match s {
-            "BLAKE2s" => Ok(Digest::BLAKE2s),
-            "RMD160" => Ok(Digest::RMD160),
-            "SHA1" => Ok(Digest::SHA1),
-            "SHA256" => Ok(Digest::SHA256),
-            "SHA512" => Ok(Digest::SHA512),
+        match s.to_lowercase().as_str() {
+            "blake2s" => Ok(Digest::BLAKE2s),
+            "rmd160" => Ok(Digest::RMD160),
+            "sha1" => Ok(Digest::SHA1),
+            "sha256" => Ok(Digest::SHA256),
+            "sha512" => Ok(Digest::SHA512),
             _ => Err(DigestError::Unsupported(s.to_string())),
         }
     }
@@ -326,6 +326,14 @@ mod tests {
     #[test]
     fn digest_str() -> DigestResult<()> {
         let d = Digest::from_str("SHA1")?;
+        let h = d.hash_str("hello there")?;
+        assert_eq!(h, "6e71b3cac15d32fe2d36c270887df9479c25c640");
+        Ok(())
+    }
+
+    #[test]
+    fn digest_str_lower() -> DigestResult<()> {
+        let d = Digest::from_str("sha1")?;
         let h = d.hash_str("hello there")?;
         assert_eq!(h, "6e71b3cac15d32fe2d36c270887df9479c25c640");
         Ok(())
