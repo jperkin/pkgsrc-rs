@@ -63,6 +63,8 @@ use std::str::FromStr;
 
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
+#[cfg(feature = "serde")]
+use serde_with::DeserializeFromStr;
 
 /**
  * A type alias for the result from the creation of a [`PkgPath`], with
@@ -85,7 +87,7 @@ pub enum PkgPathError {
  * PkgPath
  */
 #[derive(Clone, Debug, Default, Eq, Hash, PartialEq)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "serde", derive(Serialize, DeserializeFromStr))]
 pub struct PkgPath {
     short: PathBuf,
     full: PathBuf,
