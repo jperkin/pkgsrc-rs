@@ -504,7 +504,8 @@ impl Distinfo {
      * (`DIST_SUBDIR`) so applications can't simply look up by filename.
      *
      * This function iterates over the [`Path`] in reverse, adding any leading
-     * components until an entry is found, or returns [`NotFound`].
+     * components until an entry is found, or returns
+     * [`DistinfoError::NotFound`].
      */
     pub fn find_entry<P: AsRef<Path>>(
         &self,
