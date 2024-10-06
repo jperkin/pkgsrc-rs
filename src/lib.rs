@@ -23,14 +23,14 @@
 #![deny(missing_docs)]
 
 pub use crate::metadata::{Metadata, MetadataEntry};
-pub use crate::pmatch::pkg_match;
 
 pub mod depend;
+pub mod dewey;
 pub mod digest;
 pub mod distinfo;
 mod metadata;
 pub mod pkgdb;
+pub mod pkgmatch;
 pub mod pkgpath;
 pub mod plist;
-mod pmatch;
 pub mod summary;
