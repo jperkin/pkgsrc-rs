@@ -14,7 +14,28 @@
  * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
  */
 
-/*!
+use std::path::{Component, Path, PathBuf};
+use std::str::FromStr;
+use thiserror::Error;
+
+#[cfg(feature = "serde")]
+use serde::{Deserialize, Serialize};
+#[cfg(feature = "serde")]
+use serde_with::DeserializeFromStr;
+
+/**
+ * An invalid path was specified trying to create a new [`PkgPath`].
+ */
+#[derive(Debug, Error, PartialEq)]
+pub enum PkgPathError {
+    /**
+     * Contains an invalid path.
+     */
+    #[error("Invalid path specified")]
+    InvalidPath,
+}
+
+/**
  * Handling for `PKGPATH` metadata and relative package directory locations.
  *
  * [`PkgPath`] is a struct for storing the path to a package within pkgsrc.
@@ -37,54 +58,29 @@
  * ## Examples
  *
  * ```
- * use pkgsrc::pkgpath::*;
+ * use pkgsrc::PkgPath;
  * use std::ffi::OsStr;
  *
- * let p = PkgPath::new("pkgtools/pkg_install").expect("ruh roh");
+ * let p = PkgPath::new("pkgtools/pkg_install").unwrap();
  * assert_eq!(p.as_path(), OsStr::new("pkgtools/pkg_install"));
  * assert_eq!(p.as_full_path(), OsStr::new("../../pkgtools/pkg_install"));
  *
- * let p = PkgPath::new("../../pkgtools/pkg_install").expect("ruh roh");
+ * let p = PkgPath::new("../../pkgtools/pkg_install").unwrap();
  * assert_eq!(p.as_path(), OsStr::new("pkgtools/pkg_install"));
  * assert_eq!(p.as_full_path(), OsStr::new("../../pkgtools/pkg_install"));
  *
- * assert_eq!(PkgPath::new("../../pkg_install"), Err(PkgPathError::InvalidPath));
- * assert_eq!(PkgPath::new("../pkg_install"), Err(PkgPathError::InvalidPath));
- * assert_eq!(PkgPath::new("/pkgtools/pkg_install"), Err(PkgPathError::InvalidPath));
+ * // Missing category path.
+ * assert!(PkgPath::new("../../pkg_install").is_err());
+ *
+ * // Must traverse back to the pkgsrc root directory.
+ * assert!(PkgPath::new("../pkg_install").is_err());
+ *
+ * // Not fully formed.
+ * assert!(PkgPath::new("/pkgtools/pkg_install").is_err());;
  * ```
  *
  * [`as_full_path`]: PkgPath::as_full_path
  * [`as_path`]: PkgPath::as_path
- */
-
-use std::fmt;
-use std::path::{Component, Path, PathBuf};
-use std::str::FromStr;
-
-#[cfg(feature = "serde")]
-use serde::{Deserialize, Serialize};
-#[cfg(feature = "serde")]
-use serde_with::DeserializeFromStr;
-
-/**
- * A type alias for the result from the creation of a [`PkgPath`], with
- * [`PkgPathError`] returned in [`Err`] variants.
- */
-pub type Result<T> = std::result::Result<T, PkgPathError>;
-
-/**
- * PkgPathError
- */
-#[derive(Debug, PartialEq)]
-pub enum PkgPathError {
-    /**
-     * Contains an invalid path.
-     */
-    InvalidPath,
-}
-
-/**
- * PkgPath
  */
 #[derive(Clone, Debug, Default, Eq, Hash, PartialEq)]
 #[cfg_attr(feature = "serde", derive(Serialize, DeserializeFromStr))]
@@ -97,7 +93,7 @@ impl PkgPath {
     /**
      * Create a new PkgPath
      */
-    pub fn new(path: &str) -> Result<Self> {
+    pub fn new(path: &str) -> Result<Self, PkgPathError> {
         let p = PathBuf::from(path);
         let c: Vec<_> = p.components().collect();
 
@@ -158,18 +154,8 @@ impl PkgPath {
 impl FromStr for PkgPath {
     type Err = PkgPathError;
 
-    fn from_str(s: &str) -> Result<Self> {
+    fn from_str(s: &str) -> Result<Self, PkgPathError> {
         PkgPath::new(s)
-    }
-}
-
-impl fmt::Display for PkgPathError {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match *self {
-            PkgPathError::InvalidPath => {
-                write!(f, "String contains an invalid path")
-            }
-        }
     }
 }
 
@@ -178,26 +164,24 @@ mod tests {
     use super::*;
     use std::ffi::OsStr;
 
-    fn assert_valid_foobar(s: &str) -> Result<()> {
-        let p = PkgPath::new(s)?;
+    fn assert_valid_foobar(s: &str) {
+        let p = PkgPath::new(s).unwrap();
         assert_eq!(p.as_path(), OsStr::new("foo/bar"));
         assert_eq!(p.as_full_path(), OsStr::new("../../foo/bar"));
-        Ok(())
     }
 
     #[test]
-    fn pkgpath_test_good_input() -> Result<()> {
-        assert_valid_foobar("foo/bar")?;
-        assert_valid_foobar("foo//bar")?;
-        assert_valid_foobar("foo//bar//")?;
-        assert_valid_foobar("../../foo/bar")?;
-        assert_valid_foobar("../../foo/bar/")?;
-        assert_valid_foobar("..//..//foo//bar//")?;
-        Ok(())
+    fn pkgpath_test_good_input() {
+        assert_valid_foobar("foo/bar");
+        assert_valid_foobar("foo//bar");
+        assert_valid_foobar("foo//bar//");
+        assert_valid_foobar("../../foo/bar");
+        assert_valid_foobar("../../foo/bar/");
+        assert_valid_foobar("..//..//foo//bar//");
     }
 
     #[test]
-    fn pkgpath_test_bad_input() -> Result<()> {
+    fn pkgpath_test_bad_input() {
         let err = Err(PkgPathError::InvalidPath);
         assert_eq!(PkgPath::new(""), err);
         assert_eq!(PkgPath::new("\0"), err);
@@ -219,6 +203,5 @@ mod tests {
         assert_eq!(PkgPath::new("../../foo/bar/ojnk/"), err);
         // ".. /" gets parsed as a Normal file named ".. ".
         assert_eq!(PkgPath::new(".. /../foo/bar"), err);
-        Ok(())
     }
 }

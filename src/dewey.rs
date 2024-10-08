@@ -14,65 +14,15 @@
  * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
  */
 
-/*!
- * Package pattern matching for so-called "dewey" patterns.
- *
- * It is unlikely that anyone would want to use this module directly.  The
- * main user-facing interface is [`pkgmatch`] which will handle any patterns
- * matching [`Dewey`] style accordingly.  However, in case it proves useful,
- * this module is made public.
- *
- * ## Examples
- *
- * Most common patterns are of the following form:
- *
- * ```
- * use pkgsrc::dewey::Dewey;
- *
- * let m = Dewey::new("pkg>=1.0<2").unwrap();
- * assert_eq!(m.matches("pkg-1.0"), true);
- * assert_eq!(m.matches("pkg-2.0"), false);
- * ```
- *
- * However, the [`Dewey`] module fully supports the same modifiers and logic
- * that [`pkg_install`] does, according to the following rules:
- *
- *    Modifier(s) | Value
- * ---------------|--------
- *       `alpha`  | `-3`
- *       `beta`   | `-2`
- *    `pre`, `rc` | `-1`
- * `pl`, `_`, `.` | `0`
- *    empty value | `0`
- *
- * For example:
- *
- * ```
- * use pkgsrc::dewey::Dewey;
- *
- * let m = Dewey::new("pkg>=1.0<2").unwrap();
- * assert_eq!(m.matches("pkg-1.0alpha1"), false);
- * assert_eq!(m.matches("pkg-1.0beta2"), false);
- * assert_eq!(m.matches("pkg-1.0rc3"), false);
- * assert_eq!(m.matches("pkg-1.0pl4"), true);
- * assert_eq!(m.matches("pkg-2.0rc1"), true);
- * assert_eq!(m.matches("pkg-2.0_0"), false);
- * ```
- *
- * [`pkg_install`]:
- * https://github.com/NetBSD/pkgsrc/blob/trunk/pkgtools/pkg_install/files/lib/dewey.c
- * [`pkgmatch`]: crate::pkgmatch
- */
-
 use std::cmp::Ordering;
 use std::error::Error;
 use std::fmt;
 
 /**
- * A pattern parsing error.
+ * A [`Dewey`] pattern parsing error.
  */
 #[derive(Debug)]
-pub struct PatternError {
+pub struct DeweyError {
     /// The approximate character index of where the error occurred.
     pub pos: usize,
 
@@ -80,13 +30,13 @@ pub struct PatternError {
     pub msg: &'static str,
 }
 
-impl Error for PatternError {
+impl Error for DeweyError {
     fn description(&self) -> &str {
         self.msg
     }
 }
 
-impl fmt::Display for PatternError {
+impl fmt::Display for DeweyError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(
             f,
@@ -100,7 +50,7 @@ impl fmt::Display for PatternError {
  * pkg_install implements "==" (DEWEY_EQ) and "!=" (DEWEY_NE) but doesn't
  * actually support them (or document them), so we don't bother.
  */
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, Hash, PartialEq)]
 enum DeweyOp {
     LE,
     LT,
@@ -115,7 +65,7 @@ enum DeweyOp {
  * This is a combined version of pkg_install dewey.c's mkversion() and
  * mkcomponent().
  */
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Hash, PartialEq)]
 struct DeweyVersion {
     version: Vec<i64>,
     pkgrevision: i64,
@@ -219,7 +169,7 @@ impl DeweyVersion {
 /**
  * [`DeweyMatch`] contains a single pattern to match against.
  */
-#[derive(Debug)]
+#[derive(Debug, Hash, PartialEq)]
 struct DeweyMatch {
     /// Which logical operation to apply
     op: DeweyOp,
@@ -228,7 +178,7 @@ struct DeweyMatch {
 }
 
 impl DeweyMatch {
-    fn new(op: &DeweyOp, pattern: &str) -> Result<DeweyMatch, PatternError> {
+    fn new(op: &DeweyOp, pattern: &str) -> Result<DeweyMatch, DeweyError> {
         let version = DeweyVersion::new(pattern);
         Ok(DeweyMatch {
             op: op.clone(),
@@ -238,9 +188,48 @@ impl DeweyMatch {
 }
 
 /**
- * A compiled dewey pattern.
+ * Package pattern matching for so-called "dewey" patterns.
+ *
+ * These are common across pkgsrc as a way to specify a range of versions for
+ * a package.  Despite the name, these have nothing to do with the Dewey
+ * decimal system.
+ *
+ * It is unlikely that anyone would want to use this directly.  The main
+ * user-facing interface is [`Pattern`] which will handle any patterns
+ * matching [`Dewey`] style automatically.  However, in case it proves at all
+ * useful, it is made public.
+ *
+ * This fully supports the same modifiers and logic that [`pkg_install`] does,
+ * according to the following rules:
+ *
+ *    Modifier(s) | Numeric value
+ * ---------------|--------
+ *       `alpha`  | `-3`
+ *       `beta`   | `-2`
+ *    `pre`, `rc` | `-1`
+ * `pl`, `_`, `.` | `0`
+ *    empty value | `0`
+ *
+ * # Examples
+ *
+ * ```
+ * use pkgsrc::Dewey;
+ *
+ * // A version greater than or equal to 1.0 and less than 2.0 is required.
+ * let m = Dewey::new("pkg>=1.0<2");
+ *
+ * // A common way to specify that any version is ok.
+ * let m = Dewey::new("pkg>=0");
+ *
+ * // Any version as long as it is earlier than 7.
+ * let m = Dewey::new("windows<7");
+ * ```
+ *
+ * [`pkg_install`]:
+ * https://github.com/NetBSD/pkgsrc/blob/trunk/pkgtools/pkg_install/files/lib/dewey.c
+ * [`Pattern`]: crate::Pattern
  */
-#[derive(Debug)]
+#[derive(Debug, Hash, PartialEq)]
 pub struct Dewey {
     pkgname: String,
     matches: Vec<DeweyMatch>,
@@ -249,21 +238,24 @@ pub struct Dewey {
 impl Dewey {
     /**
      * Compile a pattern.  If the pattern is invalid in any way a
-     * [`PatternError`] is returned.
+     * [`DeweyError`] is returned.
      *
      * # Example
      *
      * ```
-     * use pkgsrc::dewey::Dewey;
+     * use pkgsrc::Dewey;
      *
-     * let m = Dewey::new("pkg>=1.0<2");
-     * assert!(m.is_ok());
+     * // A correctly specified range.
+     * assert!(Dewey::new("pkg>=1.0<2").is_ok());
      *
-     * let m = Dewey::new("pkg<1>2");
-     * assert!(m.is_err());
+     * // Incorrect order of operators.
+     * assert!(Dewey::new("pkg<1>2").is_err());
+     *
+     * // Invalid use of incompatible operators.
+     * assert!(Dewey::new("pkg>1>=2").is_err());
      * ```
      */
-    pub fn new(pattern: &str) -> Result<Dewey, PatternError> {
+    pub fn new(pattern: &str) -> Result<Dewey, DeweyError> {
         /*
          * Search through the pattern looking for dewey match operators and
          * their indices.  Push a tuple containing the start of the pattern,
@@ -299,7 +291,7 @@ impl Dewey {
         let mut matches: Vec<DeweyMatch> = vec![];
         match deweyops.len() {
             0 => {
-                return Err(PatternError {
+                return Err(DeweyError {
                     pos: 0,
                     msg: "No dewey operators found",
                 })
@@ -312,7 +304,7 @@ impl Dewey {
                 match (&deweyops[0].2, &deweyops[1].2) {
                     (DeweyOp::GT | DeweyOp::GE, DeweyOp::LT | DeweyOp::LE) => {}
                     _ => {
-                        return Err(PatternError {
+                        return Err(DeweyError {
                             pos: deweyops[0].0,
                             msg: "Unsupported operator order",
                         });
@@ -324,7 +316,7 @@ impl Dewey {
                 matches.push(DeweyMatch::new(&deweyops[1].2, p)?);
             }
             3.. => {
-                return Err(PatternError {
+                return Err(DeweyError {
                     pos: deweyops[2].0,
                     msg: "Too many dewey operators found",
                 })
@@ -346,7 +338,7 @@ impl Dewey {
      * # Example
      *
      * ```
-     * use pkgsrc::dewey::Dewey;
+     * use pkgsrc::Dewey;
      *
      * let m = Dewey::new("pkg>=1.0<2").unwrap();
      * assert_eq!(m.matches("pkg-1.0rc1"), false);

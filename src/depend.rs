@@ -14,53 +14,77 @@
  * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
  */
 
-/*!
- * Support for `DEPENDS`.
- */
-use crate::pkgpath::PkgPath;
+use crate::{Pattern, PatternError, PkgPath, PkgPathError};
 use std::str::FromStr;
+use thiserror::Error;
 
 /**
- * [`Depend`]
+ * Parse `DEPENDS` and other package dependency types.
+ *
+ * pkgsrc uses a few different ways to express package dependencies.  The most
+ * common looks something like this, where a dependency on any version of mutt
+ * is expressed, with mutt most likely to be found at `mail/mutt` (though not
+ * always).
+ *
+ * ```text
+ * DEPENDS+=    mutt-[0-9]*:../../mail/mutt
+ * ```
+ *
+ * There are a few different types, expressed in [`DependType`].
+ *
+ * A `DEPENDS` match is essentially of the form "[`Pattern`]:[`PkgPath`]"
  */
-#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+#[derive(Debug, Hash, PartialEq)]
 pub struct Depend {
     /**
-     * A [`String`] containing the package match.
+     * A [`Pattern`] containing the package match.
      */
-    pkgmatch: String,
+    pattern: Pattern,
     /**
-     * Path portion of this `DEPENDS` entry.  Note that when multiple packages
-     * that match are available then this may not be the [`PkgPath`] that is
-     * ultimately chosen.
+     * A [`PkgPath`] containing the most likely location for this dependency.
+     * Note that when multiple packages that match the pattern are available
+     * then this may not be the [`PkgPath`] that is ultimately chosen, if a
+     * package at a different location ends up being a better match.
      */
     pkgpath: PkgPath,
 }
 
 impl Depend {
     /**
-     * Create a new [`Depend`].
+     * Create a new [`Depend`] from a [`str`] slice.  Return a [`DependError`]
+     * if it cannot be created successfully.
+     *
+     * # Example
+     *
+     * ```
+     * use pkgsrc::{Depend, Pattern, PkgPath};
+     *
+     * let dep = Depend::new("mktool-[0-9]*:../../pkgtools/mktool").unwrap();
+     * assert_eq!(dep.pattern(), &Pattern::new("mktool-[0-9]*").unwrap());
+     * assert_eq!(dep.pkgpath(), &PkgPath::new("pkgtools/mktool").unwrap());
+     *
+     * // Invalid, too many ":".
+     * assert!(Depend::new("pkg>0::../../cat/pkg").is_err());
+     *
+     * // Invalid, incorrect Dewey specification.
+     * assert!(Depend::new("pkg>0>2:../../cat/pkg").is_err());
+     * ```
      */
     pub fn new(s: &str) -> Result<Self, DependError> {
         let v: Vec<_> = s.split(":").collect();
         if v.len() != 2 {
             return Err(DependError::Invalid);
         }
-        let pkgmatch = String::from(v[0]);
-        let pkgpath = match PkgPath::from_str(v[1]) {
-            Ok(p) => p,
-            Err(_) => {
-                return Err(DependError::Invalid);
-            }
-        };
-        Ok(Depend { pkgmatch, pkgpath })
+        let pattern = Pattern::new(v[0])?;
+        let pkgpath = PkgPath::from_str(v[1])?;
+        Ok(Depend { pattern, pkgpath })
     }
 
     /**
-     * Return the string match portion of this [`Depend`].
+     * Return the [`Pattern`] portion of this [`Depend`].
      */
-    pub fn pkgmatch(&self) -> &String {
-        &self.pkgmatch
+    pub fn pattern(&self) -> &Pattern {
+        &self.pattern
     }
 
     /**
@@ -72,7 +96,7 @@ impl Depend {
 }
 
 /**
- * DependType
+ * Type of dependency (full, build, bootstrap, test, etc.)
  */
 #[derive(Debug, Default)]
 pub enum DependType {
@@ -106,12 +130,29 @@ pub enum DependType {
 }
 
 /**
- * DependError
+ * A `DEPENDS` parsing error.
  */
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Error)]
 pub enum DependError {
-    /// An invalid string
+    /**
+     * An invalid string that doesn't match `<pattern>:<pkgpath>`.
+     */
+    #[error("Invalid DEPENDS string")]
     Invalid,
+    /**
+     * A transparent [`PatternError`] error.
+     *
+     * [`PatternError`]: crate::pattern::PatternError
+     */
+    #[error(transparent)]
+    Pattern(#[from] PatternError),
+    /**
+     * A transparent [`PkgPathError`] error.
+     *
+     * [`PkgPathError`]: crate::pkgpath::PkgPathError
+     */
+    #[error(transparent)]
+    PkgPath(#[from] PkgPathError),
 }
 
 impl FromStr for Depend {
@@ -128,25 +169,33 @@ mod tests {
 
     #[test]
     fn test_good() -> Result<(), DependError> {
-        let pkgmatch = "mktools-[0-9]";
+        let pkgmatch = Pattern::new("mktools-[0-9]").unwrap();
         let pkgpath = PkgPath::new("../../pkgtools/mktools").unwrap();
         let dep = Depend::new("mktools-[0-9]:../../pkgtools/mktools")?;
-        assert_eq!(dep.pkgmatch(), pkgmatch);
+        assert_eq!(dep.pattern(), &pkgmatch);
         assert_eq!(dep.pkgpath(), &pkgpath);
         let dep = Depend::new("mktools-[0-9]:pkgtools/mktools")?;
-        assert_eq!(dep.pkgmatch(), pkgmatch);
+        assert_eq!(dep.pattern(), &pkgmatch);
         assert_eq!(dep.pkgpath(), &pkgpath);
         Ok(())
     }
 
     #[test]
-    fn test_bad() -> Result<(), DependError> {
-        let dep = Depend::new("ojnk");
-        assert_eq!(dep, Err(DependError::Invalid));
+    fn test_bad() {
+        // Missing ":" separator.
+        let dep = Depend::new("pkg");
+        assert!(matches!(dep, Err(DependError::Invalid)));
+
+        // Too many ":" separators.
+        let dep = Depend::new("pkg-[0-9]*::../../pkgtools/pkg");
+        assert!(matches!(dep, Err(DependError::Invalid)));
+
+        // Invalid Pattern
+        let dep = Depend::new("pkg>2>3:../../pkgtools/pkg");
+        assert!(matches!(dep, Err(DependError::Pattern(_))));
+
+        // Invalid PkgPath
         let dep = Depend::new("ojnk:foo");
-        assert_eq!(dep, Err(DependError::Invalid));
-        let dep = Depend::new("ojnk:foo:../../pkgtools/foo");
-        assert_eq!(dep, Err(DependError::Invalid));
-        Ok(())
+        assert!(matches!(dep, Err(DependError::PkgPath(_))));
     }
 }
