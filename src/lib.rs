@@ -42,9 +42,9 @@ mod pattern;
 mod pkgname;
 mod pkgpath;
 
-pub use crate::depend::{Depend, DependType, DependError};
+pub use crate::depend::{Depend, DependError, DependType};
 pub use crate::dewey::{Dewey, DeweyError};
-pub use crate::pattern::{Pattern, PatternError};
-pub use crate::pkgpath::{PkgPath, PkgPathError};
 pub use crate::metadata::{Metadata, MetadataEntry};
+pub use crate::pattern::{Pattern, PatternError};
 pub use crate::pkgname::PkgName;
+pub use crate::pkgpath::{PkgPath, PkgPathError};
