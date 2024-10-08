@@ -17,20 +17,30 @@
 /*!
  * # pkgsrc
  *
- * Interface to both the pkg_install database and pkgsrc mk infrastructure.
+ * Rust interface to the pkg_install database and the pkgsrc mk
+ * infrastructure.
  */
 
 #![deny(missing_docs)]
 
-pub use crate::metadata::{Metadata, MetadataEntry};
-
+/*
+ * Modules that deserve their own namespace.
+ */
 pub mod depend;
 pub mod dewey;
 pub mod digest;
 pub mod distinfo;
-mod metadata;
 pub mod pkgdb;
 pub mod pkgmatch;
 pub mod pkgpath;
 pub mod plist;
 pub mod summary;
+
+/*
+ * Modules that are available in the root.
+ */
+mod metadata;
+mod pkgname;
+
+pub use crate::metadata::{Metadata, MetadataEntry};
+pub use crate::pkgname::PkgName;
