@@ -37,6 +37,7 @@
  *
  * // A well formed package name.
  * let pkg = PkgName::new("mktool-1.3.2nb2");
+ * assert_eq!(pkg.pkgname(), "mktool-1.3.2nb2");
  * assert_eq!(pkg.pkgbase(), "mktool");
  * assert_eq!(pkg.pkgversion(), "1.3.2nb2");
  * assert_eq!(pkg.pkgrevision(), Some(2));
@@ -68,6 +69,7 @@
  */
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub struct PkgName {
+    pkgname: String,
     pkgbase: String,
     pkgversion: String,
     pkgrevision: Option<i64>,
@@ -87,10 +89,19 @@ impl PkgName {
             None => None,
         };
         PkgName {
+            pkgname: pkgname.to_string(),
             pkgbase,
             pkgversion,
             pkgrevision,
         }
+    }
+
+    /**
+     * Return a [`str`] reference containing the original `PKGNAME` used to
+     * create this instance.
+     */
+    pub fn pkgname(&self) -> &str {
+        &self.pkgname
     }
 
     /**
@@ -130,18 +141,19 @@ mod tests {
     #[test]
     fn pkgname() {
         let pkg = PkgName::new("mktool-1.3.2nb2");
-        assert_eq!(pkg.pkgbase, "mktool");
-        assert_eq!(pkg.pkgversion, "1.3.2nb2");
-        assert_eq!(pkg.pkgrevision, Some(2));
+        assert_eq!(pkg.pkgname(), "mktool-1.3.2nb2");
+        assert_eq!(pkg.pkgbase(), "mktool");
+        assert_eq!(pkg.pkgversion(), "1.3.2nb2");
+        assert_eq!(pkg.pkgrevision(), Some(2));
 
         let pkg = PkgName::new("mktool-1nb3alpha2nb");
-        assert_eq!(pkg.pkgbase, "mktool");
-        assert_eq!(pkg.pkgversion, "1nb3alpha2nb");
-        assert_eq!(pkg.pkgrevision, Some(0));
+        assert_eq!(pkg.pkgbase(), "mktool");
+        assert_eq!(pkg.pkgversion(), "1nb3alpha2nb");
+        assert_eq!(pkg.pkgrevision(), Some(0));
 
         let pkg = PkgName::new("mktool");
-        assert_eq!(pkg.pkgbase, "mktool");
-        assert_eq!(pkg.pkgversion, "");
-        assert_eq!(pkg.pkgrevision, None);
+        assert_eq!(pkg.pkgbase(), "mktool");
+        assert_eq!(pkg.pkgversion(), "");
+        assert_eq!(pkg.pkgrevision(), None);
     }
 }
