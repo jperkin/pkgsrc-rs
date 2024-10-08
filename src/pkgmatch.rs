@@ -407,6 +407,7 @@ mod tests {
         /*
          * pkg_install quirks.
          */
+        assert_pkgmatch_eq!("pkg>=0", "pkg-", Dewey);
         assert_pkgmatch_eq!("foo>1.1", "foo-1.1blah2", Dewey);
         assert_pkgmatch_eq!("foo>1.1a2", "foo-1.1blah2", Dewey);
     }
@@ -424,6 +425,8 @@ mod tests {
         /*
          * pkg_install quirks.
          */
+        // XXX: this currently passes, pkg_match does not
+        //assert_pkgmatch_eq!("pkg>=0", "pkg", Dewey);
         assert_pkgmatch_ne!("foo>1.1c2", "foo-1.1blah2", Dewey);
     }
     #[test]
