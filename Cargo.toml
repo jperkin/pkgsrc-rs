@@ -1,7 +1,7 @@
 [package]
 name = "pkgsrc"
 description = "Library for interacting with a pkgsrc installation"
-version = "0.2.1"
+version = "0.3.0"
 authors = ["Jonathan Perkin <jonathan@perkin.org.uk>"]
 readme = "README.md"
 keywords = ["pkgsrc"]
