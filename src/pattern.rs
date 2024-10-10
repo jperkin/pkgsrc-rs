@@ -251,6 +251,13 @@ impl Pattern {
     }
 
     /**
+     * Return the original pattern string.
+     */
+    pub fn pattern(&self) -> &str {
+        &self.pattern
+    }
+
+    /**
      * Implement csh-style alternate matches.  Pattern::new() has already
      * verified that the pattern is valid and the braces are correctly balanced.
      *
