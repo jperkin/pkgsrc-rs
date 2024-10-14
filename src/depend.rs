@@ -34,7 +34,7 @@ use thiserror::Error;
  *
  * A `DEPENDS` match is essentially of the form "[`Pattern`]:[`PkgPath`]"
  */
-#[derive(Debug, Hash, PartialEq)]
+#[derive(Clone, Debug, Hash, PartialEq)]
 pub struct Depend {
     /**
      * A [`Pattern`] containing the package match.

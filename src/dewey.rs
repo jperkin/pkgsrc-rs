@@ -65,7 +65,7 @@ enum DeweyOp {
  * This is a combined version of pkg_install dewey.c's mkversion() and
  * mkcomponent().
  */
-#[derive(Debug, Hash, PartialEq)]
+#[derive(Clone, Debug, Hash, PartialEq)]
 struct DeweyVersion {
     version: Vec<i64>,
     pkgrevision: i64,
@@ -169,7 +169,7 @@ impl DeweyVersion {
 /**
  * [`DeweyMatch`] contains a single pattern to match against.
  */
-#[derive(Debug, Hash, PartialEq)]
+#[derive(Clone, Debug, Hash, PartialEq)]
 struct DeweyMatch {
     /// Which logical operation to apply
     op: DeweyOp,
@@ -229,7 +229,7 @@ impl DeweyMatch {
  * https://github.com/NetBSD/pkgsrc/blob/trunk/pkgtools/pkg_install/files/lib/dewey.c
  * [`Pattern`]: crate::Pattern
  */
-#[derive(Debug, Hash, PartialEq)]
+#[derive(Clone, Debug, Hash, PartialEq)]
 pub struct Dewey {
     pkgname: String,
     matches: Vec<DeweyMatch>,

@@ -17,7 +17,7 @@
 use crate::dewey;
 use thiserror::Error;
 
-#[derive(Debug, Default, Hash, PartialEq)]
+#[derive(Clone, Debug, Default, Hash, PartialEq)]
 enum PatternType {
     Alternate,
     Dewey,
@@ -120,7 +120,7 @@ pub enum PatternError {
  *
  * [`glob`]: https://docs.rs/glob/latest/glob/
  */
-#[derive(Debug, Default, Hash, PartialEq)]
+#[derive(Clone, Debug, Default, Hash, PartialEq)]
 pub struct Pattern {
     matchtype: PatternType,
     pattern: String,
