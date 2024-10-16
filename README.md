@@ -1,15 +1,23 @@
 # pkgsrc-rs
 
-[![Build Status](https://travis-ci.org/jperkin/pkgsrc-rs.svg)](https://travis-ci.org/jperkin/pkgsrc-rs)
 [![Downloads](https://img.shields.io/crates/d/pkgsrc.svg)](https://crates.io/crates/pkgsrc)
 [![Crates.io](https://img.shields.io/crates/v/pkgsrc.svg)](https://crates.io/crates/pkgsrc)
 [![Documentation](https://docs.rs/pkgsrc/badge.svg)](https://docs.rs/pkgsrc)
 
-A Rust interface to pkgsrc packages and the pkg\_install pkgdb.
+A Rust interface to the pkgsrc infrastructure, binary package archives, and the
+pkg\_install pkgdb.
 
-This is being developed alongside [pm](https://github.com/jperkin/pm), a Rust
-implementation of a pkgsrc package manager.  Anything that handles lower level
-pkg\_install routines will be placed here.
+This is being developed alongside:
+
+ * [mktool](https://github.com/jperkin/mktool), a collection of tools that
+   provide fast alternate implementations for various pkgsrc/mk scripts.
+ * [bob](https://github.com/jperkin/bob), a pkgsrc package builder.
+ * [pm](https://github.com/jperkin/pm), an exploration of what a binary package
+   manager might look like (not currently being developed).
+
+You should expect things to change over time as each interface adapts to better
+support these utilities, though I will still make sure to use semver versioning
+accordingly to avoid gratuitously breaking downstream utilities.
 
 ## Example
 
