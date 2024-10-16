@@ -14,6 +14,9 @@
  * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
  */
 
+#[cfg(feature = "serde")]
+use serde::Deserialize;
+
 /**
  * Parse a `PKGNAME` into its consituent parts.
  *
@@ -68,6 +71,7 @@
  * ```
  */
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
+#[cfg_attr(feature = "serde", derive(Deserialize))]
 pub struct PkgName {
     pkgname: String,
     pkgbase: String,
