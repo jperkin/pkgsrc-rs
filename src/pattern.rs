@@ -14,7 +14,8 @@
  * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
  */
 
-use crate::dewey::{Dewey, DeweyError};
+use crate::dewey::{dewey_cmp, Dewey, DeweyError, DeweyOp, DeweyVersion};
+use crate::PkgName;
 use thiserror::Error;
 
 #[derive(Clone, Debug, Default, Hash, PartialEq)]
@@ -247,6 +248,41 @@ impl Pattern {
                 glob.matches(pkg)
             }
             PatternType::Simple => self.pattern == pkg,
+        }
+    }
+
+    /**
+     * Given two package names, return the "best" match - that is, the one that
+     * is a match with the higher version.  If neither match return [`None`].
+     */
+    pub fn best_match<'a>(
+        &self,
+        pkg1: &'a str,
+        pkg2: &'a str,
+    ) -> Option<&'a str> {
+        match (self.matches(pkg1), self.matches(pkg2)) {
+            (true, false) => Some(pkg1),
+            (false, true) => Some(pkg2),
+            (true, true) => {
+                /*
+                 * Compare the version numbers using dewey, before finally
+                 * comparing lexicographically in the case of a tie to match
+                 * pkg_install:pkg_order().  Note that the lexicographic order
+                 * is backwards, the *smaller* string is returned.
+                 */
+                let d1 = DeweyVersion::new(PkgName::new(pkg1).pkgversion());
+                let d2 = DeweyVersion::new(PkgName::new(pkg2).pkgversion());
+                if dewey_cmp(&d1, &DeweyOp::GT, &d2) {
+                    Some(pkg1)
+                } else if dewey_cmp(&d1, &DeweyOp::LT, &d2) {
+                    Some(pkg2)
+                } else if pkg1 < pkg2 {
+                    Some(pkg1)
+                } else {
+                    Some(pkg2)
+                }
+            }
+            (false, false) => None,
         }
     }
 
@@ -500,5 +536,28 @@ mod tests {
         assert_pattern_eq!("foo-1.0", "foo-1.0", Simple);
         assert_pattern_ne!("foo-1.1", "foo-1.0", Simple);
         assert_pattern_ne!("bar-1.0", "foo-1.0", Simple);
+    }
+
+    #[test]
+    fn best_match_dewey() {
+        let m = Pattern::new("pkg>1<3").unwrap();
+        assert_eq!(m.best_match("pkg-1.1", "pkg-3.0"), Some("pkg-1.1"));
+        assert_eq!(m.best_match("pkg-1.1", "pkg-1.1"), Some("pkg-1.1"));
+        assert_eq!(m.best_match("pkg-1.1", "pkg-2.0"), Some("pkg-2.0"));
+        assert_eq!(m.best_match("pkg-2.0", "pkg-1.1"), Some("pkg-2.0"));
+        assert_eq!(m.best_match("pkg", "pkg-2.0"), Some("pkg-2.0"));
+        assert_eq!(m.best_match("pkg-2.0", "pkg"), Some("pkg-2.0"));
+        assert_eq!(m.best_match("pkg-1", "pkg-3.0"), None);
+        assert_eq!(m.best_match("pkg", "pkg"), None);
+    }
+
+    #[test]
+    fn best_match_alternate() {
+        let m = Pattern::new("{foo,bar}-[0-9]*").unwrap();
+        assert_eq!(m.best_match("foo-1.1", "bar-1.0"), Some("foo-1.1"));
+        assert_eq!(m.best_match("foo-1.0", "bar-1.1"), Some("bar-1.1"));
+        // In the case of a tie pkg_order() returns the _smaller_ string,
+        // which feels backwards, but we aim to preserve compatibility.
+        assert_eq!(m.best_match("foo-1.0", "bar-1.0"), Some("bar-1.0"));
     }
 }
