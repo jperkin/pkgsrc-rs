@@ -14,7 +14,7 @@
  * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
  */
 
-use crate::dewey;
+use crate::dewey::{Dewey, DeweyError};
 use thiserror::Error;
 
 #[derive(Clone, Debug, Default, Hash, PartialEq)]
@@ -34,9 +34,9 @@ pub enum PatternError {
     /// An alternate pattern was supplied with unbalanced braces.
     #[error("Unbalanced braces in pattern")]
     Alternate,
-    /// Transparent [`dewey::DeweyError`]
+    /// Transparent [`DeweyError`]
     #[error(transparent)]
-    Dewey(#[from] dewey::DeweyError),
+    Dewey(#[from] DeweyError),
     /// Transparent [`glob::PatternError`]
     #[error(transparent)]
     Glob(#[from] glob::PatternError),
@@ -125,7 +125,7 @@ pub struct Pattern {
     matchtype: PatternType,
     pattern: String,
     likely: bool,
-    dewey: Option<dewey::Dewey>,
+    dewey: Option<Dewey>,
     glob: Option<glob::Pattern>,
 }
 
@@ -172,7 +172,7 @@ impl Pattern {
         }
         if pattern.contains('>') || pattern.contains('<') {
             let matchtype = PatternType::Dewey;
-            let dewey = Some(dewey::Dewey::new(pattern)?);
+            let dewey = Some(Dewey::new(pattern)?);
             return Ok(Pattern {
                 matchtype,
                 pattern: pattern.to_string(),
