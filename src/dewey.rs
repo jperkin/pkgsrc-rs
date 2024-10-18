@@ -51,7 +51,7 @@ impl fmt::Display for DeweyError {
  * actually support them (or document them), so we don't bother.
  */
 #[derive(Clone, Debug, Hash, PartialEq)]
-enum DeweyOp {
+pub enum DeweyOp {
     LE,
     LT,
     GE,
@@ -66,13 +66,16 @@ enum DeweyOp {
  * mkcomponent().
  */
 #[derive(Clone, Debug, Hash, PartialEq)]
-struct DeweyVersion {
+pub struct DeweyVersion {
     version: Vec<i64>,
     pkgrevision: i64,
 }
 
 impl DeweyVersion {
-    fn new(s: &str) -> Self {
+    /**
+     * Create a new [`DeweyVersion`] from a string.
+     */
+    pub fn new(s: &str) -> Self {
         let mut version: Vec<i64> = vec![];
         let mut pkgrevision = 0;
         let mut idx = 0;
@@ -357,62 +360,61 @@ impl Dewey {
         }
         let pkgver = DeweyVersion::new(v[0]);
         for m in &self.matches {
-            if !Self::dewey_cmp(&pkgver, &m.op, &m.version) {
+            if !dewey_cmp(&pkgver, &m.op, &m.version) {
                 return false;
             }
         }
         true
     }
-
-    /**
-     * Compare two [`DeweyVersion`]s using the specified operator.  This iterates
-     * through both vecs, skipping entries that are identical, and comparing any
-     * that differ.  If the vecs differ in length, perform the remaining
-     * comparisons against zero.
-     *
-     * If both versions are identical, the PKGREVISION is compared as the final
-     * result.
-     */
-    fn dewey_cmp(lhs: &DeweyVersion, op: &DeweyOp, rhs: &DeweyVersion) -> bool {
-        let llen = lhs.version.len();
-        let rlen = rhs.version.len();
-        for i in 0..std::cmp::min(llen, rlen) {
-            if lhs.version[i] != rhs.version[i] {
-                return Self::dewey_test(lhs.version[i], op, rhs.version[i]);
-            }
-        }
-        match llen.cmp(&rlen) {
-            Ordering::Less => {
-                for i in llen..rlen {
-                    if 0 != rhs.version[i] {
-                        return Self::dewey_test(0, op, rhs.version[i]);
-                    }
-                }
-            }
-            Ordering::Greater => {
-                for i in rlen..llen {
-                    if 0 != lhs.version[i] {
-                        return Self::dewey_test(lhs.version[i], op, 0);
-                    }
-                }
-                return Self::dewey_test(lhs.pkgrevision, op, rhs.pkgrevision);
-            }
-            Ordering::Equal => {}
-        }
-        Self::dewey_test(lhs.pkgrevision, op, rhs.pkgrevision)
+}
+/**
+ * Compare two [`i64`]s using the specified operator.
+ */
+fn dewey_test(lhs: i64, op: &DeweyOp, rhs: i64) -> bool {
+    match op {
+        DeweyOp::GE => lhs >= rhs,
+        DeweyOp::GT => lhs > rhs,
+        DeweyOp::LE => lhs <= rhs,
+        DeweyOp::LT => lhs < rhs,
     }
+}
 
-    /**
-     * Compare two [`i64`]s using the specified operator.
-     */
-    fn dewey_test(lhs: i64, op: &DeweyOp, rhs: i64) -> bool {
-        match op {
-            DeweyOp::GE => lhs >= rhs,
-            DeweyOp::GT => lhs > rhs,
-            DeweyOp::LE => lhs <= rhs,
-            DeweyOp::LT => lhs < rhs,
+/**
+ * Compare two [`DeweyVersion`]s using the specified operator.  This iterates
+ * through both vecs, skipping entries that are identical, and comparing any
+ * that differ.  If the vecs differ in length, perform the remaining
+ * comparisons against zero.
+ *
+ * If both versions are identical, the PKGREVISION is compared as the final
+ * result.
+ */
+pub fn dewey_cmp(lhs: &DeweyVersion, op: &DeweyOp, rhs: &DeweyVersion) -> bool {
+    let llen = lhs.version.len();
+    let rlen = rhs.version.len();
+    for i in 0..std::cmp::min(llen, rlen) {
+        if lhs.version[i] != rhs.version[i] {
+            return dewey_test(lhs.version[i], op, rhs.version[i]);
         }
     }
+    match llen.cmp(&rlen) {
+        Ordering::Less => {
+            for i in llen..rlen {
+                if 0 != rhs.version[i] {
+                    return dewey_test(0, op, rhs.version[i]);
+                }
+            }
+        }
+        Ordering::Greater => {
+            for i in rlen..llen {
+                if 0 != lhs.version[i] {
+                    return dewey_test(lhs.version[i], op, 0);
+                }
+            }
+            return dewey_test(lhs.pkgrevision, op, rhs.pkgrevision);
+        }
+        Ordering::Equal => {}
+    }
+    dewey_test(lhs.pkgrevision, op, rhs.pkgrevision)
 }
 
 #[cfg(test)]
