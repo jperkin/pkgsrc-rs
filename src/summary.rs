@@ -125,7 +125,7 @@
  * println!("{}", sum);
  * ```
  *
- * [`pkg_summary(5)`]: https://netbsd.gw.com/cgi-bin/man-cgi?pkg_summary+5
+ * [`pkg_summary(5)`]: https://man.netbsd.org/pkg_summary.5
  */
 use std::collections::{BTreeMap, HashMap};
 use std::error::Error;
@@ -149,7 +149,7 @@ pub type Result<T> = std::result::Result<T, SummaryError>;
  *
  * The descriptions here are taken straight from the manual page.
  *
- * [`pkg_summary(5)`]: https://netbsd.gw.com/cgi-bin/man-cgi?pkg_summary+5
+ * [`pkg_summary(5)`]: https://man.netbsd.org/pkg_summary.5
  */
 #[derive(Clone, Debug, Ord, PartialOrd, PartialEq, Eq, Hash)]
 pub enum SummaryVariable {
@@ -425,7 +425,7 @@ impl fmt::Display for Summary {
  * println!("{}", sum);
  * ```
  *
- * [`pkg_summary(5)`]: https://netbsd.gw.com/cgi-bin/man-cgi?pkg_summary+5
+ * [`pkg_summary(5)`]: https://man.netbsd.org/pkg_summary.5
  */
 #[derive(Clone, Debug, Default)]
 pub struct Summary {
@@ -2070,7 +2070,7 @@ impl FromStr for Summary {
 /**
  * Enum containing possible reasons that parsing [`pkg_summary(5)`] failed.
  *
- * [`pkg_summary(5)`]: https://netbsd.gw.com/cgi-bin/man-cgi?pkg_summary+5
+ * [`pkg_summary(5)`]: https://man.netbsd.org/pkg_summary.5
  */
 #[derive(Debug)]
 pub enum SummaryError {
@@ -2089,7 +2089,7 @@ pub enum SummaryError {
     /**
      * The supplied variable is not a valid [`pkg_summary(5)`] variable.
      *
-     * [`pkg_summary(5)`]: https://netbsd.gw.com/cgi-bin/man-cgi?pkg_summary+5
+     * [`pkg_summary(5)`]: https://man.netbsd.org/pkg_summary.5
      */
     ParseVariable(String),
     /**
@@ -2102,7 +2102,7 @@ pub enum SummaryError {
 /**
  * Missing variables that are required for a valid [`pkg_summary(5)`] entity.
  *
- * [`pkg_summary(5)`]: https://netbsd.gw.com/cgi-bin/man-cgi?pkg_summary+5
+ * [`pkg_summary(5)`]: https://man.netbsd.org/pkg_summary.5
  */
 #[derive(Clone, Debug)]
 pub enum MissingVariable {
@@ -2298,7 +2298,7 @@ impl From<ParseIntError> for SummaryError {
  * ```
  *
  * [`Display`]: https://doc.rust-lang.org/std/fmt/trait.Display.html
- * [`pkg_summary(5)`]: https://netbsd.gw.com/cgi-bin/man-cgi?pkg_summary+5
+ * [`pkg_summary(5)`]: https://man.netbsd.org/pkg_summary.5
  */
 #[derive(Clone, Debug, Default)]
 pub struct SummaryStream {
