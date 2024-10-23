@@ -70,7 +70,7 @@ use serde::Deserialize;
  * assert_eq!(pkg.pkgrevision(), None);
  * ```
  */
-#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 #[cfg_attr(feature = "serde", derive(Deserialize))]
 pub struct PkgName {
     pkgname: String,
