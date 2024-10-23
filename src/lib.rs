@@ -41,6 +41,7 @@ mod metadata;
 mod pattern;
 mod pkgname;
 mod pkgpath;
+mod scanindex;
 
 pub use crate::depend::{Depend, DependError, DependType};
 pub use crate::dewey::{Dewey, DeweyError};
@@ -48,3 +49,4 @@ pub use crate::metadata::{Metadata, MetadataEntry};
 pub use crate::pattern::{Pattern, PatternError};
 pub use crate::pkgname::PkgName;
 pub use crate::pkgpath::{PkgPath, PkgPathError};
+pub use crate::scanindex::ScanIndex;
