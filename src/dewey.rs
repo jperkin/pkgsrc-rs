@@ -50,7 +50,7 @@ impl fmt::Display for DeweyError {
  * pkg_install implements "==" (DEWEY_EQ) and "!=" (DEWEY_NE) but doesn't
  * actually support them (or document them), so we don't bother.
  */
-#[derive(Clone, Debug, Hash, PartialEq)]
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub enum DeweyOp {
     LE,
     LT,
@@ -65,7 +65,7 @@ pub enum DeweyOp {
  * This is a combined version of pkg_install dewey.c's mkversion() and
  * mkcomponent().
  */
-#[derive(Clone, Debug, Hash, PartialEq)]
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub struct DeweyVersion {
     version: Vec<i64>,
     pkgrevision: i64,
@@ -172,7 +172,7 @@ impl DeweyVersion {
 /**
  * [`DeweyMatch`] contains a single pattern to match against.
  */
-#[derive(Clone, Debug, Hash, PartialEq)]
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
 struct DeweyMatch {
     /// Which logical operation to apply
     op: DeweyOp,
@@ -232,7 +232,7 @@ impl DeweyMatch {
  * https://github.com/NetBSD/pkgsrc/blob/trunk/pkgtools/pkg_install/files/lib/dewey.c
  * [`Pattern`]: crate::Pattern
  */
-#[derive(Clone, Debug, Hash, PartialEq)]
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub struct Dewey {
     pkgname: String,
     matches: Vec<DeweyMatch>,
