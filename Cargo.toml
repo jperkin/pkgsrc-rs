@@ -33,4 +33,5 @@ structopt = "0.3.26"
 unindent = "0.2.3"
 
 [features]
+default = ["serde"]
 serde = ["dep:serde", "dep:serde_with"]
