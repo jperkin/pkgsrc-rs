@@ -480,17 +480,17 @@ mod tests {
         if let Err(Dewey(e)) = Pattern::new("<>") {
             assert_eq!(e.pos, 0);
         } else {
-            assert!(false);
+            panic!();
         }
         if let Err(Dewey(e)) = Pattern::new("foo>=1>2") {
             assert_eq!(e.pos, 3);
         } else {
-            assert!(false);
+            panic!();
         }
         if let Err(Dewey(e)) = Pattern::new("pkg>=1<2<4") {
             assert_eq!(e.pos, 8);
         } else {
-            assert!(false);
+            panic!();
         }
     }
 

@@ -683,11 +683,8 @@ impl Plist {
                         None
                     } else {
                         let mut path = OsString::new();
-                        match &prefix {
-                            Some(pfx) => {
-                                path.push(pfx);
-                            }
-                            None => {}
+                        if let Some(pfx) = &prefix {
+                            path.push(pfx);
                         }
                         if !path.to_string_lossy().ends_with('/') {
                             path.push("/");

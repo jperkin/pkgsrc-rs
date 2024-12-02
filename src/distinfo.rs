@@ -923,9 +923,9 @@ mod tests {
             ))
         );
         let f = di.get_distfile("pkgin-23.8.1.tar.gz");
-        assert!(matches!(f, Some(_)));
+        assert!(f.is_some());
         let p = di.get_patchfile("patch-configure.ac");
-        assert!(matches!(p, Some(_)));
+        assert!(p.is_some());
         assert_eq!(None, di.get_distfile("foo-23.8.1.tar.gz"));
         assert_eq!(None, di.get_patchfile("patch-Makefile"));
     }
@@ -934,9 +934,10 @@ mod tests {
     fn test_construct() {
         let mut di = Distinfo::new();
 
-        let mut distsums: Vec<Checksum> = Vec::new();
-        distsums.push(Checksum::new(Digest::BLAKE2s, String::new()));
-        distsums.push(Checksum::new(Digest::SHA512, String::new()));
+        let distsums: Vec<Checksum> = vec![
+            Checksum::new(Digest::BLAKE2s, String::new()),
+            Checksum::new(Digest::SHA512, String::new()),
+        ];
 
         let entry =
             Entry::new("foo.tar.gz", "/distfiles/foo.tar.gz", distsums, None);
@@ -950,8 +951,9 @@ mod tests {
         assert_eq!(di.distfiles()[0].filetype, EntryType::Distfile);
         assert_eq!(di.distfiles().len(), 1);
 
-        let mut patchsums: Vec<Checksum> = Vec::new();
-        patchsums.push(Checksum::new(Digest::SHA1, String::new()));
+        let patchsums: Vec<Checksum> = vec![
+            Checksum::new(Digest::SHA1, String::new())
+        ];
 
         di.insert(Entry::new(
             "patch-Makefile",

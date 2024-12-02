@@ -110,7 +110,7 @@ pub struct ScanIndex {
 struct KeyValue;
 
 #[cfg(feature = "serde")]
-impl<'de> Visitor<'de> for KeyValue {
+impl Visitor<'_> for KeyValue {
     type Value = HashMap<String, String>;
 
     fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
