@@ -78,7 +78,7 @@
  */
 
 use std::fmt;
-use std::io::{BufReader, Read};
+use std::io::{BufRead, BufReader, Read};
 use std::str::FromStr;
 
 /**
@@ -212,15 +212,15 @@ fn hash_patch_internal<R: Read, D: digest::Digest + std::io::Write>(
     reader: &mut R,
 ) -> DigestResult<String> {
     let mut hasher = D::new();
-    let mut r = BufReader::new(reader);
-    let mut s = String::new();
-    r.read_to_string(&mut s)?;
+    let bufreader = BufReader::new(reader);
 
-    for line in s.split_inclusive('\n') {
-        if line.contains("$NetBSD") {
+    for line in bufreader.split(b'\n') {
+        let line = line?;
+        if line.windows(7).any(|window| window == b"$NetBSD") {
             continue;
         }
-        hasher.update(line.as_bytes());
+        hasher.update(&line);
+        hasher.update(b"\n");
     }
 
     let hash = hasher
