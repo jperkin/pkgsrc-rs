@@ -25,7 +25,7 @@ use serde::Deserialize;
  * * `PKGBASE` contains the name of the package
  * * `PKGVERSION` contains the full version string
  * * `PKGREVISION` is an optional package revision denoted by `nb` followed by
- *    a number.
+ *   a number.
  *
  * The name and version are split at the last `-`, and the revision, if
  * specified, should be located at the end of the version.
