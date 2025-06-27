@@ -343,8 +343,8 @@ impl SummaryValue {
 impl fmt::Display for SummaryValue {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
-            SummaryValue::S(s) => write!(f, "{}", s),
-            SummaryValue::I(i) => write!(f, "{}", i),
+            SummaryValue::S(s) => write!(f, "{s}"),
+            SummaryValue::I(i) => write!(f, "{i}"),
             SummaryValue::A(s) => write!(f, "{}", s.join("\n")),
         }
     }
@@ -368,11 +368,11 @@ impl fmt::Display for Summary {
         }
         for (key, val) in bmap {
             match val {
-                SummaryValue::S(s) => writeln!(f, "{}={}", key, s),
-                SummaryValue::I(i) => writeln!(f, "{}={}", key, i),
+                SummaryValue::S(s) => writeln!(f, "{key}={s}"),
+                SummaryValue::I(i) => writeln!(f, "{key}={i}"),
                 SummaryValue::A(a) => {
                     for s in a.iter() {
-                        writeln!(f, "{}={}", key, s)?;
+                        writeln!(f, "{key}={s}")?;
                     }
                     Ok(())
                 }
@@ -2156,22 +2156,22 @@ impl fmt::Display for SummaryError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             SummaryError::ParseLine(s) => {
-                write!(f, "not correctly formatted (VARIABLE=VALUE): {}", s)
+                write!(f, "not correctly formatted (VARIABLE=VALUE): {s}")
             }
             SummaryError::ParseVariable(s) => {
-                write!(f, "'{}' is not a supported pkg_summary variable", s)
+                write!(f, "'{s}' is not a supported pkg_summary variable")
             }
             SummaryError::ParseInt(s) => {
                 /* Defer to ParseIntError formatting */
-                write!(f, "{}", s)
+                write!(f, "{s}")
             }
             SummaryError::Io(s) => {
                 /* Defer to io::Error formatting */
-                write!(f, "{}", s)
+                write!(f, "{s}")
             }
             SummaryError::Incomplete(s) => {
                 /* Defer to MissingVariable formatting */
-                write!(f, "{}", s)
+                write!(f, "{s}")
             }
         }
     }
@@ -2335,7 +2335,7 @@ impl SummaryStream {
 impl fmt::Display for SummaryStream {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         for summary in self.entries() {
-            writeln!(f, "{}", summary)?;
+            writeln!(f, "{summary}")?;
         }
         Ok(())
     }

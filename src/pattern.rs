@@ -314,7 +314,7 @@ impl Pattern {
             let matches = &matches[1..matches.len() - 1];
 
             for m in matches.split(',') {
-                let fmt = format!("{}{}{}", first, m, last);
+                let fmt = format!("{first}{m}{last}");
                 if let Ok(pat) = Pattern::new(&fmt) {
                     if pat.matches(pkg) {
                         return true;

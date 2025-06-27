@@ -243,7 +243,7 @@ impl ScanIndex {
         let index = ScanIndex::deserialize(index).map_err(|e| {
             std::io::Error::new(
                 std::io::ErrorKind::InvalidData,
-                format!("Failed to parse: {}", e),
+                format!("Failed to parse: {e}"),
             )
         })?;
         Ok(index)

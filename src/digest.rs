@@ -125,9 +125,9 @@ impl From<std::io::Error> for DigestError {
 impl fmt::Display for DigestError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
-            DigestError::Io(s) => write!(f, "I/O error: {}", s),
+            DigestError::Io(s) => write!(f, "I/O error: {s}"),
             DigestError::Unsupported(s) => {
-                write!(f, "Unsupported digest: {}", s)
+                write!(f, "Unsupported digest: {s}")
             }
         }
     }
