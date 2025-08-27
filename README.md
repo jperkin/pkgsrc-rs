@@ -56,6 +56,17 @@ fn main() -> Result<(), std::io::Error> {
   repositories.
 * Summary handles pkg\_summary(5) parsing and generation.
 
+## MSRV
+
+As a library I want to keep it to as old an MSRV as reasonable, and so the
+current requirements are:
+
+* `edition = "2021"`
+* `rust-version = "1.74.1"`
+
+as calculated by `cargo msrv`.  The limiting factor for supporting even older
+versions is serde.  The plan is to keep the requirements to the minimum that
+our dependencies require.
 
 # License
 
