@@ -37,7 +37,10 @@ fn test_digest_file() -> DigestResult<()> {
     let mut f = File::open(&file)?;
     let d = Digest::from_str("SHA512")?;
     let h = d.hash_file(&mut f)?;
-    assert_eq!(h, "1b8bd4264ac86f9535376965b3e94a622a4da4daf1f516184609541f9a12139e0accf24fd41bfab95114d0ba3fcfc589fa911e2597b29c3221b66898ae4cfa13");
+    assert_eq!(
+        h,
+        "1b8bd4264ac86f9535376965b3e94a622a4da4daf1f516184609541f9a12139e0accf24fd41bfab95114d0ba3fcfc589fa911e2597b29c3221b66898ae4cfa13"
+    );
 
     Ok(())
 }

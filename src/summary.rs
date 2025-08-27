@@ -2369,7 +2369,7 @@ impl Write for SummaryStream {
                 }
             }
             Err(e) => {
-                return Err(io::Error::new(io::ErrorKind::InvalidData, e))
+                return Err(io::Error::new(io::ErrorKind::InvalidData, e));
             }
         };
 
@@ -2381,7 +2381,7 @@ impl Write for SummaryStream {
             let sum = match Summary::from_str(sum_entry) {
                 Ok(s) => s,
                 Err(e) => {
-                    return Err(io::Error::new(io::ErrorKind::InvalidData, e))
+                    return Err(io::Error::new(io::ErrorKind::InvalidData, e));
                 }
             };
             self.entries.push(sum);

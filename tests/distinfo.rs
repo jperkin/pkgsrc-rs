@@ -140,7 +140,10 @@ fn test_distinfo_contents() -> Result<(), DistinfoError> {
         "712c28f8a0fbfbd5ec4cd71ef45204a3780a332d559b5566070138554b89e400"
     );
     assert_eq!(di.distfiles()[0].checksums[1].digest, Digest::SHA512);
-    assert_eq!(di.distfiles()[0].checksums[1].hash, "fcca87bdb67a88685a8a25597f9e015f5e60197b9a269fa350ae35a7991ed8da553939b4bbc7f7d3cfd863c67142af403b04165633acbce4339056a905e87fbd");
+    assert_eq!(
+        di.distfiles()[0].checksums[1].hash,
+        "fcca87bdb67a88685a8a25597f9e015f5e60197b9a269fa350ae35a7991ed8da553939b4bbc7f7d3cfd863c67142af403b04165633acbce4339056a905e87fbd"
+    );
 
     assert_eq!(di.patchfiles()[0].filename, PathBuf::from("patch-Makefile"));
     assert_eq!(di.patchfiles()[0].checksums[0].digest, Digest::SHA1);

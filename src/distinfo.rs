@@ -897,11 +897,11 @@ mod tests {
 
     #[test]
     fn test_line_none() {
-        let o = Line::from_bytes(format!("").as_bytes());
+        let o = Line::from_bytes(String::new().as_bytes());
         assert_eq!(o, Line::None);
-        let o = Line::from_bytes(format!("\n  \n\n").as_bytes());
+        let o = Line::from_bytes("\n  \n\n".to_string().as_bytes());
         assert_eq!(o, Line::None);
-        let o = Line::from_bytes(format!("#  \n\n").as_bytes());
+        let o = Line::from_bytes("#  \n\n".to_string().as_bytes());
         assert_eq!(o, Line::None);
     }
 
@@ -943,17 +943,16 @@ mod tests {
             Entry::new("foo.tar.gz", "/distfiles/foo.tar.gz", distsums, None);
 
         /* First insert is created, returns true */
-        assert_eq!(di.insert(entry.clone()), true);
+        assert!(di.insert(entry.clone()));
 
         /* Second insert is an update, returns false */
-        assert_eq!(di.insert(entry.clone()), false);
+        assert!(!di.insert(entry.clone()));
 
         assert_eq!(di.distfiles()[0].filetype, EntryType::Distfile);
         assert_eq!(di.distfiles().len(), 1);
 
-        let patchsums: Vec<Checksum> = vec![
-            Checksum::new(Digest::SHA1, String::new())
-        ];
+        let patchsums: Vec<Checksum> =
+            vec![Checksum::new(Digest::SHA1, String::new())];
 
         di.insert(Entry::new(
             "patch-Makefile",

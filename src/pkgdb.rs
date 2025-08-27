@@ -199,7 +199,7 @@ impl Iterator for PkgDB {
                                 return Some(Err(io::Error::new(
                                     io::ErrorKind::InvalidData,
                                     "Could not parse package directory",
-                                )))
+                                )));
                             }
                         };
                     }

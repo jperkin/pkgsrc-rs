@@ -297,7 +297,7 @@ impl Dewey {
                 return Err(DeweyError {
                     pos: 0,
                     msg: "No dewey operators found",
-                })
+                });
             }
             1 => {
                 let p = &pattern[deweyops[0].1..pattern.len()];
@@ -318,11 +318,11 @@ impl Dewey {
                 let p = &pattern[deweyops[1].1..pattern.len()];
                 matches.push(DeweyMatch::new(&deweyops[1].2, p)?);
             }
-            3.. => {
+            _ => {
                 return Err(DeweyError {
                     pos: deweyops[2].0,
                     msg: "Too many dewey operators found",
-                })
+                });
             }
         }
 
@@ -462,29 +462,29 @@ mod tests {
     #[test]
     fn dewey_match_no_version() {
         let m = Dewey::new("pkg>").unwrap();
-        assert_eq!(m.matches("pkg"), false);
-        assert_eq!(m.matches("pkg-"), false);
-        assert_eq!(m.matches("pkg-0"), false);
-        assert_eq!(m.matches("pkg-0nb1"), true);
+        assert!(!m.matches("pkg"));
+        assert!(!m.matches("pkg-"));
+        assert!(!m.matches("pkg-0"));
+        assert!(m.matches("pkg-0nb1"));
 
         let m = Dewey::new("pkg>=").unwrap();
-        assert_eq!(m.matches("pkg"), false);
-        assert_eq!(m.matches("pkg-"), true);
+        assert!(!m.matches("pkg"));
+        assert!(m.matches("pkg-"));
     }
 
     #[test]
     fn dewey_match_range() {
         let m = Dewey::new("pkg>1.0alpha3nb2<2.0beta4nb7").unwrap();
-        assert_eq!(m.matches("pkg-1.1"), true);
-        assert_eq!(m.matches("pkg-1.0alpha3nb2"), false);
-        assert_eq!(m.matches("pkg-1.0alpha3nb3"), true);
-        assert_eq!(m.matches("pkg-2.0alpha3nb3"), true);
-        assert_eq!(m.matches("pkg-2.0beta3nb8"), true);
-        assert_eq!(m.matches("pkg-2.0beta5nb6"), false);
-        assert_eq!(m.matches("pkg-2.0beta4nb7"), false);
-        assert_eq!(m.matches("pkg-2.0"), false);
-        assert_eq!(m.matches("pkg-2.0nb1"), false);
-        assert_eq!(m.matches("pkg-2.0nb8"), false);
+        assert!(m.matches("pkg-1.1"));
+        assert!(!m.matches("pkg-1.0alpha3nb2"));
+        assert!(m.matches("pkg-1.0alpha3nb3"));
+        assert!(m.matches("pkg-2.0alpha3nb3"));
+        assert!(m.matches("pkg-2.0beta3nb8"));
+        assert!(!m.matches("pkg-2.0beta5nb6"));
+        assert!(!m.matches("pkg-2.0beta4nb7"));
+        assert!(!m.matches("pkg-2.0"));
+        assert!(!m.matches("pkg-2.0nb1"));
+        assert!(!m.matches("pkg-2.0nb8"));
     }
 
     /*
@@ -494,24 +494,24 @@ mod tests {
     #[test]
     fn dewey_match_length() {
         let m = Dewey::new("pkg>1.0.0.0alphanb1").unwrap();
-        assert_eq!(m.matches("pkg-1"), true);
-        assert_eq!(m.matches("pkg-1.0"), true);
-        assert_eq!(m.matches("pkg-1.0.0"), true);
-        assert_eq!(m.matches("pkg-1.0.0."), true);
-        assert_eq!(m.matches("pkg-1.0.0.0"), true);
-        assert_eq!(m.matches("pkg-1.0.0.0alpha1"), true);
-        assert_eq!(m.matches("pkg-1.0.0.0alpha1nb0"), true);
-        assert_eq!(m.matches("pkg-1.0.0.0alphanb2"), true);
-        assert_eq!(m.matches("pkg-1.0.0.0."), true);
-        assert_eq!(m.matches("pkg-1.0.0.0_"), true);
-        assert_eq!(m.matches("pkg-1.0.0.0beta"), true);
-        assert_eq!(m.matches("pkg-1.0.0.0rc"), true);
-        assert_eq!(m.matches("pkg-1.0.0.0nb1"), true);
-        assert_eq!(m.matches("pkg-1.0.0.0alphanb1"), false);
-        assert_eq!(m.matches("pkg-1.0.0.0alpha"), false);
-        assert_eq!(m.matches("pkg-1.0.0.beta"), false);
-        assert_eq!(m.matches("pkg-1.0.0alpha"), false);
-        assert_eq!(m.matches("pkg-1.0.1"), true);
-        assert_eq!(m.matches("pkg-1.0alpha"), false);
+        assert!(m.matches("pkg-1"));
+        assert!(m.matches("pkg-1.0"));
+        assert!(m.matches("pkg-1.0.0"));
+        assert!(m.matches("pkg-1.0.0."));
+        assert!(m.matches("pkg-1.0.0.0"));
+        assert!(m.matches("pkg-1.0.0.0alpha1"));
+        assert!(m.matches("pkg-1.0.0.0alpha1nb0"));
+        assert!(m.matches("pkg-1.0.0.0alphanb2"));
+        assert!(m.matches("pkg-1.0.0.0."));
+        assert!(m.matches("pkg-1.0.0.0_"));
+        assert!(m.matches("pkg-1.0.0.0beta"));
+        assert!(m.matches("pkg-1.0.0.0rc"));
+        assert!(m.matches("pkg-1.0.0.0nb1"));
+        assert!(!m.matches("pkg-1.0.0.0alphanb1"));
+        assert!(!m.matches("pkg-1.0.0.0alpha"));
+        assert!(!m.matches("pkg-1.0.0.beta"));
+        assert!(!m.matches("pkg-1.0.0alpha"));
+        assert!(m.matches("pkg-1.0.1"));
+        assert!(!m.matches("pkg-1.0alpha"));
     }
 }
