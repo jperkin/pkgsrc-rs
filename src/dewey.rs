@@ -15,35 +15,19 @@
  */
 
 use std::cmp::Ordering;
-use std::error::Error;
-use std::fmt;
+use thiserror::Error;
 
 /**
  * A [`Dewey`] pattern parsing error.
  */
-#[derive(Debug)]
+#[derive(Debug, Error)]
+#[error("Pattern syntax error near position {pos}: {msg}")]
 pub struct DeweyError {
     /// The approximate character index of where the error occurred.
     pub pos: usize,
 
     /// A message describing the error.
     pub msg: &'static str,
-}
-
-impl Error for DeweyError {
-    fn description(&self) -> &str {
-        self.msg
-    }
-}
-
-impl fmt::Display for DeweyError {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(
-            f,
-            "Pattern syntax error near position {}: {}",
-            self.pos, self.msg
-        )
-    }
 }
 
 /*
