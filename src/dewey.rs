@@ -62,8 +62,8 @@ pub enum DeweyOp {
  * [`DeweyVersion`] splits a version string into a [`Vec`] of integers and a
  * separate `PKGREVISION` that can be compared against.
  *
- * This is a combined version of pkg_install dewey.c's mkversion() and
- * mkcomponent().
+ * This is a combined version of `pkg_install` dewey.c's `mkversion()` and
+ * `mkcomponent()`.
  */
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub struct DeweyVersion {
@@ -181,9 +181,9 @@ struct DeweyMatch {
 }
 
 impl DeweyMatch {
-    fn new(op: &DeweyOp, pattern: &str) -> Result<DeweyMatch, DeweyError> {
+    fn new(op: &DeweyOp, pattern: &str) -> Result<Self, DeweyError> {
         let version = DeweyVersion::new(pattern);
-        Ok(DeweyMatch {
+        Ok(Self {
             op: op.clone(),
             version,
         })
@@ -257,8 +257,12 @@ impl Dewey {
      * // Invalid use of incompatible operators.
      * assert!(Dewey::new("pkg>1>=2").is_err());
      * ```
+     *
+     * # Errors
+     *
+     * Returns [`DeweyError`] if the pattern is invalid.
      */
-    pub fn new(pattern: &str) -> Result<Dewey, DeweyError> {
+    pub fn new(pattern: &str) -> Result<Self, DeweyError> {
         /*
          * Search through the pattern looking for dewey match operators and
          * their indices.  Push a tuple containing the start of the pattern,
@@ -269,10 +273,10 @@ impl Dewey {
         for (index, matched) in pattern.match_indices(&['>', '<']) {
             match (matched, pattern.get(index + 1..index + 2)) {
                 (">", Some("=")) => {
-                    deweyops.push((index, index + 2, DeweyOp::GE))
+                    deweyops.push((index, index + 2, DeweyOp::GE));
                 }
                 ("<", Some("=")) => {
-                    deweyops.push((index, index + 2, DeweyOp::LE))
+                    deweyops.push((index, index + 2, DeweyOp::LE));
                 }
                 (">", _) => deweyops.push((index, index + 1, DeweyOp::GT)),
                 ("<", _) => deweyops.push((index, index + 1, DeweyOp::LT)),
@@ -331,7 +335,7 @@ impl Dewey {
          * pkgname and return all matches.
          */
         let pkgname = pattern[0..deweyops[0].0].to_string();
-        Ok(Dewey { pkgname, matches })
+        Ok(Self { pkgname, matches })
     }
 
     /**
@@ -350,6 +354,7 @@ impl Dewey {
      * assert_eq!(m.matches("pkg-2.0"), false);
      * ```
      */
+    #[must_use]
     pub fn matches(&self, pkg: &str) -> bool {
         let v: Vec<&str> = pkg.rsplitn(2, '-').collect();
         if v.len() != 2 {
