@@ -424,7 +424,7 @@ mod tests {
     #[test]
     fn dewey_version_empty() {
         let dv = DeweyVersion::new("");
-        assert_eq!(dv.version, vec![]);
+        assert_eq!(dv.version, Vec::<i64>::new());
         assert_eq!(dv.pkgrevision, 0);
     }
 
@@ -434,7 +434,7 @@ mod tests {
     #[test]
     fn dewey_version_utf8() {
         let dv = DeweyVersion::new("é");
-        assert_eq!(dv.version, vec![]);
+        assert_eq!(dv.version, Vec::<i64>::new());
         assert_eq!(dv.pkgrevision, 0);
     }
 
