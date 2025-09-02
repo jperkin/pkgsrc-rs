@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2024 Jonathan Perkin <jonathan@perkin.org.uk>
+ * Copyright (c) 2025 Jonathan Perkin <jonathan@perkin.org.uk>
  *
  * Permission to use, copy, modify, and distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -74,8 +74,12 @@ pub struct DeweyVersion {
 impl DeweyVersion {
     /**
      * Create a new [`DeweyVersion`] from a string.
+     *
+     * # Errors
+     *
+     * Returns [`DeweyError`] if a version component overflows [`i64`].
      */
-    pub fn new(s: &str) -> Self {
+    pub fn new(s: &str) -> Result<Self, DeweyError> {
         let mut version: Vec<i64> = vec![];
         let mut pkgrevision = 0;
         let mut idx = 0;
@@ -101,7 +105,11 @@ impl DeweyVersion {
             let numstr: String =
                 slice.chars().take_while(char::is_ascii_digit).collect();
             if !numstr.is_empty() {
-                version.push(numstr.parse::<i64>().unwrap());
+                let num = numstr.parse::<i64>().map_err(|_| DeweyError {
+                    pos: idx,
+                    msg: "Version component overflow",
+                })?;
+                version.push(num);
                 idx += numstr.len();
                 continue;
             }
@@ -162,10 +170,10 @@ impl DeweyVersion {
             }
         }
 
-        DeweyVersion {
+        Ok(Self {
             version,
             pkgrevision,
-        }
+        })
     }
 }
 
@@ -182,7 +190,7 @@ struct DeweyMatch {
 
 impl DeweyMatch {
     fn new(op: &DeweyOp, pattern: &str) -> Result<Self, DeweyError> {
-        let version = DeweyVersion::new(pattern);
+        let version = DeweyVersion::new(pattern)?;
         Ok(Self {
             op: op.clone(),
             version,
@@ -363,7 +371,9 @@ impl Dewey {
         if v[1] != self.pkgname {
             return false;
         }
-        let pkgver = DeweyVersion::new(v[0]);
+        let Ok(pkgver) = DeweyVersion::new(v[0]) else {
+            return false;
+        };
         for m in &self.matches {
             if !dewey_cmp(&pkgver, &m.op, &m.version) {
                 return false;
@@ -427,59 +437,64 @@ mod tests {
     use super::*;
 
     #[test]
-    fn dewey_version_empty() {
-        let dv = DeweyVersion::new("");
+    fn dewey_version_empty() -> Result<(), DeweyError> {
+        let dv = DeweyVersion::new("")?;
         assert_eq!(dv.version, Vec::<i64>::new());
         assert_eq!(dv.pkgrevision, 0);
+        Ok(())
     }
 
     /*
      * Any non-ASCII characters are just skipped.
      */
     #[test]
-    fn dewey_version_utf8() {
-        let dv = DeweyVersion::new("é");
+    fn dewey_version_utf8() -> Result<(), DeweyError> {
+        let dv = DeweyVersion::new("é")?;
         assert_eq!(dv.version, Vec::<i64>::new());
         assert_eq!(dv.pkgrevision, 0);
+        Ok(())
     }
 
     #[test]
-    fn dewey_version_modifiers() {
-        let dv = DeweyVersion::new("1.0alpha1beta2rc3pl4_5nb17");
+    fn dewey_version_modifiers() -> Result<(), DeweyError> {
+        let dv = DeweyVersion::new("1.0alpha1beta2rc3pl4_5nb17")?;
         assert_eq!(dv.version, vec![1, 0, 0, -3, 1, -2, 2, -1, 3, 0, 4, 0, 5]);
         assert_eq!(dv.pkgrevision, 17);
         // chars replaced with [0, <char code>], - ignored.
-        let dv = DeweyVersion::new("ojnknb30_-");
+        let dv = DeweyVersion::new("ojnknb30_-")?;
         assert_eq!(dv.version, vec![0, 111, 0, 106, 0, 110, 0, 107, 0]);
         assert_eq!(dv.pkgrevision, 30);
+        Ok(())
     }
 
     #[test]
-    fn dewey_version_empty_pkgrevision() {
-        let dv = DeweyVersion::new("100nb");
+    fn dewey_version_empty_pkgrevision() -> Result<(), DeweyError> {
+        let dv = DeweyVersion::new("100nb")?;
         assert_eq!(dv.version, vec![100]);
         assert_eq!(dv.pkgrevision, 0);
+        Ok(())
     }
 
     /*
      * If no version is specified at all it behaves as if it were 0.
      */
     #[test]
-    fn dewey_match_no_version() {
-        let m = Dewey::new("pkg>").unwrap();
+    fn dewey_match_no_version() -> Result<(), DeweyError> {
+        let m = Dewey::new("pkg>")?;
         assert!(!m.matches("pkg"));
         assert!(!m.matches("pkg-"));
         assert!(!m.matches("pkg-0"));
         assert!(m.matches("pkg-0nb1"));
 
-        let m = Dewey::new("pkg>=").unwrap();
+        let m = Dewey::new("pkg>=")?;
         assert!(!m.matches("pkg"));
         assert!(m.matches("pkg-"));
+        Ok(())
     }
 
     #[test]
-    fn dewey_match_range() {
-        let m = Dewey::new("pkg>1.0alpha3nb2<2.0beta4nb7").unwrap();
+    fn dewey_match_range() -> Result<(), DeweyError> {
+        let m = Dewey::new("pkg>1.0alpha3nb2<2.0beta4nb7")?;
         assert!(m.matches("pkg-1.1"));
         assert!(!m.matches("pkg-1.0alpha3nb2"));
         assert!(m.matches("pkg-1.0alpha3nb3"));
@@ -490,6 +505,7 @@ mod tests {
         assert!(!m.matches("pkg-2.0"));
         assert!(!m.matches("pkg-2.0nb1"));
         assert!(!m.matches("pkg-2.0nb8"));
+        Ok(())
     }
 
     /*
@@ -497,8 +513,8 @@ mod tests {
      * calculated correctly.
      */
     #[test]
-    fn dewey_match_length() {
-        let m = Dewey::new("pkg>1.0.0.0alphanb1").unwrap();
+    fn dewey_match_length() -> Result<(), DeweyError> {
+        let m = Dewey::new("pkg>1.0.0.0alphanb1")?;
         assert!(m.matches("pkg-1"));
         assert!(m.matches("pkg-1.0"));
         assert!(m.matches("pkg-1.0.0"));
@@ -518,5 +534,26 @@ mod tests {
         assert!(!m.matches("pkg-1.0.0alpha"));
         assert!(m.matches("pkg-1.0.1"));
         assert!(!m.matches("pkg-1.0alpha"));
+        Ok(())
+    }
+
+    /*
+     * Version numbers are currently constrained to i64.
+     */
+    #[test]
+    fn dewey_pattern_overflow() {
+        let err = Dewey::new("pkg>=0.20251208143052000000");
+        assert!(err.is_err());
+        let err = err.unwrap_err();
+        assert_eq!(err.msg, "Version component overflow");
+    }
+
+    #[test]
+    fn dewey_version_overflow() {
+        let err = DeweyVersion::new("20251208143052000000");
+        assert!(err.is_err());
+        let err = err.unwrap_err();
+        assert_eq!(err.pos, 0);
+        assert_eq!(err.msg, "Version component overflow");
     }
 }
