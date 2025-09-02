@@ -375,7 +375,7 @@ impl Dewey {
 /**
  * Compare two [`i64`]s using the specified operator.
  */
-fn dewey_test(lhs: i64, op: &DeweyOp, rhs: i64) -> bool {
+const fn dewey_test(lhs: i64, op: &DeweyOp, rhs: i64) -> bool {
     match op {
         DeweyOp::GE => lhs >= rhs,
         DeweyOp::GT => lhs > rhs,
