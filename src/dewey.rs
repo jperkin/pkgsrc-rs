@@ -31,37 +31,36 @@ pub struct DeweyError {
 }
 
 /*
- * pkg_install implements "==" (DEWEY_EQ) and "!=" (DEWEY_NE) but doesn't
- * actually support them (or document them), so we don't bother.
+ * Comparison operators for Dewey version matching.
+ *
+ * Note: pkg_install implements == and != operators but doesn't actually
+ * support them (or document them), so we don't bother.
  */
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
-pub enum DeweyOp {
+pub(crate) enum DeweyOp {
     LE,
     LT,
     GE,
     GT,
 }
 
-/**
- * [`DeweyVersion`] splits a version string into a [`Vec`] of integers and a
- * separate `PKGREVISION` that can be compared against.
+/*
+ * DeweyVersion splits a version string into a vec of integers and a separate
+ * PKGREVISION that can be compared against.
  *
- * This is a combined version of `pkg_install` dewey.c's `mkversion()` and
- * `mkcomponent()`.
+ * This is a combined version of pkg_install dewey.c's mkversion() and
+ * mkcomponent().
  */
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
-pub struct DeweyVersion {
+pub(crate) struct DeweyVersion {
     version: Vec<i64>,
     pkgrevision: i64,
 }
 
 impl DeweyVersion {
-    /**
-     * Create a new [`DeweyVersion`] from a string.
-     *
-     * # Errors
-     *
-     * Returns [`DeweyError`] if a version component overflows [`i64`].
+    /*
+     * Create a new DeweyVersion from a string.  Returns DeweyError if a
+     * version component overflows i64.
      */
     pub fn new(s: &str) -> Result<Self, DeweyError> {
         let mut version: Vec<i64> = vec![];
@@ -161,14 +160,12 @@ impl DeweyVersion {
     }
 }
 
-/**
- * [`DeweyMatch`] contains a single pattern to match against.
+/*
+ * DeweyMatch contains a single pattern to match against.
  */
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 struct DeweyMatch {
-    /// Which logical operation to apply
     op: DeweyOp,
-    /// A vec of version numbers to compare against.
     version: DeweyVersion,
 }
 
@@ -366,8 +363,9 @@ impl Dewey {
         true
     }
 }
-/**
- * Compare two [`i64`]s using the specified operator.
+
+/*
+ * Compare two i64s using the specified operator.
  */
 const fn dewey_test(lhs: i64, op: &DeweyOp, rhs: i64) -> bool {
     match op {
@@ -378,8 +376,8 @@ const fn dewey_test(lhs: i64, op: &DeweyOp, rhs: i64) -> bool {
     }
 }
 
-/**
- * Compare two [`DeweyVersion`]s using the specified operator.  This iterates
+/*
+ * Compare two DeweyVersions using the specified operator.  This iterates
  * through both vecs, skipping entries that are identical, and comparing any
  * that differ.  If the vecs differ in length, perform the remaining
  * comparisons against zero.
@@ -387,7 +385,7 @@ const fn dewey_test(lhs: i64, op: &DeweyOp, rhs: i64) -> bool {
  * If both versions are identical, the PKGREVISION is compared as the final
  * result.
  */
-pub fn dewey_cmp(lhs: &DeweyVersion, op: &DeweyOp, rhs: &DeweyVersion) -> bool {
+pub(crate) fn dewey_cmp(lhs: &DeweyVersion, op: &DeweyOp, rhs: &DeweyVersion) -> bool {
     let llen = lhs.version.len();
     let rlen = rhs.version.len();
     for i in 0..std::cmp::min(llen, rlen) {
