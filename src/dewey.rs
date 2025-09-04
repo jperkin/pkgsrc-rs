@@ -269,8 +269,7 @@ impl Dewey {
                 }
                 (">", _) => deweyops.push((index, index + 1, DeweyOp::GT)),
                 ("<", _) => deweyops.push((index, index + 1, DeweyOp::LT)),
-                /* Cannot happen, appeases the compiler. */
-                (&_, _) => todo!(),
+                _ => unreachable!(),
             }
         }
 
