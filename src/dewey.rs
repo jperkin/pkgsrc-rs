@@ -232,7 +232,7 @@ impl Dewey {
      * Compile a pattern.  If the pattern is invalid in any way a
      * [`DeweyError`] is returned.
      *
-     * # Example
+     * # Examples
      *
      * ```
      * use pkgsrc::Dewey;
@@ -330,7 +330,7 @@ impl Dewey {
      * Return whether a given [`str`] matches the compiled pattern.  `pkg`
      * must be a fully-specified `PKGNAME`.
      *
-     * # Example
+     * # Examples
      *
      * ```
      * use pkgsrc::Dewey;
@@ -395,14 +395,14 @@ pub(crate) fn dewey_cmp(lhs: &DeweyVersion, op: &DeweyOp, rhs: &DeweyVersion) ->
     match llen.cmp(&rlen) {
         Ordering::Less => {
             for i in llen..rlen {
-                if 0 != rhs.version[i] {
+                if rhs.version[i] != 0 {
                     return dewey_test(0, op, rhs.version[i]);
                 }
             }
         }
         Ordering::Greater => {
             for i in rlen..llen {
-                if 0 != lhs.version[i] {
+                if lhs.version[i] != 0 {
                     return dewey_test(lhs.version[i], op, 0);
                 }
             }
