@@ -79,7 +79,7 @@ impl DeweyVersion {
             }
 
             /* idx should always be incremented by the correct char length. */
-            let slice = &s[idx..s.len()];
+            let slice = &s[idx..];
             let c = slice.chars().next().unwrap();
 
             /*
@@ -107,7 +107,7 @@ impl DeweyVersion {
              */
             if slice.starts_with("nb") {
                 idx += 2;
-                let slice = &s[idx..s.len()];
+                let slice = &s[idx..];
                 let nbstr: String =
                     slice.chars().take_while(char::is_ascii_digit).collect();
                 pkgrevision = nbstr.parse::<i64>().unwrap_or(0);
@@ -292,7 +292,7 @@ impl Dewey {
                 });
             }
             1 => {
-                let p = &pattern[deweyops[0].1..pattern.len()];
+                let p = &pattern[deweyops[0].1..];
                 matches.push(DeweyMatch::new(&deweyops[0].2, p)?);
             }
             2 => {
@@ -307,7 +307,7 @@ impl Dewey {
                 }
                 let p = &pattern[deweyops[0].1..deweyops[1].0];
                 matches.push(DeweyMatch::new(&deweyops[0].2, p)?);
-                let p = &pattern[deweyops[1].1..pattern.len()];
+                let p = &pattern[deweyops[1].1..];
                 matches.push(DeweyMatch::new(&deweyops[1].2, p)?);
             }
             _ => {
