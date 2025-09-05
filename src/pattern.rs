@@ -28,7 +28,10 @@ enum PatternType {
 }
 
 /**
- * A pattern parsing error.
+ * A pattern error.
+ *
+ * Returned by [`Pattern::new`] when a pattern cannot be parsed, or by
+ * [`Pattern::best_match`] when a package version cannot be compared.
  */
 #[derive(Debug, Error)]
 pub enum PatternError {
@@ -113,6 +116,9 @@ pub enum PatternError {
  * // Too many or incorrectly-ordered comparisons.
  * assert!(matches!(Pattern::new("foo>1.0<2<3"), Err(Dewey(_))));
  * assert!(matches!(Pattern::new("foo<1>0"), Err(Dewey(_))));
+ *
+ * // Version component overflow (exceeds i64::MAX).
+ * assert!(matches!(Pattern::new("foo>=20251208143052123456"), Err(Dewey(_))));
  *
  * // Unbalanced or incorrectly-ordered braces.
  * assert!(matches!(Pattern::new("{foo,bar}}>1.0"), Err(Alternate)));
@@ -254,15 +260,19 @@ impl Pattern {
     /**
      * Given two package names, return the "best" match - that is, the one that
      * is a match with the higher version.  If neither match return [`None`].
+     *
+     * # Errors
+     *
+     * Returns [`PatternError::Dewey`] if parsing a package version fails.
      */
     pub fn best_match<'a>(
         &self,
         pkg1: &'a str,
         pkg2: &'a str,
-    ) -> Option<&'a str> {
+    ) -> Result<Option<&'a str>, PatternError> {
         match (self.matches(pkg1), self.matches(pkg2)) {
-            (true, false) => Some(pkg1),
-            (false, true) => Some(pkg2),
+            (true, false) => Ok(Some(pkg1)),
+            (false, true) => Ok(Some(pkg2)),
             (true, true) => {
                 /*
                  * Compare the version numbers using dewey, before finally
@@ -270,19 +280,19 @@ impl Pattern {
                  * pkg_install:pkg_order().  Note that the lexicographic order
                  * is backwards, the *smaller* string is returned.
                  */
-                let d1 = DeweyVersion::new(PkgName::new(pkg1).pkgversion());
-                let d2 = DeweyVersion::new(PkgName::new(pkg2).pkgversion());
+                let d1 = DeweyVersion::new(PkgName::new(pkg1).pkgversion())?;
+                let d2 = DeweyVersion::new(PkgName::new(pkg2).pkgversion())?;
                 if dewey_cmp(&d1, &DeweyOp::GT, &d2) {
-                    Some(pkg1)
+                    Ok(Some(pkg1))
                 } else if dewey_cmp(&d1, &DeweyOp::LT, &d2) {
-                    Some(pkg2)
+                    Ok(Some(pkg2))
                 } else if pkg1 < pkg2 {
-                    Some(pkg1)
+                    Ok(Some(pkg1))
                 } else {
-                    Some(pkg2)
+                    Ok(Some(pkg2))
                 }
             }
-            (false, false) => None,
+            (false, false) => Ok(None),
         }
     }
 
@@ -492,6 +502,13 @@ mod tests {
         } else {
             panic!();
         }
+
+        /* Version component overflow (exceeds i64::MAX). */
+        if let Err(Dewey(e)) = Pattern::new("pkg>=20251208143052123456") {
+            assert_eq!(e.msg, "Version component overflow");
+        } else {
+            panic!();
+        }
     }
 
     /*
@@ -539,25 +556,43 @@ mod tests {
     }
 
     #[test]
-    fn best_match_dewey() {
-        let m = Pattern::new("pkg>1<3").unwrap();
-        assert_eq!(m.best_match("pkg-1.1", "pkg-3.0"), Some("pkg-1.1"));
-        assert_eq!(m.best_match("pkg-1.1", "pkg-1.1"), Some("pkg-1.1"));
-        assert_eq!(m.best_match("pkg-1.1", "pkg-2.0"), Some("pkg-2.0"));
-        assert_eq!(m.best_match("pkg-2.0", "pkg-1.1"), Some("pkg-2.0"));
-        assert_eq!(m.best_match("pkg", "pkg-2.0"), Some("pkg-2.0"));
-        assert_eq!(m.best_match("pkg-2.0", "pkg"), Some("pkg-2.0"));
-        assert_eq!(m.best_match("pkg-1", "pkg-3.0"), None);
-        assert_eq!(m.best_match("pkg", "pkg"), None);
+    fn best_match_dewey() -> Result<(), PatternError> {
+        let m = Pattern::new("pkg>1<3")?;
+        assert_eq!(m.best_match("pkg-1.1", "pkg-3.0")?, Some("pkg-1.1"));
+        assert_eq!(m.best_match("pkg-1.1", "pkg-1.1")?, Some("pkg-1.1"));
+        assert_eq!(m.best_match("pkg-1.1", "pkg-2.0")?, Some("pkg-2.0"));
+        assert_eq!(m.best_match("pkg-2.0", "pkg-1.1")?, Some("pkg-2.0"));
+        assert_eq!(m.best_match("pkg", "pkg-2.0")?, Some("pkg-2.0"));
+        assert_eq!(m.best_match("pkg-2.0", "pkg")?, Some("pkg-2.0"));
+        assert_eq!(m.best_match("pkg-1", "pkg-3.0")?, None);
+        assert_eq!(m.best_match("pkg", "pkg")?, None);
+        Ok(())
     }
 
     #[test]
-    fn best_match_alternate() {
-        let m = Pattern::new("{foo,bar}-[0-9]*").unwrap();
-        assert_eq!(m.best_match("foo-1.1", "bar-1.0"), Some("foo-1.1"));
-        assert_eq!(m.best_match("foo-1.0", "bar-1.1"), Some("bar-1.1"));
+    fn best_match_alternate() -> Result<(), PatternError> {
+        let m = Pattern::new("{foo,bar}-[0-9]*")?;
+        assert_eq!(m.best_match("foo-1.1", "bar-1.0")?, Some("foo-1.1"));
+        assert_eq!(m.best_match("foo-1.0", "bar-1.1")?, Some("bar-1.1"));
         // In the case of a tie pkg_order() returns the _smaller_ string,
         // which feels backwards, but we aim to preserve compatibility.
-        assert_eq!(m.best_match("foo-1.0", "bar-1.0"), Some("bar-1.0"));
+        assert_eq!(m.best_match("foo-1.0", "bar-1.0")?, Some("bar-1.0"));
+        Ok(())
+    }
+
+    #[test]
+    fn best_match_overflow() -> Result<(), PatternError> {
+        let m = Pattern::new("pkg-[0-9]*")?;
+        // Timestamp with microseconds exceeds i64::MAX
+        let overflow_ver = "pkg-20251208143052123456";
+        // Both packages match the glob pattern
+        assert!(m.matches("pkg-1.0"));
+        assert!(m.matches(overflow_ver));
+        // But best_match should fail when comparing versions
+        assert!(matches!(
+            m.best_match("pkg-1.0", overflow_ver),
+            Err(PatternError::Dewey(_))
+        ));
+        Ok(())
     }
 }
