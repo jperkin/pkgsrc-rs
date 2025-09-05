@@ -384,7 +384,11 @@ const fn dewey_test(lhs: i64, op: &DeweyOp, rhs: i64) -> bool {
  * If both versions are identical, the PKGREVISION is compared as the final
  * result.
  */
-pub(crate) fn dewey_cmp(lhs: &DeweyVersion, op: &DeweyOp, rhs: &DeweyVersion) -> bool {
+pub(crate) fn dewey_cmp(
+    lhs: &DeweyVersion,
+    op: &DeweyOp,
+    rhs: &DeweyVersion,
+) -> bool {
     let llen = lhs.version.len();
     let rlen = rhs.version.len();
     for i in 0..std::cmp::min(llen, rlen) {
@@ -535,6 +539,15 @@ mod tests {
         assert!(err.is_err());
         let err = err.unwrap_err();
         assert_eq!(err.pos, 0);
+        assert_eq!(err.msg, "Version component overflow");
+    }
+
+    #[test]
+    fn dewey_version_overflow_position() {
+        let err = DeweyVersion::new("1.20251208143052000000");
+        assert!(err.is_err());
+        let err = err.unwrap_err();
+        assert_eq!(err.pos, 2);
         assert_eq!(err.msg, "Version component overflow");
     }
 }
