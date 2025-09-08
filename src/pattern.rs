@@ -141,7 +141,15 @@ impl Pattern {
      * Compile a pattern.  If the pattern is invalid in any way a
      * [`PatternError`] is returned.
      *
-     * # Example
+     * # Errors
+     *
+     * Returns [`PatternError::Alternate`] if braces are unbalanced.
+     *
+     * Returns [`PatternError::Dewey`] if a dewey pattern is malformed.
+     *
+     * Returns [`PatternError::Glob`] if a glob pattern is invalid.
+     *
+     * # Examples
      *
      * ```
      * use pkgsrc::Pattern;
