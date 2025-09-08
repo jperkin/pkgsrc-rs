@@ -224,6 +224,7 @@ impl Pattern {
      * assert_eq!(pkgmatch.matches("librsvg-2.41"), false);
      * ```
      */
+    #[must_use]
     pub fn matches(&self, pkg: &str) -> bool {
         /*
          * As a small optimisation, unless the "likely" flag has been set,
@@ -299,6 +300,7 @@ impl Pattern {
     /**
      * Return the original pattern string.
      */
+    #[must_use]
     pub fn pattern(&self) -> &str {
         &self.pattern
     }
