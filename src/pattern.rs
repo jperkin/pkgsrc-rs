@@ -179,7 +179,7 @@ impl Pattern {
             if !stack.is_empty() {
                 return Err(PatternError::Alternate);
             }
-            return Ok(Pattern {
+            return Ok(Self {
                 matchtype,
                 pattern: pattern.to_string(),
                 ..Default::default()
@@ -188,7 +188,7 @@ impl Pattern {
         if pattern.contains('>') || pattern.contains('<') {
             let matchtype = PatternType::Dewey;
             let dewey = Some(Dewey::new(pattern)?);
-            return Ok(Pattern {
+            return Ok(Self {
                 matchtype,
                 pattern: pattern.to_string(),
                 dewey,
@@ -202,14 +202,14 @@ impl Pattern {
         {
             let matchtype = PatternType::Glob;
             let glob = Some(glob::Pattern::new(pattern)?);
-            return Ok(Pattern {
+            return Ok(Self {
                 matchtype,
                 pattern: pattern.to_string(),
                 glob,
                 ..Default::default()
             });
         }
-        Ok(Pattern {
+        Ok(Self {
             matchtype: PatternType::Simple,
             pattern: pattern.to_string(),
             ..Default::default()
@@ -335,7 +335,7 @@ impl Pattern {
 
             for m in matches.split(',') {
                 let fmt = format!("{first}{m}{last}");
-                if let Ok(pat) = Pattern::new(&fmt) {
+                if let Ok(pat) = Self::new(&fmt) {
                     if pat.matches(pkg) {
                         return true;
                     }
