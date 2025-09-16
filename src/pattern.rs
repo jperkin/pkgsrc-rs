@@ -314,8 +314,8 @@ impl Pattern {
     }
 
     /**
-     * Implement csh-style alternate matches.  Pattern::new() has already
-     * verified that the pattern is valid and the braces are correctly balanced.
+     * Implement csh-style alternate matches.  [`Pattern::new`] has already
+     * verified that the pattern is valid and braces are correctly balanced.
      *
      * The algorithm starts at the right-most opening brace and iteratively works
      * backwards, expanding each alternate match and recursively calling Pattern
@@ -346,8 +346,8 @@ impl Pattern {
     }
 
     /**
-     * pkg_install contains a quick_pkg_match() routine to quickly exit if
-     * there is no possibility of a match.  As it gives a decent speed bump
+     * `pkg_install` contains a `quick_pkg_match()` routine to quickly exit if
+     * there is no possibility of a match. As it gives a decent speed bump
      * when matching across thousands of packages we include a similar routine.
      */
     fn quick_pkg_match(pattern: &str, pkg: &str) -> bool {
