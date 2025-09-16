@@ -373,7 +373,7 @@ impl Pattern {
         true
     }
 
-    fn is_simple_char(c: char) -> bool {
+    const fn is_simple_char(c: char) -> bool {
         c.is_ascii_alphanumeric() || c == '-'
     }
 }
