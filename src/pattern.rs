@@ -16,7 +16,12 @@
 
 use crate::dewey::{dewey_cmp, Dewey, DeweyError, DeweyOp, DeweyVersion};
 use crate::PkgName;
+use std::fmt;
+use std::str::FromStr;
 use thiserror::Error;
+
+#[cfg(feature = "serde")]
+use serde_with::{DeserializeFromStr, SerializeDisplay};
 
 #[derive(Clone, Debug, Default, Eq, Hash, PartialEq)]
 enum PatternType {
@@ -128,12 +133,27 @@ pub enum PatternError {
  * [`glob`]: https://docs.rs/glob/latest/glob/
  */
 #[derive(Clone, Debug, Default, Eq, Hash, PartialEq)]
+#[cfg_attr(feature = "serde", derive(SerializeDisplay, DeserializeFromStr))]
 pub struct Pattern {
     matchtype: PatternType,
     pattern: String,
     likely: bool,
     dewey: Option<Dewey>,
     glob: Option<glob::Pattern>,
+}
+
+impl fmt::Display for Pattern {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.pattern)
+    }
+}
+
+impl FromStr for Pattern {
+    type Err = PatternError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        Self::new(s)
+    }
 }
 
 impl Pattern {
