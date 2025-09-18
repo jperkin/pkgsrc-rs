@@ -625,4 +625,26 @@ mod tests {
         ));
         Ok(())
     }
+
+    #[test]
+    fn display() {
+        let p = Pattern::new("foo-[0-9]*").unwrap();
+        assert_eq!(p.to_string(), "foo-[0-9]*");
+
+        let p = Pattern::new("pkg>=1.0<2.0").unwrap();
+        assert_eq!(format!("{p}"), "pkg>=1.0<2.0");
+    }
+
+    #[test]
+    fn from_str() {
+        use std::str::FromStr;
+
+        let p = Pattern::from_str("foo-[0-9]*").unwrap();
+        assert!(p.matches("foo-1.0"));
+
+        let p: Pattern = "pkg>=1.0".parse().unwrap();
+        assert!(p.matches("pkg-1.5"));
+
+        assert!(Pattern::from_str("{unbalanced").is_err());
+    }
 }
