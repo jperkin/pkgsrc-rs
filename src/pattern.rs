@@ -656,4 +656,19 @@ mod tests {
         let p = Pattern::new("{mysql,mariadb}-[0-9]*").unwrap();
         assert_eq!(p.pattern(), "{mysql,mariadb}-[0-9]*");
     }
+
+    #[test]
+    fn quick_pkg_match_edge_cases() {
+        // Pattern starting with glob char - quick_pkg_match returns true early
+        let p = Pattern::new("*-1.0").unwrap();
+        assert!(p.matches("foo-1.0"));
+
+        // Pattern starting with ? - quick_pkg_match returns true early
+        let p = Pattern::new("?oo-[0-9]*").unwrap();
+        assert!(p.matches("foo-1.0"));
+
+        // Single char pattern
+        let p = Pattern::new("f*").unwrap();
+        assert!(p.matches("foo"));
+    }
 }
