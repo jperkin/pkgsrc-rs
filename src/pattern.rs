@@ -647,4 +647,13 @@ mod tests {
 
         assert!(Pattern::from_str("{unbalanced").is_err());
     }
+
+    #[test]
+    fn pattern_accessor() {
+        let p = Pattern::new("foo-[0-9]*").unwrap();
+        assert_eq!(p.pattern(), "foo-[0-9]*");
+
+        let p = Pattern::new("{mysql,mariadb}-[0-9]*").unwrap();
+        assert_eq!(p.pattern(), "{mysql,mariadb}-[0-9]*");
+    }
 }
