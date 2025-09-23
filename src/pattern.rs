@@ -133,6 +133,7 @@ pub enum PatternError {
  * [`glob`]: https://docs.rs/glob/latest/glob/
  */
 #[derive(Clone, Debug, Default, Eq, Hash, PartialEq)]
+#[allow(clippy::struct_field_names)]
 #[cfg_attr(feature = "serde", derive(SerializeDisplay, DeserializeFromStr))]
 pub struct Pattern {
     matchtype: PatternType,
