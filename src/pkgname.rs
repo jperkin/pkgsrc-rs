@@ -133,7 +133,7 @@ impl PkgName {
      * as an [`i64`] then [`None`] is returned.  If there are no characters at
      * all after the `nb` then `Some(0)` is returned.
      */
-    pub fn pkgrevision(&self) -> Option<i64> {
+    pub const fn pkgrevision(&self) -> Option<i64> {
         self.pkgrevision
     }
 }
