@@ -162,6 +162,32 @@ impl std::fmt::Display for PkgName {
     }
 }
 
+impl PartialEq<str> for PkgName {
+    fn eq(&self, other: &str) -> bool {
+        self.pkgname == other
+    }
+}
+
+impl PartialEq<&str> for PkgName {
+    fn eq(&self, other: &&str) -> bool {
+        &self.pkgname == other
+    }
+}
+
+impl PartialEq<String> for PkgName {
+    fn eq(&self, other: &String) -> bool {
+        &self.pkgname == other
+    }
+}
+
+impl std::str::FromStr for PkgName {
+    type Err = std::convert::Infallible;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        Ok(Self::new(s))
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -201,5 +227,14 @@ mod tests {
         let s = String::from("mktool-1.3.2nb2");
         let pkg = PkgName::from(&s);
         assert_eq!(pkg.pkgname(), "mktool-1.3.2nb2");
+    }
+
+    #[test]
+    fn pkgname_partial_eq() {
+        let pkg = PkgName::new("mktool-1.3.2nb2");
+        assert_eq!(pkg, *"mktool-1.3.2nb2");
+        assert_eq!(pkg, "mktool-1.3.2nb2");
+        assert_eq!(pkg, "mktool-1.3.2nb2".to_string());
+        assert_ne!(pkg, "notmktool-1.0");
     }
 }
