@@ -15,7 +15,7 @@
  */
 
 #[cfg(feature = "serde")]
-use serde::Deserialize;
+use serde_with::{DeserializeFromStr, SerializeDisplay};
 
 /**
  * Parse a `PKGNAME` into its consituent parts.
@@ -71,7 +71,7 @@ use serde::Deserialize;
  * ```
  */
 #[derive(Clone, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
-#[cfg_attr(feature = "serde", derive(Deserialize))]
+#[cfg_attr(feature = "serde", derive(SerializeDisplay, DeserializeFromStr))]
 pub struct PkgName {
     pkgname: String,
     pkgbase: String,
@@ -237,4 +237,19 @@ mod tests {
         assert_eq!(pkg, "mktool-1.3.2nb2".to_string());
         assert_ne!(pkg, "notmktool-1.0");
     }
+
+    #[test]
+    #[cfg(feature = "serde")]
+    fn pkgname_serde() {
+        let pkg = PkgName::new("mktool-1.3.2nb2");
+        let se = serde_json::to_string(&pkg).unwrap();
+        let de: PkgName = serde_json::from_str(&se).unwrap();
+        assert_eq!(se, "\"mktool-1.3.2nb2\"");
+        assert_eq!(pkg, de);
+        assert_eq!(de.pkgname(), "mktool-1.3.2nb2");
+        assert_eq!(de.pkgbase(), "mktool");
+        assert_eq!(de.pkgversion(), "1.3.2nb2");
+        assert_eq!(de.pkgrevision(), Some(2));
+    }
+
 }
