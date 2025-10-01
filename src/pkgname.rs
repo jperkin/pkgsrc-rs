@@ -138,26 +138,68 @@ impl PkgName {
     }
 }
 
+impl From<&str> for PkgName {
+    fn from(s: &str) -> Self {
+        Self::new(s)
+    }
+}
+
+impl From<String> for PkgName {
+    fn from(s: String) -> Self {
+        Self::new(&s)
+    }
+}
+
+impl From<&String> for PkgName {
+    fn from(s: &String) -> Self {
+        Self::new(s)
+    }
+}
+
+impl std::fmt::Display for PkgName {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.pkgname)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
-    fn pkgname() {
+    fn pkgname_full() {
         let pkg = PkgName::new("mktool-1.3.2nb2");
+        assert_eq!(format!("{pkg}"), "mktool-1.3.2nb2");
         assert_eq!(pkg.pkgname(), "mktool-1.3.2nb2");
         assert_eq!(pkg.pkgbase(), "mktool");
         assert_eq!(pkg.pkgversion(), "1.3.2nb2");
         assert_eq!(pkg.pkgrevision(), Some(2));
+    }
 
+    #[test]
+    fn pkgname_broken_pkgrevision() {
         let pkg = PkgName::new("mktool-1nb3alpha2nb");
         assert_eq!(pkg.pkgbase(), "mktool");
         assert_eq!(pkg.pkgversion(), "1nb3alpha2nb");
         assert_eq!(pkg.pkgrevision(), Some(0));
+    }
 
+    #[test]
+    fn pkgname_no_version() {
         let pkg = PkgName::new("mktool");
         assert_eq!(pkg.pkgbase(), "mktool");
         assert_eq!(pkg.pkgversion(), "");
         assert_eq!(pkg.pkgrevision(), None);
+    }
+
+    #[test]
+    fn pkgname_from() {
+        let pkg = PkgName::from("mktool-1.3.2nb2");
+        assert_eq!(pkg.pkgname(), "mktool-1.3.2nb2");
+        let pkg = PkgName::from(String::from("mktool-1.3.2nb2"));
+        assert_eq!(pkg.pkgname(), "mktool-1.3.2nb2");
+        let s = String::from("mktool-1.3.2nb2");
+        let pkg = PkgName::from(&s);
+        assert_eq!(pkg.pkgname(), "mktool-1.3.2nb2");
     }
 }
