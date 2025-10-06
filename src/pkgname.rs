@@ -18,7 +18,7 @@
 use serde_with::{DeserializeFromStr, SerializeDisplay};
 
 /**
- * Parse a `PKGNAME` into its consituent parts.
+ * Parse a `PKGNAME` into its constituent parts.
  *
  * In pkgsrc terminology a `PKGNAME` is made up of three parts:
  *
