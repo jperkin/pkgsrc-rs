@@ -235,6 +235,17 @@ mod tests {
     }
 
     #[test]
+    fn pkgname_from_str() {
+        use std::str::FromStr;
+
+        let pkg = PkgName::from_str("mktool-1.3.2nb2").unwrap();
+        assert_eq!(pkg.pkgname(), "mktool-1.3.2nb2");
+
+        let pkg: PkgName = "foo-2.0".parse().unwrap();
+        assert_eq!(pkg.pkgbase(), "foo");
+    }
+
+    #[test]
     fn pkgname_partial_eq() {
         let pkg = PkgName::new("mktool-1.3.2nb2");
         assert_eq!(pkg, *"mktool-1.3.2nb2");
@@ -256,5 +267,4 @@ mod tests {
         assert_eq!(de.pkgversion(), "1.3.2nb2");
         assert_eq!(de.pkgrevision(), Some(2));
     }
-
 }
