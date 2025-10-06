@@ -83,16 +83,17 @@ impl PkgName {
     /**
      * Create a new [`PkgName`] from a [`str`] reference.
      */
+    #[must_use]
     pub fn new(pkgname: &str) -> Self {
         let (pkgbase, pkgversion) = match pkgname.rsplit_once('-') {
             Some((b, v)) => (String::from(b), String::from(v)),
-            None => (String::from(pkgname), String::from("")),
+            None => (String::from(pkgname), String::new()),
         };
         let pkgrevision = match pkgversion.rsplit_once("nb") {
             Some((_, v)) => v.parse::<i64>().ok().or(Some(0)),
             None => None,
         };
-        PkgName {
+        Self {
             pkgname: pkgname.to_string(),
             pkgbase,
             pkgversion,
@@ -104,6 +105,7 @@ impl PkgName {
      * Return a [`str`] reference containing the original `PKGNAME` used to
      * create this instance.
      */
+    #[must_use]
     pub fn pkgname(&self) -> &str {
         &self.pkgname
     }
@@ -113,6 +115,7 @@ impl PkgName {
      * package name, i.e.  everything up to the final `-` and the version
      * number.
      */
+    #[must_use]
     pub fn pkgbase(&self) -> &str {
         &self.pkgbase
     }
@@ -123,6 +126,7 @@ impl PkgName {
      * in the [`str`] used to create this [`PkgName`] then this will be an
      * empty string.
      */
+    #[must_use]
     pub fn pkgversion(&self) -> &str {
         &self.pkgversion
     }
@@ -133,6 +137,7 @@ impl PkgName {
      * as an [`i64`] then [`None`] is returned.  If there are no characters at
      * all after the `nb` then `Some(0)` is returned.
      */
+    #[must_use]
     pub const fn pkgrevision(&self) -> Option<i64> {
         self.pkgrevision
     }
