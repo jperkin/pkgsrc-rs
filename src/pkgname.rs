@@ -193,6 +193,12 @@ impl std::str::FromStr for PkgName {
     }
 }
 
+impl crate::kv::FromKv for PkgName {
+    fn from_kv(value: &str, _span: crate::kv::Span) -> crate::kv::Result<Self> {
+        Ok(Self::new(value))
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
