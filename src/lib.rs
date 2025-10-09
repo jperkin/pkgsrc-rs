@@ -30,6 +30,7 @@ extern crate self as pkgsrc;
  */
 pub mod digest;
 pub mod distinfo;
+pub mod kv;
 pub mod pkgdb;
 pub mod plist;
 pub mod summary;
