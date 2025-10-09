@@ -15,8 +15,12 @@
  */
 
 use crate::{Pattern, PatternError, PkgPath, PkgPathError};
+use std::fmt;
 use std::str::FromStr;
 use thiserror::Error;
+
+#[cfg(feature = "serde")]
+use serde_with::{DeserializeFromStr, SerializeDisplay};
 
 /**
  * Parse `DEPENDS` and other package dependency types.
@@ -35,6 +39,7 @@ use thiserror::Error;
  * A `DEPENDS` match is essentially of the form "[`Pattern`]:[`PkgPath`]"
  */
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
+#[cfg_attr(feature = "serde", derive(SerializeDisplay, DeserializeFromStr))]
 pub struct Depend {
     /**
      * A [`Pattern`] containing the package match.
@@ -155,11 +160,26 @@ pub enum DependError {
     PkgPath(#[from] PkgPathError),
 }
 
+impl fmt::Display for Depend {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}:{}", self.pattern, self.pkgpath.as_path().display())
+    }
+}
+
 impl FromStr for Depend {
     type Err = DependError;
 
     fn from_str(s: &str) -> Result<Self, DependError> {
         Depend::new(s)
+    }
+}
+
+impl crate::kv::FromKv for Depend {
+    fn from_kv(value: &str, span: crate::kv::Span) -> crate::kv::Result<Self> {
+        Self::new(value).map_err(|e| crate::kv::Error::Parse {
+            message: e.to_string(),
+            span,
+        })
     }
 }
 
