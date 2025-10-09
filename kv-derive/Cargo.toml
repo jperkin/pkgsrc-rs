@@ -1,0 +1,20 @@
+[package]
+name = "kv-derive"
+version = "0.1.0"
+authors = ["Jonathan Perkin <jonathan@perkin.org.uk>"]
+license = "ISC"
+repository = "https://github.com/jperkin/pkgsrc-rs"
+description = "Derive macro for KEY=VALUE parsing"
+edition = "2021"
+
+[lib]
+proc-macro = true
+
+[dependencies]
+proc-macro2 = "1"
+quote = "1"
+syn = { version = "2", features = ["derive", "parsing", "proc-macro"] }
+
+[dev-dependencies]
+indoc = "2"
+pkgsrc = { path = ".." }

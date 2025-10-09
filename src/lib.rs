@@ -23,6 +23,8 @@
 
 #![deny(missing_docs)]
 
+extern crate self as pkgsrc;
+
 /*
  * Modules that deserve their own namespace.
  */

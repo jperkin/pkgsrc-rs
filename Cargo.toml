@@ -1,3 +1,6 @@
+[workspace]
+members = [".", "kv-derive"]
+
 [package]
 name = "pkgsrc"
 description = "Library for interacting with a pkgsrc installation"
@@ -13,6 +16,7 @@ rust-version = "1.74.1"
 edition = "2021"
 
 [dependencies]
+kv-derive = { path = "kv-derive" }
 ar = "0.9.0"
 blake2 = "0.10.6"
 digest = "0.10.7"
