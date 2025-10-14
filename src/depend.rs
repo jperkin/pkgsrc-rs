@@ -59,7 +59,16 @@ impl Depend {
      * Create a new [`Depend`] from a [`str`] slice.  Return a [`DependError`]
      * if it cannot be created successfully.
      *
-     * # Example
+     * # Errors
+     *
+     * Returns [`DependError::Invalid`] if the string doesn't contain exactly
+     * one `:` separator.
+     *
+     * Returns [`DependError::Pattern`] if the pattern portion is invalid.
+     *
+     * Returns [`DependError::PkgPath`] if the pkgpath portion is invalid.
+     *
+     * # Examples
      *
      * ```
      * use pkgsrc::{Depend, Pattern, PkgPath};
