@@ -85,7 +85,7 @@ impl Depend {
      * ```
      */
     pub fn new(s: &str) -> Result<Self, DependError> {
-        let v: Vec<_> = s.split(":").collect();
+        let v: Vec<_> = s.split(':').collect();
         if v.len() != 2 {
             return Err(DependError::Invalid);
         }
