@@ -229,4 +229,22 @@ mod tests {
         let dep = Depend::new("ojnk:foo");
         assert!(matches!(dep, Err(DependError::PkgPath(_))));
     }
+
+    #[test]
+    fn test_display() {
+        let dep = Depend::new("mktool-[0-9]*:../../pkgtools/mktool").unwrap();
+        assert_eq!(dep.to_string(), "mktool-[0-9]*:pkgtools/mktool");
+    }
+
+    #[test]
+    fn test_from_str() {
+        use std::str::FromStr;
+
+        let dep =
+            Depend::from_str("mktool-[0-9]*:../../pkgtools/mktool").unwrap();
+        assert_eq!(dep.pattern(), &Pattern::new("mktool-[0-9]*").unwrap());
+
+        let dep: Depend = "pkg>=1.0:cat/pkg".parse().unwrap();
+        assert_eq!(dep.pkgpath(), &PkgPath::new("cat/pkg").unwrap());
+    }
 }
