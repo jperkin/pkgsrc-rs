@@ -97,6 +97,7 @@ impl Depend {
     /**
      * Return the [`Pattern`] portion of this [`Depend`].
      */
+    #[must_use]
     pub fn pattern(&self) -> &Pattern {
         &self.pattern
     }
@@ -104,6 +105,7 @@ impl Depend {
     /**
      * Return the [`PkgPath`] portion of this [`Depend`].
      */
+    #[must_use]
     pub fn pkgpath(&self) -> &PkgPath {
         &self.pkgpath
     }
