@@ -159,6 +159,15 @@ impl FromStr for PkgPath {
     }
 }
 
+impl crate::kv::FromKv for PkgPath {
+    fn from_kv(value: &str, span: crate::kv::Span) -> crate::kv::Result<Self> {
+        Self::new(value).map_err(|e| crate::kv::Error::Parse {
+            message: e.to_string(),
+            span,
+        })
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
