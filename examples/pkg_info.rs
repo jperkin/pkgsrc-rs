@@ -18,11 +18,10 @@
 
 use pkgsrc::pkgdb::{Package, PkgDB};
 use pkgsrc::plist::Plist;
-use pkgsrc::summary::{Result, Summary, SummaryVariable};
+use pkgsrc::summary::{Result, SummaryBuilder};
 use pkgsrc::MetadataEntry;
 use regex::Regex;
 use std::path::Path;
-use std::str::FromStr;
 use structopt::StructOpt;
 
 #[derive(Debug, StructOpt)]
@@ -50,42 +49,41 @@ fn output_default(pkg: &Package) -> Result<()> {
 }
 
 fn output_summary(pkg: &Package) -> Result<()> {
-    let mut sum = Summary::new();
-    sum.set_pkgname(pkg.pkgname());
-    sum.set_comment(pkg.read_metadata(MetadataEntry::Comment)?.trim());
-    sum.set_size_pkg(
+    let mut builder = SummaryBuilder::new();
+
+    builder = builder.pkgname(pkg.pkgname());
+    builder = builder.comment(pkg.read_metadata(MetadataEntry::Comment)?.trim());
+    builder = builder.size_pkg(
         pkg.read_metadata(MetadataEntry::SizePkg)?
             .trim()
             .parse::<i64>()?,
     );
+
     let bi = pkg.read_metadata(MetadataEntry::BuildInfo)?;
     for line in bi.lines() {
         let v: Vec<&str> = line.splitn(2, '=').collect();
-        let key = match SummaryVariable::from_str(v[0]) {
-            Ok(k) => k,
-            Err(_) => continue,
-        };
-        match key {
-            SummaryVariable::BuildDate => sum.set_build_date(v[1]),
-            SummaryVariable::Categories => sum.set_categories(v[1]),
-            SummaryVariable::Homepage => sum.set_homepage(v[1]),
-            SummaryVariable::License => sum.set_license(v[1]),
-            SummaryVariable::MachineArch => sum.set_machine_arch(v[1]),
-            SummaryVariable::Opsys => sum.set_opsys(v[1]),
-            SummaryVariable::OsVersion => sum.set_os_version(v[1]),
-            SummaryVariable::PkgOptions => sum.set_pkg_options(v[1]),
-            SummaryVariable::Pkgpath => sum.set_pkgpath(v[1]),
-            SummaryVariable::PkgtoolsVersion => sum.set_pkgtools_version(v[1]),
-            SummaryVariable::PrevPkgpath => sum.set_prev_pkgpath(v[1]),
-            SummaryVariable::Provides => sum.push_provides(v[1]),
-            SummaryVariable::Requires => sum.push_requires(v[1]),
-            SummaryVariable::Supersedes => sum.push_supersedes(v[1]),
-            _ => {}
+        if v.len() < 2 {
+            continue;
         }
+        builder = match v[0] {
+            "BUILD_DATE" => builder.build_date(v[1]),
+            "CATEGORIES" => builder.categories(v[1]),
+            "HOMEPAGE" => builder.homepage(v[1]),
+            "LICENSE" => builder.license(v[1]),
+            "MACHINE_ARCH" => builder.machine_arch(v[1]),
+            "OPSYS" => builder.opsys(v[1]),
+            "OS_VERSION" => builder.os_version(v[1]),
+            "PKG_OPTIONS" => builder.pkg_options(v[1]),
+            "PKGPATH" => builder.pkgpath(v[1]),
+            "PKGTOOLS_VERSION" => builder.pkgtools_version(v[1]),
+            "PREV_PKGPATH" => builder.prev_pkgpath(v[1]),
+            _ => builder,
+        };
     }
-    for line in pkg.read_metadata(MetadataEntry::Desc)?.lines() {
-        sum.push_description(line);
-    }
+
+    let desc = pkg.read_metadata(MetadataEntry::Desc)?;
+    let desc_lines: Vec<&str> = desc.lines().collect();
+    builder = builder.description(desc_lines);
 
     /*
      * XXX: convert plist Result to summary Result
@@ -97,13 +95,28 @@ fn output_summary(pkg: &Package) -> Result<()> {
         Ok(p) => p,
         Err(e) => panic!("bad plist: {}", e),
     };
-    for dep in plist.depends() {
-        sum.push_depends(dep);
-    }
-    for cfl in plist.conflicts() {
-        sum.push_conflicts(cfl);
+
+    let deps = plist.depends();
+    if !deps.is_empty() {
+        builder = builder.depends(deps);
     }
 
+    let conflicts = plist.conflicts();
+    if !conflicts.is_empty() {
+        builder = builder.conflicts(conflicts);
+    }
+
+    let provides: Vec<String> = Vec::new();
+    if !provides.is_empty() {
+        builder = builder.provides(provides);
+    }
+
+    let requires: Vec<String> = Vec::new();
+    if !requires.is_empty() {
+        builder = builder.requires(requires);
+    }
+
+    let sum = builder.build()?;
     println!("{}", sum);
 
     Ok(())

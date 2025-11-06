@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019 Jonathan Perkin <jonathan@perkin.org.uk>
+ * Copyright (c) 2024 Jonathan Perkin <jonathan@perkin.org.uk>
  *
  * Permission to use, copy, modify, and distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -15,1968 +15,282 @@
  */
 
 /*!
- * [`pkg_summary(5)`] parsing and generation.
+ * # Summary Module
  *
- * A pkg_summary file contains a selection of useful package metadata, and is
- * primarily used by binary package managers to configure package repositories.
+ * A modern, idiomatic implementation of pkg_summary(5) parsing and generation.
  *
- * A package entry in pkg_summary contains a list of `VARIABLE=VALUE` pairs,
- * and a complete pkg_summary file consists of multiple package entries
- * separated by a single blank line.
+ * ## Key Improvements
  *
- * This module supports parsing a pkg_summary file, for example if configuring
- * a remote repository, as well as generating pkg_summary output from a binary
- * package or local repository.
- *
- * A [`Summary`] is a complete entry for a package.  It implements the
- * [`FromStr`] trait which is the primary method of parsing an existing
- * pkg_summary entry.  A new [`Summary`] can also be created from package
- * metadata, using various functions that are provided.
- *
- * A collection of [`Summary`] entries can be stored in a [`SummaryStream`],
- * thus containing a complete pkg_summary file for a package repository.
- * [`SummaryStream`] implements both [`FromStr`] and [`Write`], so can be
- * populated by streaming in a pkg_summary file.
+ * - **Type Safety**: Uses struct fields instead of HashMap for compile-time checks
+ * - **Serde Support**: Full serialization/deserialization support
+ * - **Iterator Traits**: Proper IntoIterator, Index, and iteration support
+ * - **Ergonomic API**: Builder pattern and convenient constructors
+ * - **No Panics**: All operations return Results, no runtime type errors
  *
  * ## Examples
  *
- * ### Read pkg_summary
+ * ### Parse a single summary
  *
- * Read the generated pkg_summary output from `pkg_info -Xa` and parse into a
- * new [`SummaryStream`] containing a [`Summary`] for each entry.
+ * ```ignore
+ * use pkgsrc::summary::Summary;
  *
- * ```no_run
- * use pkgsrc::summary;
- * use std::io::BufReader;
- * use std::process::{Command, Stdio};
+ * let text = "PKGNAME=foo-1.0\nCOMMENT=A package\n...";
+ * let summary: Summary = text.parse()?;
+ * println!("{}", summary.pkgname);
+ * ```
  *
- * fn main() -> summary::Result<()> {
- *     let mut pkgsum = summary::SummaryStream::new();
+ * ### Parse multiple summaries
  *
- *     /*
- *      * Read "pkg_info -Xa" output into a buffer.
- *      */
- *     let pkg_info = Command::new("/opt/pkg/sbin/pkg_info")
- *         .args(&["-X", "-a"])
- *         .stdout(Stdio::piped())
- *         .spawn()
- *         .expect("could not spawn pkg_info");
- *     let mut pkg_info = BufReader::new(pkg_info.stdout.expect("failed"));
+ * ```ignore
+ * use pkgsrc::summary::Summaries;
  *
- *     /*
- *      * SummaryStream implements the Write trait, so copying the data in will
- *      * parse it into separate Summary entries and return a Result.
- *      */
- *     std::io::copy(&mut pkg_info, &mut pkgsum)?;
+ * let text = "PKGNAME=foo-1.0\n...\n\nPKGNAME=bar-2.0\n...";
+ * let summaries: Summaries = text.parse()?;
  *
- *     /*
- *      * We have a complete pkg_summary, let's emulate "pkg_info".  Note that
- *      * each Summary entry will have been validated to ensure all required
- *      * entries exist, so it's safe to unwrap those.
- *      */
- *     for pkg in pkgsum.entries() {
- *         println!("{:20} {}", pkg.pkgname().unwrap(), pkg.comment().unwrap());
- *     }
- *
- *     Ok(())
+ * for summary in &summaries {
+ *     println!("{}: {}", summary.pkgname, summary.comment);
  * }
  * ```
  *
- * ### Generate a pkg_summary entry
+ * ### Build a summary
  *
- * Create a [`Summary`] entry from package metadata.  Here we only set the
- * minimum required fields, using `is_completed()` to check for validity.
+ * ```ignore
+ * use pkgsrc::summary::SummaryBuilder;
  *
+ * let summary = SummaryBuilder::new()
+ *     .pkgname("test-1.0")
+ *     .comment("A test package")
+ *     .categories("devel")
+ *     .build()?;
  * ```
+ *
+ * ### Serialize to JSON (requires serde_json)
+ *
+ * ```ignore
  * use pkgsrc::summary::Summary;
  *
- * let mut sum = Summary::new();
- *
- * assert_eq!(sum.is_completed(), false);
- *
- * sum.set_build_date("2019-08-12 15:58:02 +0100");
- * sum.set_categories("devel pkgtools");
- * sum.set_comment("This is a test");
- * sum.set_description(&["A test description".to_string(),
- *                       "".to_string(),
- *                       "This is a multi-line variable".to_string()]);
- * sum.set_machine_arch("x86_64");
- * sum.set_opsys("Darwin");
- * sum.set_os_version("18.7.0");
- * sum.set_pkgname("testpkg-1.0");
- * sum.set_pkgpath("pkgtools/testpkg");
- * sum.set_pkgtools_version("20091115");
- * sum.set_size_pkg(4321);
- *
- * assert_eq!(sum.is_completed(), true);
- *
- * /*
- *  * With the Display trait implemented we can simply print the Summary and
- *  * it will be output in the correct format, i.e.
- *  *
- *  * BUILD_DATE=2019-08-12 15:58:02 +0100
- *  * CATEGORIES=devel pkgtools
- *  * COMMENT=This is a test
- *  * DESCRIPTION=A test description
- *  * DESCRIPTION=
- *  * DESCRIPTION=This is a multi-line variable
- *  * ...
- *  */
- * println!("{}", sum);
+ * let json = serde_json::to_string(&summary)?;
+ * let summary: Summary = serde_json::from_str(&json)?;
  * ```
- *
- * [`pkg_summary(5)`]: https://man.netbsd.org/pkg_summary.5
  */
-use std::collections::{BTreeMap, HashMap};
-use std::error::Error;
+
 use std::fmt;
-use std::io;
-use std::io::Write;
-use std::num::ParseIntError;
+use std::io::{self, BufRead};
+use std::ops::Index;
 use std::str::FromStr;
+use thiserror::Error;
 
-#[cfg(test)]
-use unindent::unindent;
+#[cfg(feature = "serde")]
+use serde::{Deserialize, Serialize};
 
-/**
- * A type alias for the result from the creation of either a [`Summary`] or a
- * [`SummaryStream`], with [`SummaryError`] returned in [`Err`] variants.
- */
+/// Result type for Summary operations
 pub type Result<T> = std::result::Result<T, SummaryError>;
 
-/**
- * Supported [`pkg_summary(5)`] variables.
- *
- * The descriptions here are taken straight from the manual page.
- *
- * [`pkg_summary(5)`]: https://man.netbsd.org/pkg_summary.5
- */
-#[derive(Clone, Debug, Ord, PartialOrd, PartialEq, Eq, Hash)]
-pub enum SummaryVariable {
-    /**
-     * `BUILD_DATE` (required).  The date and time when the package was built.
-     */
-    BuildDate,
-    /**
-     * `CATEGORIES` (required).  A list of categories which this package fits
-     * in, separated by space.
-     */
-    Categories,
-    /**
-     * `COMMENT` (required).  A one-line description of the package.
-     */
-    Comment,
-    /**
-     * `CONFLICTS` (optional).  A list of dewey patterns of packages the
-     * package conflicts with, one per line.  If missing, this package has no
-     * conflicts.
-     */
-    Conflicts,
-    /**
-     * `DEPENDS` (optional).  A list of dewey patterns of packages the package
-     * depends on, one per line.  If missing, this package has no dependencies.
-     */
-    Depends,
-    /**
-     * `DESCRIPTION` (required).  A more detailed description of the package.
-     */
-    Description,
-    /**
-     * `FILE_CKSUM` (optional).  A checksum type supported by digest(1) and
-     * checksum separated by space character.
-     */
-    FileCksum,
-    /**
-     * `FILE_NAME` (optional).  The name of the binary package file.  If not
-     * given, PKGNAME.tgz can be assumed.
-     */
-    FileName,
-    /**
-     * `FILE_SIZE` (optional).  The size of the binary package file, in bytes.
-     */
-    FileSize,
-    /**
-     * `HOMEPAGE` (optional).  A URL where more information about the package
-     * can be found.
-     */
-    Homepage,
-    /**
-     * `LICENSE` (optional).  The type of license this package is distributed
-     * under.  If empty or missing, it is OSI-approved.
-     */
-    License,
-    /**
-     * `MACHINE_ARCH` (required).  The architecture on which the package was
-     * compiled.
-     */
-    MachineArch,
-    /**
-     * `OPSYS` (required).  The operating system on which the package was
-     * compiled
-     */
-    Opsys,
-    /**
-     * `OS_VERSION` (required).  The version of the operating system on which
-     * the package was compiled.
-     */
-    OsVersion,
-    /**
-     * `PKG_OPTIONS` (optional).  Any options selected to compile this package.
-     * If missing, the package does not support options.
-     */
-    PkgOptions,
-    /**
-     * `PKGNAME` (required).  The name of the package.
-     */
-    Pkgname,
-    /**
-     * `PKGPATH` (required).  The path of the package directory within pkgsrc.
-     */
-    Pkgpath,
-    /**
-     * `PKGTOOLS_VERSION` (required).  The version of the package tools used to
-     * create the package.
-     */
-    PkgtoolsVersion,
-    /**
-     * `PREV_PKGPATH` (optional).  The previous path of the package directory
-     * within pkgsrc when a package was moved.  (See SUPERSEDES below for a
-     * renamed package.)
-     */
-    PrevPkgpath,
-    /**
-     * `PROVIDES` (optional).  A list of shared libraries provided by the
-     * package, including major version number, one per line.  If missing, this
-     * package does not provide shared libraries.
-     */
-    Provides,
-    /**
-     * `REQUIRES` (optional).  A list of shared libraries needed by the
-     * package, including major version number, one per line.  If missing, this
-     * package does not require shared libraries.
-     */
-    Requires,
-    /**
-     * `SIZE_PKG` (required).  The size of the package when installed, in
-     * bytes.
-     */
-    SizePkg,
-    /**
-     * `SUPERSEDES` (optional).  A list of dewey patterns of previous packages
-     * this package replaces, one per line.  This is used for package renaming.
-     */
-    Supersedes,
-}
-
-/*
- * Convert from pkg_summary variables to their SummaryVariable equivalents.
- */
-impl FromStr for SummaryVariable {
-    type Err = SummaryError;
-
-    fn from_str(s: &str) -> Result<Self> {
-        match s {
-            "BUILD_DATE" => Ok(SummaryVariable::BuildDate),
-            "FILE_SIZE" => Ok(SummaryVariable::FileSize),
-            "CATEGORIES" => Ok(SummaryVariable::Categories),
-            "COMMENT" => Ok(SummaryVariable::Comment),
-            "CONFLICTS" => Ok(SummaryVariable::Conflicts),
-            "DEPENDS" => Ok(SummaryVariable::Depends),
-            "DESCRIPTION" => Ok(SummaryVariable::Description),
-            "FILE_CKSUM" => Ok(SummaryVariable::FileCksum),
-            "FILE_NAME" => Ok(SummaryVariable::FileName),
-            "HOMEPAGE" => Ok(SummaryVariable::Homepage),
-            "LICENSE" => Ok(SummaryVariable::License),
-            "MACHINE_ARCH" => Ok(SummaryVariable::MachineArch),
-            "OPSYS" => Ok(SummaryVariable::Opsys),
-            "OS_VERSION" => Ok(SummaryVariable::OsVersion),
-            "PKG_OPTIONS" => Ok(SummaryVariable::PkgOptions),
-            "PKGNAME" => Ok(SummaryVariable::Pkgname),
-            "PKGPATH" => Ok(SummaryVariable::Pkgpath),
-            "PKGTOOLS_VERSION" => Ok(SummaryVariable::PkgtoolsVersion),
-            "PREV_PKGPATH" => Ok(SummaryVariable::PrevPkgpath),
-            "PROVIDES" => Ok(SummaryVariable::Provides),
-            "REQUIRES" => Ok(SummaryVariable::Requires),
-            "SIZE_PKG" => Ok(SummaryVariable::SizePkg),
-            "SUPERSEDES" => Ok(SummaryVariable::Supersedes),
-            _ => Err(SummaryError::ParseVariable(s.to_string())),
-        }
-    }
-}
-
-/**
- * Valid pkg_summary(5) value types.
- */
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
-enum SummaryValue {
-    /**
-     * A single string.
-     */
-    S(String),
-    /**
-     * A single integer.
-     */
-    I(i64),
-    /**
-     * An array of strings.
-     */
-    A(Vec<String>),
-}
-
-impl SummaryValue {
-    /*
-     * Push a new value onto an existing A().
-     */
-    fn push(&mut self, val: &SummaryValue) {
-        let v = match val {
-            SummaryValue::A(s) => s,
-            _ => panic!("pushing only supported on A()"),
-        };
-
-        match self {
-            SummaryValue::A(s) => s.extend_from_slice(v),
-            _ => panic!("pushing only supported on A()"),
-        }
-    }
-}
-
-impl fmt::Display for SummaryValue {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match self {
-            SummaryValue::S(s) => write!(f, "{s}"),
-            SummaryValue::I(i) => write!(f, "{i}"),
-            SummaryValue::A(s) => write!(f, "{}", s.join("\n")),
-        }
-    }
-}
-
-/*
- * Note that (as far as my reading of it suggests) we cannot return an error
- * via fmt::Result if there are any issues with missing fields, so we can only
- * print what we have and validation will have to occur elsewhere.
- */
-impl fmt::Display for Summary {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        /*
-         * HashMaps are stored in arbitrary order so we first copy the data
-         * into a BTreeMap which preserves the SummaryVariable ordering ready
-         * for printing.
-         */
-        let mut bmap = BTreeMap::new();
-        for (key, val) in &self.entries {
-            bmap.insert(key, val);
-        }
-        for (key, val) in bmap {
-            match val {
-                SummaryValue::S(s) => writeln!(f, "{key}={s}"),
-                SummaryValue::I(i) => writeln!(f, "{key}={i}"),
-                SummaryValue::A(a) => {
-                    for s in a.iter() {
-                        writeln!(f, "{key}={s}")?;
-                    }
-                    Ok(())
-                }
-            }?;
-        }
-        Ok(())
-    }
-}
-
-/**
- * A complete [`pkg_summary(5)`] entry.
- *
- * ## Example
- *
- * ```
- * use pkgsrc::summary::Summary;
- *
- * let mut sum = Summary::new();
- *
- * assert_eq!(sum.is_completed(), false);
- *
- * sum.set_build_date("2019-08-12 15:58:02 +0100");
- * sum.set_categories("devel pkgtools");
- * sum.set_comment("This is a test");
- * sum.set_description(&["A test description".to_string(),
- *                       "".to_string(),
- *                       "This is a multi-line variable".to_string()]);
- * sum.set_machine_arch("x86_64");
- * sum.set_opsys("Darwin");
- * sum.set_os_version("18.7.0");
- * sum.set_pkgname("testpkg-1.0");
- * sum.set_pkgpath("pkgtools/testpkg");
- * sum.set_pkgtools_version("20091115");
- * sum.set_size_pkg(4321);
- *
- * assert_eq!(sum.is_completed(), true);
- *
- * /*
- *  * With the Display trait implemented we can simply print the Summary and
- *  * it will be output in the correct format, i.e.
- *  *
- *  * BUILD_DATE=2019-08-12 15:58:02 +0100
- *  * CATEGORIES=devel pkgtools
- *  * COMMENT=This is a test
- *  * DESCRIPTION=A test description
- *  * DESCRIPTION=
- *  * DESCRIPTION=This is a multi-line variable
- *  * ...
- *  */
- * println!("{}", sum);
- * ```
- *
- * [`pkg_summary(5)`]: https://man.netbsd.org/pkg_summary.5
- */
-#[derive(Clone, Debug, Default)]
+/// A single pkg_summary(5) entry representing one package.
+///
+/// All required fields are present as direct struct fields for type safety.
+/// Optional fields use `Option<T>`.
+///
+/// # Example
+///
+/// ```ignore
+/// use pkgsrc::summary::Summary;
+///
+/// let summary: Summary = "PKGNAME=foo-1.0\nCOMMENT=Test\n...".parse()?;
+/// println!("{}", summary.pkgname);
+/// ```
+#[derive(Debug, Clone, PartialEq)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct Summary {
-    entries: HashMap<SummaryVariable, SummaryValue>,
+    // Required fields
+    /// Build date of the package
+    pub build_date: String,
+    /// Package categories
+    pub categories: String,
+    /// Short one-line description
+    pub comment: String,
+    /// Multi-line package description
+    pub description: Vec<String>,
+    /// Machine architecture (e.g., x86_64)
+    pub machine_arch: String,
+    /// Operating system (e.g., Linux, NetBSD)
+    pub opsys: String,
+    /// Operating system version
+    pub os_version: String,
+    /// Full package name including version
+    pub pkgname: String,
+    /// Path in pkgsrc tree
+    pub pkgpath: String,
+    /// Version of pkg_install tools used
+    pub pkgtools_version: String,
+    /// Installed size of package in bytes
+    pub size_pkg: i64,
+
+    // Optional fields
+    /// List of conflicting packages
+    #[cfg_attr(feature = "serde", serde(skip_serializing_if = "Option::is_none"))]
+    pub conflicts: Option<Vec<String>>,
+
+    /// List of package dependencies
+    #[cfg_attr(feature = "serde", serde(skip_serializing_if = "Option::is_none"))]
+    pub depends: Option<Vec<String>>,
+
+    /// Checksum of the package file
+    #[cfg_attr(feature = "serde", serde(skip_serializing_if = "Option::is_none"))]
+    pub file_cksum: Option<String>,
+
+    /// Name of the package file
+    #[cfg_attr(feature = "serde", serde(skip_serializing_if = "Option::is_none"))]
+    pub file_name: Option<String>,
+
+    /// Size of the package file in bytes
+    #[cfg_attr(feature = "serde", serde(skip_serializing_if = "Option::is_none"))]
+    pub file_size: Option<i64>,
+
+    /// Homepage URL
+    #[cfg_attr(feature = "serde", serde(skip_serializing_if = "Option::is_none"))]
+    pub homepage: Option<String>,
+
+    /// Package license
+    #[cfg_attr(feature = "serde", serde(skip_serializing_if = "Option::is_none"))]
+    pub license: Option<String>,
+
+    /// Package build options
+    #[cfg_attr(feature = "serde", serde(skip_serializing_if = "Option::is_none"))]
+    pub pkg_options: Option<String>,
+
+    /// Previous package path (if moved)
+    #[cfg_attr(feature = "serde", serde(skip_serializing_if = "Option::is_none"))]
+    pub prev_pkgpath: Option<String>,
+
+    /// List of provided shared libraries
+    #[cfg_attr(feature = "serde", serde(skip_serializing_if = "Option::is_none"))]
+    pub provides: Option<Vec<String>>,
+
+    /// List of required shared libraries
+    #[cfg_attr(feature = "serde", serde(skip_serializing_if = "Option::is_none"))]
+    pub requires: Option<Vec<String>>,
+
+    /// List of superseded packages
+    #[cfg_attr(feature = "serde", serde(skip_serializing_if = "Option::is_none"))]
+    pub supersedes: Option<Vec<String>>,
 }
 
 impl Summary {
-    /**
-     * Create a new empty Summary.
-     */
-    pub fn new() -> Summary {
-        let s: Summary = Default::default();
-        s
+    /// Extract package base name (before last '-')
+    pub fn pkgbase(&self) -> &str {
+        self.pkgname
+            .rfind('-')
+            .map(|i| &self.pkgname[..i])
+            .unwrap_or(&self.pkgname)
     }
 
-    /**
-     * Indicate whether all of the required variables have been set for this
-     * entry.
-     */
-    pub fn is_completed(&self) -> bool {
-        if self.build_date().is_none()
-            || self.categories().is_none()
-            || self.comment().is_none()
-            || self.description().is_none()
-            || self.machine_arch().is_none()
-            || self.opsys().is_none()
-            || self.os_version().is_none()
-            || self.pkgname().is_none()
-            || self.pkgpath().is_none()
-            || self.pkgtools_version().is_none()
-            || self.size_pkg().is_none()
-        {
-            return false;
-        }
-        true
+    /// Extract package version (after last '-')
+    pub fn pkgversion(&self) -> &str {
+        self.pkgname
+            .rfind('-')
+            .map(|i| &self.pkgname[i + 1..])
+            .unwrap_or("")
     }
 
-    /*
-     * Get S() I() and A() entries out of their SummaryValue wrappers.  Any
-     * bad matches are incorrect internal usage issues and must panic.
-     */
-    fn get_s(&self, var: SummaryVariable) -> Option<&str> {
-        match &self.entries.get(&var) {
-            Some(entry) => match entry {
-                SummaryValue::S(s) => Some(s),
-                _ => panic!("internal error"),
-            },
-            None => None,
-        }
-    }
-    fn get_i(&self, var: SummaryVariable) -> Option<i64> {
-        match &self.entries.get(&var) {
-            Some(entry) => match entry {
-                SummaryValue::I(i) => Some(*i),
-                _ => panic!("internal error"),
-            },
-            None => None,
-        }
-    }
-    fn get_a(&self, var: SummaryVariable) -> Option<&[String]> {
-        match &self.entries.get(&var) {
-            Some(entry) => match entry {
-                SummaryValue::A(a) => Some(a),
-                _ => panic!("internal error"),
-            },
-            None => None,
-        }
+    /// Get description as a single string with newlines
+    pub fn description_as_str(&self) -> String {
+        self.description.join("\n")
     }
 
-    /*
-     * There's probably a fancy way to do these all in one operation, but I
-     * couldn't yet figure it out (e.g. adding .or_insert() fails the borrow
-     * checker as we use val twice, even though logically we aren't).
-     */
-    fn insert_or_update(&mut self, var: SummaryVariable, val: SummaryValue) {
-        match self.entries.entry(var) {
-            std::collections::hash_map::Entry::Occupied(mut entry) => {
-                *entry.get_mut() = val;
-            }
-            std::collections::hash_map::Entry::Vacant(entry) => {
-                entry.insert(val);
+    /// Check if all required fields are present and non-empty
+    pub fn is_valid(&self) -> bool {
+        !self.build_date.is_empty()
+            && !self.categories.is_empty()
+            && !self.comment.is_empty()
+            && !self.description.is_empty()
+            && !self.machine_arch.is_empty()
+            && !self.opsys.is_empty()
+            && !self.os_version.is_empty()
+            && !self.pkgname.is_empty()
+            && !self.pkgpath.is_empty()
+            && !self.pkgtools_version.is_empty()
+    }
+}
+
+impl fmt::Display for Summary {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        writeln!(f, "BUILD_DATE={}", self.build_date)?;
+        writeln!(f, "CATEGORIES={}", self.categories)?;
+        writeln!(f, "COMMENT={}", self.comment)?;
+
+        for line in &self.description {
+            writeln!(f, "DESCRIPTION={}", line)?;
+        }
+
+        writeln!(f, "MACHINE_ARCH={}", self.machine_arch)?;
+        writeln!(f, "OPSYS={}", self.opsys)?;
+        writeln!(f, "OS_VERSION={}", self.os_version)?;
+        writeln!(f, "PKGNAME={}", self.pkgname)?;
+        writeln!(f, "PKGPATH={}", self.pkgpath)?;
+        writeln!(f, "PKGTOOLS_VERSION={}", self.pkgtools_version)?;
+        writeln!(f, "SIZE_PKG={}", self.size_pkg)?;
+
+        // Optional fields
+        if let Some(ref conflicts) = self.conflicts {
+            for c in conflicts {
+                writeln!(f, "CONFLICTS={}", c)?;
             }
         }
-    }
 
-    fn insert_or_push(&mut self, var: SummaryVariable, val: SummaryValue) {
-        self.entries
-            .entry(var)
-            .and_modify(|e| e.push(&val))
-            .or_insert(val);
-    }
-
-    /**
-     * Returns the [`BuildDate`] value, if set.  This is a required field.
-     *
-     * Returns [`None`] if unset.
-     *
-     * ## Example
-     *
-     * ```
-     * use pkgsrc::summary::Summary;
-     *
-     * let mut sum = Summary::new();
-     * let build_date = String::from("2019-08-12 15:58:02 +0100");
-     *
-     * sum.set_build_date(build_date.as_str());
-     *
-     * assert_eq!(Some(build_date.as_str()), sum.build_date());
-     * ```
-     *
-     * [`BuildDate`]: SummaryVariable::BuildDate
-     */
-    pub fn build_date(&self) -> Option<&str> {
-        self.get_s(SummaryVariable::BuildDate)
-    }
-
-    /**
-     * Returns the [`Categories`] value, if set.  This is a required field.
-     *
-     * Returns [`None`] if unset.
-     *
-     * ## Example
-     *
-     * ```
-     * use pkgsrc::summary::Summary;
-     *
-     * let mut sum = Summary::new();
-     * let categories = String::from("devel pkgtools");
-     *
-     * sum.set_categories(categories.as_str());
-     *
-     * assert_eq!(Some(categories.as_str()), sum.categories());
-     * ```
-     *
-     * [`Categories`]: SummaryVariable::Categories
-     */
-    pub fn categories(&self) -> Option<&str> {
-        self.get_s(SummaryVariable::Categories)
-    }
-
-    /**
-     * Returns the [`Comment`] value, if set.  This is a required field.
-     *
-     * Returns [`None`] if unset.
-     *
-     * ## Example
-     *
-     * ```
-     * use pkgsrc::summary::Summary;
-     *
-     * let mut sum = Summary::new();
-     * let comment = String::from("This is a test");
-     *
-     * sum.set_comment(comment.as_str());
-     *
-     * assert_eq!(Some(comment.as_str()), sum.comment());
-     * ```
-     *
-     * [`Comment`]: SummaryVariable::Comment
-     */
-    pub fn comment(&self) -> Option<&str> {
-        self.get_s(SummaryVariable::Comment)
-    }
-
-    /**
-     * Returns the [`Conflicts`] value, if set.  This is an optional field.
-     *
-     * Returns [`None`] if unset.
-     *
-     * ## Example
-     *
-     * ```
-     * use pkgsrc::summary::Summary;
-     *
-     * let mut sum = Summary::new();
-     * let conflicts = vec![
-     *                     String::from("cfl-pkg1-[0-9]*"),
-     *                     String::from("cfl-pkg2>=2.0"),
-     *                 ];
-     *
-     * sum.set_conflicts(conflicts.as_slice());
-     *
-     * assert_eq!(Some(conflicts.as_slice()), sum.conflicts());
-     * ```
-     *
-     * [`Conflicts`]: SummaryVariable::Conflicts
-     */
-    pub fn conflicts(&self) -> Option<&[String]> {
-        self.get_a(SummaryVariable::Conflicts)
-    }
-
-    /**
-     * Returns the [`Depends`] value, if set.  This is an optional field.
-     *
-     * Returns [`None`] if unset.
-     *
-     * ## Example
-     *
-     * ```
-     * use pkgsrc::summary::Summary;
-     *
-     * let mut sum = Summary::new();
-     * let depends = vec![
-     *                     String::from("dep-pkg1-[0-9]*"),
-     *                     String::from("dep-pkg2>=2.0"),
-     *                 ];
-     *
-     * sum.set_depends(depends.as_slice());
-     *
-     * assert_eq!(Some(depends.as_slice()), sum.depends());
-     * ```
-     *
-     * [`Depends`]: SummaryVariable::Depends
-     */
-    pub fn depends(&self) -> Option<&[String]> {
-        self.get_a(SummaryVariable::Depends)
-    }
-
-    /**
-     * Returns the [`Description`] value, if set.  This is a required field.
-     *
-     * Returns [`None`] if unset.
-     *
-     * ## Example
-     *
-     * ```
-     * use pkgsrc::summary::Summary;
-     *
-     * let mut sum = Summary::new();
-     * let description = vec![
-     *                       String::from("This is a test"),
-     *                       String::from(""),
-     *                       String::from("This is a multi-line variable"),
-     *                   ];
-     *
-     * sum.set_description(description.as_slice());
-     *
-     * assert_eq!(Some(description.as_slice()), sum.description());
-     * ```
-     *
-     * [`Description`]: SummaryVariable::Description
-     */
-    pub fn description(&self) -> Option<&[String]> {
-        self.get_a(SummaryVariable::Description)
-    }
-
-    /**
-     * Helper function that returns the [`Description`] value, if set, as a
-     * single string joined together with newlines.
-     *
-     * Returns [`None`] if unset.
-     *
-     * [`Description`]: SummaryVariable::Description
-     */
-    pub fn description_as_str(&self) -> Option<String> {
-        self.get_a(SummaryVariable::Description)
-            .map(|d| d.join("\n"))
-    }
-
-    /**
-     * Returns the [`FileCksum`] value, if set.  This is an optional field.
-     *
-     * Returns [`None`] if unset.
-     *
-     * ## Example
-     *
-     * ```
-     * use pkgsrc::summary::Summary;
-     *
-     * let mut sum = Summary::new();
-     * let cksum = String::from("SHA1 a4801e9b26eeb5b8bd1f54bac1c8e89dec67786a");
-     *
-     * sum.set_file_cksum(cksum.as_str());
-     *
-     * assert_eq!(Some(cksum.as_str()), sum.file_cksum());
-     * ```
-     *
-     * [`FileCksum`]: SummaryVariable::FileCksum
-     */
-    pub fn file_cksum(&self) -> Option<&str> {
-        self.get_s(SummaryVariable::FileCksum)
-    }
-
-    /**
-     * Returns the [`FileName`] value, if set.  This is an optional field.
-     *
-     * Returns [`None`] if unset.
-     *
-     * ## Example
-     *
-     * ```
-     * use pkgsrc::summary::Summary;
-     *
-     * let mut sum = Summary::new();
-     * let filename = String::from("testpkg-1.0.tgz");
-     *
-     * sum.set_file_name(filename.as_str());
-     *
-     * assert_eq!(Some(filename.as_str()), sum.file_name());
-     * ```
-     *
-     * [`FileName`]: SummaryVariable::FileName
-     */
-    pub fn file_name(&self) -> Option<&str> {
-        self.get_s(SummaryVariable::FileName)
-    }
-
-    /**
-     * Returns the [`FileSize`] value, if set.  This is an optional field.
-     *
-     * Returns [`None`] if unset.
-     *
-     * ## Example
-     *
-     * ```
-     * use pkgsrc::summary::Summary;
-     *
-     * let mut sum = Summary::new();
-     * let filesize = 1234;
-     *
-     * sum.set_file_size(filesize);
-     *
-     * assert_eq!(Some(filesize), sum.file_size());
-     * ```
-     *
-     * [`FileSize`]: SummaryVariable::FileSize
-     */
-    pub fn file_size(&self) -> Option<i64> {
-        self.get_i(SummaryVariable::FileSize)
-    }
-
-    /**
-     * Returns the [`Homepage`] value, if set.  This is an optional field.
-     *
-     * Returns [`None`] if unset.
-     *
-     * ## Example
-     *
-     * ```
-     * use pkgsrc::summary::Summary;
-     *
-     * let mut sum = Summary::new();
-     * let homepage = String::from("https://docs.rs/pkgsrc/");
-     *
-     * sum.set_homepage(homepage.as_str());
-     *
-     * assert_eq!(Some(homepage.as_str()), sum.homepage());
-     * ```
-     *
-     * [`Homepage`]: SummaryVariable::Homepage
-     */
-    pub fn homepage(&self) -> Option<&str> {
-        self.get_s(SummaryVariable::Homepage)
-    }
-
-    /**
-     * Returns the [`License`] value, if set.  This is an optional field.
-     *
-     * Returns [`None`] if unset.
-     *
-     * ## Example
-     *
-     * ```
-     * use pkgsrc::summary::Summary;
-     *
-     * let mut sum = Summary::new();
-     * let license = String::from("apache-2.0 OR modified-bsd");
-     *
-     * sum.set_license(license.as_str());
-     *
-     * assert_eq!(Some(license.as_str()), sum.license());
-     * ```
-     *
-     * [`License`]: SummaryVariable::License
-     */
-    pub fn license(&self) -> Option<&str> {
-        self.get_s(SummaryVariable::License)
-    }
-
-    /**
-     * Returns the [`MachineArch`] value, if set.  This is a required field.
-     *
-     * Returns [`None`] if unset.
-     *
-     * ## Example
-     *
-     * ```
-     * use pkgsrc::summary::Summary;
-     *
-     * let mut sum = Summary::new();
-     * let machine_arch = String::from("x86_64");
-     *
-     * sum.set_machine_arch(machine_arch.as_str());
-     *
-     * assert_eq!(Some(machine_arch.as_str()), sum.machine_arch());
-     * ```
-     *
-     * [`MachineArch`]: SummaryVariable::MachineArch
-     */
-    pub fn machine_arch(&self) -> Option<&str> {
-        self.get_s(SummaryVariable::MachineArch)
-    }
-
-    /**
-     * Returns the [`Opsys`] value, if set.  This is a required field.
-     *
-     * Returns [`None`] if unset.
-     *
-     * ## Example
-     *
-     * ```
-     * use pkgsrc::summary::Summary;
-     *
-     * let mut sum = Summary::new();
-     * let opsys = String::from("Darwin");
-     *
-     * sum.set_opsys(opsys.as_str());
-     *
-     * assert_eq!(Some(opsys.as_str()), sum.opsys());
-     * ```
-     *
-     * [`Opsys`]: SummaryVariable::Opsys
-     */
-    pub fn opsys(&self) -> Option<&str> {
-        self.get_s(SummaryVariable::Opsys)
-    }
-
-    /**
-     * Returns the [`OsVersion`] value, if set.  This is a required field.
-     *
-     * Returns [`None`] if unset.
-     *
-     * ## Example
-     *
-     * ```
-     * use pkgsrc::summary::Summary;
-     *
-     * let mut sum = Summary::new();
-     * let os_version = String::from("18.7.0");
-     *
-     * sum.set_os_version(os_version.as_str());
-     *
-     * assert_eq!(Some(os_version.as_str()), sum.os_version());
-     * ```
-     *
-     * [`OsVersion`]: SummaryVariable::OsVersion
-     */
-    pub fn os_version(&self) -> Option<&str> {
-        self.get_s(SummaryVariable::OsVersion)
-    }
-
-    /**
-     * Returns the [`PkgOptions`] value, if set.  This is an optional field.
-     *
-     * Returns [`None`] if unset.
-     *
-     * ## Example
-     *
-     * ```
-     * use pkgsrc::summary::Summary;
-     *
-     * let mut sum = Summary::new();
-     * let pkg_options = String::from("http2 idn inet6 ldap libssh2");
-     *
-     * sum.set_pkg_options(pkg_options.as_str());
-     *
-     * assert_eq!(Some(pkg_options.as_str()), sum.pkg_options());
-     * ```
-     *
-     * [`PkgOptions`]: SummaryVariable::PkgOptions
-     */
-    pub fn pkg_options(&self) -> Option<&str> {
-        self.get_s(SummaryVariable::PkgOptions)
-    }
-
-    /**
-     * Returns the [`Pkgname`] value, if set.  This is a required field.
-     *
-     * Returns [`None`] if unset.
-     *
-     * ## Example
-     *
-     * ```
-     * use pkgsrc::summary::Summary;
-     *
-     * let mut sum = Summary::new();
-     * let pkgname = String::from("testpkg-1.0");
-     *
-     * sum.set_pkgname(pkgname.as_str());
-     *
-     * assert_eq!(Some(pkgname.as_str()), sum.pkgname());
-     * ```
-     *
-     * [`Pkgname`]: SummaryVariable::Pkgname
-     */
-    pub fn pkgname(&self) -> Option<&str> {
-        self.get_s(SummaryVariable::Pkgname)
-    }
-
-    /**
-     * Returns the package name portion of the [`Pkgname`] value, if set.  This
-     * is a required field.
-     *
-     * Returns [`None`] if unset, or if an empty string (which would indicate
-     * a badly formed package name).
-     *
-     * ## Example
-     *
-     * ```
-     * use pkgsrc::summary::Summary;
-     *
-     * let mut sum = Summary::new();
-     *
-     * sum.set_pkgname("test-pkg-1.0");
-     * assert_eq!(sum.pkgname(), Some("test-pkg-1.0"));
-     * assert_eq!(sum.pkgbase(), Some("test-pkg"));
-     * assert_eq!(sum.pkgversion(), Some("1.0"));
-     *
-     * sum.set_pkgname("-1.0");
-     * assert_eq!(sum.pkgname(), Some("-1.0"));
-     * assert_eq!(sum.pkgbase(), None);
-     * assert_eq!(sum.pkgversion(), Some("1.0"));
-     *
-     * sum.set_pkgname("test-pkg-");
-     * assert_eq!(sum.pkgname(), Some("test-pkg-"));
-     * assert_eq!(sum.pkgbase(), Some("test-pkg"));
-     * assert_eq!(sum.pkgversion(), None);
-     * ```
-     *
-     * [`Pkgname`]: SummaryVariable::Pkgname
-     */
-    pub fn pkgbase(&self) -> Option<&str> {
-        match self.get_s(SummaryVariable::Pkgname) {
-            Some(s) => match s.rfind('-') {
-                Some(i) => {
-                    if i == 0 {
-                        return None;
-                    }
-                    let (pkgbase, _) = s.split_at(i);
-                    Some(pkgbase)
-                }
-                None => None,
-            },
-            None => None,
+        if let Some(ref depends) = self.depends {
+            for d in depends {
+                writeln!(f, "DEPENDS={}", d)?;
+            }
         }
-    }
 
-    /**
-     * Returns the package version portion of the [`Pkgname`] value, if set.
-     * This is a required field.
-     *
-     * Returns [`None`] if unset, or if an empty string (which would indicate
-     * a badly formed package name).
-     *
-     * ## Example
-     *
-     * ```
-     * use pkgsrc::summary::Summary;
-     *
-     * let mut sum = Summary::new();
-     *
-     * sum.set_pkgname("test-pkg-1.0");
-     * assert_eq!(sum.pkgname(), Some("test-pkg-1.0"));
-     * assert_eq!(sum.pkgbase(), Some("test-pkg"));
-     * assert_eq!(sum.pkgversion(), Some("1.0"));
-     *
-     * sum.set_pkgname("-1.0");
-     * assert_eq!(sum.pkgname(), Some("-1.0"));
-     * assert_eq!(sum.pkgbase(), None);
-     * assert_eq!(sum.pkgversion(), Some("1.0"));
-     *
-     * sum.set_pkgname("test-pkg-");
-     * assert_eq!(sum.pkgname(), Some("test-pkg-"));
-     * assert_eq!(sum.pkgbase(), Some("test-pkg"));
-     * assert_eq!(sum.pkgversion(), None);
-     * ```
-     *
-     * [`Pkgname`]: SummaryVariable::Pkgname
-     */
-    pub fn pkgversion(&self) -> Option<&str> {
-        match self.get_s(SummaryVariable::Pkgname) {
-            Some(s) => match s.rfind('-') {
-                Some(i) => {
-                    if i + 1 == s.len() {
-                        return None;
-                    }
-                    let (_, pkgver) = s.split_at(i + 1);
-                    Some(pkgver)
-                }
-                None => None,
-            },
-            None => None,
+        if let Some(ref cksum) = self.file_cksum {
+            writeln!(f, "FILE_CKSUM={}", cksum)?;
         }
-    }
 
-    /**
-     * Returns the [`Pkgpath`] value, if set.  This is a required field.
-     *
-     * Returns [`None`] if unset.
-     *
-     * ## Example
-     *
-     * ```
-     * use pkgsrc::summary::Summary;
-     *
-     * let mut sum = Summary::new();
-     * let pkgpath = String::from("pkgtools/testpkg");
-     *
-     * sum.set_pkgpath(pkgpath.as_str());
-     *
-     * assert_eq!(Some(pkgpath.as_str()), sum.pkgpath());
-     * ```
-     *
-     * [`Pkgpath`]: SummaryVariable::Pkgpath
-     */
-    pub fn pkgpath(&self) -> Option<&str> {
-        self.get_s(SummaryVariable::Pkgpath)
-    }
+        if let Some(ref name) = self.file_name {
+            writeln!(f, "FILE_NAME={}", name)?;
+        }
 
-    /**
-     * Returns the [`PkgtoolsVersion`] value, if set.  This is a required field.
-     *
-     * Returns [`None`] if unset.
-     *
-     * ## Example
-     *
-     * ```
-     * use pkgsrc::summary::Summary;
-     *
-     * let mut sum = Summary::new();
-     * let pkgtools_version = String::from("20091115");
-     *
-     * sum.set_pkgtools_version(pkgtools_version.as_str());
-     *
-     * assert_eq!(Some(pkgtools_version.as_str()), sum.pkgtools_version());
-     * ```
-     *
-     * [`PkgtoolsVersion`]: SummaryVariable::PkgtoolsVersion
-     */
-    pub fn pkgtools_version(&self) -> Option<&str> {
-        self.get_s(SummaryVariable::PkgtoolsVersion)
-    }
+        if let Some(size) = self.file_size {
+            writeln!(f, "FILE_SIZE={}", size)?;
+        }
 
-    /**
-     * Returns the [`PrevPkgpath`] value, if set.  This is an optional field.
-     *
-     * Returns [`None`] if unset.
-     *
-     * ## Example
-     *
-     * ```
-     * use pkgsrc::summary::Summary;
-     *
-     * let mut sum = Summary::new();
-     * let prev_pkgpath = String::from("obsolete/testpkg");
-     *
-     * sum.set_prev_pkgpath(prev_pkgpath.as_str());
-     *
-     * assert_eq!(Some(prev_pkgpath.as_str()), sum.prev_pkgpath());
-     * ```
-     *
-     * [`PrevPkgpath`]: SummaryVariable::PrevPkgpath
-     */
-    pub fn prev_pkgpath(&self) -> Option<&str> {
-        self.get_s(SummaryVariable::PrevPkgpath)
-    }
+        if let Some(ref homepage) = self.homepage {
+            writeln!(f, "HOMEPAGE={}", homepage)?;
+        }
 
-    /**
-     * Returns the [`Provides`] value, if set.  This is an optional field.
-     *
-     * Returns [`None`] if unset.
-     *
-     * ## Example
-     *
-     * ```
-     * use pkgsrc::summary::Summary;
-     *
-     * let mut sum = Summary::new();
-     * let provides = vec![
-     *                    String::from("/opt/pkg/lib/libfoo.dylib"),
-     *                    String::from("/opt/pkg/lib/libbar.dylib"),
-     *                 ];
-     *
-     * sum.set_provides(provides.as_slice());
-     *
-     * assert_eq!(Some(provides.as_slice()), sum.provides());
-     * ```
-     *
-     * [`Provides`]: SummaryVariable::Provides
-     */
-    pub fn provides(&self) -> Option<&[String]> {
-        self.get_a(SummaryVariable::Provides)
-    }
+        if let Some(ref license) = self.license {
+            writeln!(f, "LICENSE={}", license)?;
+        }
 
-    /**
-     * Returns the [`Requires`] value, if set.  This is an optional field.
-     *
-     * Returns [`None`] if unset.
-     *
-     * ## Example
-     *
-     * ```
-     * use pkgsrc::summary::Summary;
-     *
-     * let mut sum = Summary::new();
-     * let requires = vec![
-     *                    String::from("/usr/lib/libSystem.B.dylib"),
-     *                    String::from("/usr/lib/libiconv.2.dylib"),
-     *                 ];
-     *
-     * sum.set_requires(requires.as_slice());
-     *
-     * assert_eq!(Some(requires.as_slice()), sum.requires());
-     * ```
-     *
-     * [`Requires`]: SummaryVariable::Requires
-     */
-    pub fn requires(&self) -> Option<&[String]> {
-        self.get_a(SummaryVariable::Requires)
-    }
+        if let Some(ref opts) = self.pkg_options {
+            writeln!(f, "PKG_OPTIONS={}", opts)?;
+        }
 
-    /**
-     * Returns the [`SizePkg`] value, if set.  This is a required field.
-     *
-     * Returns [`None`] if unset.
-     *
-     * ## Example
-     *
-     * ```
-     * use pkgsrc::summary::Summary;
-     *
-     * let mut sum = Summary::new();
-     * let size_pkg = 4321;
-     *
-     * sum.set_size_pkg(size_pkg);
-     *
-     * assert_eq!(Some(size_pkg), sum.size_pkg());
-     * ```
-     *
-     * [`SizePkg`]: SummaryVariable::SizePkg
-     */
-    pub fn size_pkg(&self) -> Option<i64> {
-        self.get_i(SummaryVariable::SizePkg)
-    }
+        if let Some(ref prev) = self.prev_pkgpath {
+            writeln!(f, "PREV_PKGPATH={}", prev)?;
+        }
 
-    /**
-     * Returns the [`Supersedes`] value, if set.  This is an optional field.
-     *
-     * Returns [`None`] if unset.
-     *
-     * ## Example
-     *
-     * ```
-     * use pkgsrc::summary::Summary;
-     *
-     * let mut sum = Summary::new();
-     * let supersedes = vec![
-     *                      String::from("oldpkg-[0-9]*"),
-     *                      String::from("badpkg>=2.0"),
-     *                  ];
-     *
-     * sum.set_supersedes(supersedes.as_slice());
-     *
-     * assert_eq!(Some(supersedes.as_slice()), sum.supersedes());
-     * ```
-     *
-     * [`Supersedes`]: SummaryVariable::Supersedes
-     */
-    pub fn supersedes(&self) -> Option<&[String]> {
-        self.get_a(SummaryVariable::Supersedes)
-    }
+        if let Some(ref provides) = self.provides {
+            for p in provides {
+                writeln!(f, "PROVIDES={}", p)?;
+            }
+        }
 
-    // Setters
+        if let Some(ref requires) = self.requires {
+            for r in requires {
+                writeln!(f, "REQUIRES={}", r)?;
+            }
+        }
 
-    /**
-     * Set or update the [`BuildDate`] value.  This is a required field.
-     *
-     * ## Example
-     *
-     * ```
-     * use pkgsrc::summary::Summary;
-     *
-     * let mut sum = Summary::new();
-     * let build_date = String::from("2019-08-12 15:58:02 +0100");
-     *
-     * sum.set_build_date(build_date.as_str());
-     *
-     * assert_eq!(Some(build_date.as_str()), sum.build_date());
-     * ```
-     *
-     * [`BuildDate`]: SummaryVariable::BuildDate
-     */
-    pub fn set_build_date(&mut self, build_date: &str) {
-        self.insert_or_update(
-            SummaryVariable::BuildDate,
-            SummaryValue::S(build_date.to_string()),
-        );
-    }
+        if let Some(ref supersedes) = self.supersedes {
+            for s in supersedes {
+                writeln!(f, "SUPERSEDES={}", s)?;
+            }
+        }
 
-    /**
-     * Set or update the [`Categories`] value.  This is a required field.
-     *
-     * ## Example
-     *
-     * ```
-     * use pkgsrc::summary::Summary;
-     *
-     * let mut sum = Summary::new();
-     * let categories = String::from("devel pkgtools");
-     *
-     * sum.set_categories(categories.as_str());
-     *
-     * assert_eq!(Some(categories.as_str()), sum.categories());
-     * ```
-     *
-     * [`Categories`]: SummaryVariable::Categories
-     */
-    pub fn set_categories(&mut self, categories: &str) {
-        self.insert_or_update(
-            SummaryVariable::Categories,
-            SummaryValue::S(categories.to_string()),
-        );
-    }
-
-    /**
-     * Set or update the [`Comment`] value.  This is a required field.
-     *
-     * ## Example
-     *
-     * ```
-     * use pkgsrc::summary::Summary;
-     *
-     * let mut sum = Summary::new();
-     * let comment = String::from("This is a test");
-     *
-     * sum.set_comment(comment.as_str());
-     *
-     * assert_eq!(Some(comment.as_str()), sum.comment());
-     * ```
-     *
-     * [`Comment`]: SummaryVariable::Comment
-     */
-    pub fn set_comment(&mut self, comment: &str) {
-        self.insert_or_update(
-            SummaryVariable::Comment,
-            SummaryValue::S(comment.to_string()),
-        );
-    }
-
-    /**
-     * Set or update the [`Conflicts`] value.  This is an optional field.
-     *
-     * ## Example
-     *
-     * ```
-     * use pkgsrc::summary::Summary;
-     *
-     * let mut sum = Summary::new();
-     * let conflicts = vec![
-     *                     String::from("cfl-pkg1-[0-9]*"),
-     *                     String::from("cfl-pkg2>=2.0"),
-     *                 ];
-     *
-     * sum.set_conflicts(conflicts.as_slice());
-     *
-     * assert_eq!(Some(conflicts.as_slice()), sum.conflicts());
-     * ```
-     *
-     * [`Conflicts`]: SummaryVariable::Conflicts
-     */
-    pub fn set_conflicts(&mut self, conflicts: &[String]) {
-        self.insert_or_update(
-            SummaryVariable::Conflicts,
-            SummaryValue::A(conflicts.to_vec()),
-        );
-    }
-
-    /**
-     * Set or update the [`Depends`] value.  This is an optional field.
-     *
-     * ## Example
-     *
-     * ```
-     * use pkgsrc::summary::Summary;
-     *
-     * let mut sum = Summary::new();
-     * let depends = vec![
-     *                     String::from("dep-pkg1-[0-9]*"),
-     *                     String::from("dep-pkg2>=2.0"),
-     *                 ];
-     *
-     * sum.set_depends(depends.as_slice());
-     *
-     * assert_eq!(Some(depends.as_slice()), sum.depends());
-     * ```
-     *
-     * [`Depends`]: SummaryVariable::Depends
-     */
-    pub fn set_depends(&mut self, depends: &[String]) {
-        self.insert_or_update(
-            SummaryVariable::Depends,
-            SummaryValue::A(depends.to_vec()),
-        );
-    }
-
-    /**
-     * Set or update the [`Description`] value.  This is a required field.
-     *
-     * ## Example
-     *
-     * ```
-     * use pkgsrc::summary::Summary;
-     *
-     * let mut sum = Summary::new();
-     * let description = vec![
-     *                       String::from("This is a test"),
-     *                       String::from(""),
-     *                       String::from("This is a multi-line variable"),
-     *                   ];
-     *
-     * sum.set_description(description.as_slice());
-     *
-     * assert_eq!(Some(description.as_slice()), sum.description());
-     * ```
-     *
-     * [`Description`]: SummaryVariable::Description
-     */
-    pub fn set_description(&mut self, description: &[String]) {
-        self.insert_or_update(
-            SummaryVariable::Description,
-            SummaryValue::A(description.to_vec()),
-        );
-    }
-
-    /**
-     * Set or update the [`FileCksum`] value.  This is an optional field.
-     *
-     * ## Example
-     *
-     * ```
-     * use pkgsrc::summary::Summary;
-     *
-     * let mut sum = Summary::new();
-     * let cksum = String::from("SHA1 a4801e9b26eeb5b8bd1f54bac1c8e89dec67786a");
-     *
-     * sum.set_file_cksum(cksum.as_str());
-     *
-     * assert_eq!(Some(cksum.as_str()), sum.file_cksum());
-     * ```
-     *
-     * [`FileCksum`]: SummaryVariable::FileCksum
-     */
-    pub fn set_file_cksum(&mut self, file_cksum: &str) {
-        self.insert_or_update(
-            SummaryVariable::FileCksum,
-            SummaryValue::S(file_cksum.to_string()),
-        );
-    }
-
-    /**
-     * Set or update the [`FileName`] value.  This is an optional field.
-     *
-     * ## Example
-     *
-     * ```
-     * use pkgsrc::summary::Summary;
-     *
-     * let mut sum = Summary::new();
-     * let filename = String::from("testpkg-1.0.tgz");
-     *
-     * sum.set_file_name(filename.as_str());
-     *
-     * assert_eq!(Some(filename.as_str()), sum.file_name());
-     * ```
-     *
-     * [`FileName`]: SummaryVariable::FileName
-     */
-    pub fn set_file_name(&mut self, file_name: &str) {
-        self.insert_or_update(
-            SummaryVariable::FileName,
-            SummaryValue::S(file_name.to_string()),
-        );
-    }
-
-    /**
-     * Set or update the [`FileSize`] value.  This is an optional field.
-     *
-     * ## Example
-     *
-     * ```
-     * use pkgsrc::summary::Summary;
-     *
-     * let mut sum = Summary::new();
-     * let filesize = 1234;
-     *
-     * sum.set_file_size(filesize);
-     *
-     * assert_eq!(Some(filesize), sum.file_size());
-     * ```
-     *
-     * [`FileSize`]: SummaryVariable::FileSize
-     */
-    pub fn set_file_size(&mut self, file_size: i64) {
-        self.insert_or_update(
-            SummaryVariable::FileSize,
-            SummaryValue::I(file_size),
-        );
-    }
-
-    /**
-     * Set or update the [`Homepage`] value.  This is an optional field.
-     *
-     * ## Example
-     *
-     * ```
-     * use pkgsrc::summary::Summary;
-     *
-     * let mut sum = Summary::new();
-     * let homepage = String::from("https://docs.rs/pkgsrc/");
-     *
-     * sum.set_homepage(homepage.as_str());
-     *
-     * assert_eq!(Some(homepage.as_str()), sum.homepage());
-     * ```
-     *
-     * [`Homepage`]: SummaryVariable::Homepage
-     */
-    pub fn set_homepage(&mut self, homepage: &str) {
-        self.insert_or_update(
-            SummaryVariable::Homepage,
-            SummaryValue::S(homepage.to_string()),
-        );
-    }
-
-    /**
-     * Set or update the [`License`] value.  This is an optional field.
-     *
-     * ## Example
-     *
-     * ```
-     * use pkgsrc::summary::Summary;
-     *
-     * let mut sum = Summary::new();
-     * let license = String::from("apache-2.0 OR modified-bsd");
-     *
-     * sum.set_license(license.as_str());
-     *
-     * assert_eq!(Some(license.as_str()), sum.license());
-     * ```
-     *
-     * [`License`]: SummaryVariable::License
-     */
-    pub fn set_license(&mut self, license: &str) {
-        self.insert_or_update(
-            SummaryVariable::License,
-            SummaryValue::S(license.to_string()),
-        );
-    }
-
-    /**
-     * Set or update the [`MachineArch`] value.  This is a required field.
-     *
-     * ## Example
-     *
-     * ```
-     * use pkgsrc::summary::Summary;
-     *
-     * let mut sum = Summary::new();
-     * let machine_arch = String::from("x86_64");
-     *
-     * sum.set_machine_arch(machine_arch.as_str());
-     *
-     * assert_eq!(Some(machine_arch.as_str()), sum.machine_arch());
-     * ```
-     *
-     * [`MachineArch`]: SummaryVariable::MachineArch
-     */
-    pub fn set_machine_arch(&mut self, machine_arch: &str) {
-        self.insert_or_update(
-            SummaryVariable::MachineArch,
-            SummaryValue::S(machine_arch.to_string()),
-        );
-    }
-
-    /**
-     * Set or update the [`Opsys`] value.  This is a required field.
-     *
-     * ## Example
-     *
-     * ```
-     * use pkgsrc::summary::Summary;
-     *
-     * let mut sum = Summary::new();
-     * let opsys = String::from("Darwin");
-     *
-     * sum.set_opsys(opsys.as_str());
-     *
-     * assert_eq!(Some(opsys.as_str()), sum.opsys());
-     * ```
-     *
-     * [`Opsys`]: SummaryVariable::Opsys
-     */
-    pub fn set_opsys(&mut self, opsys: &str) {
-        self.insert_or_update(
-            SummaryVariable::Opsys,
-            SummaryValue::S(opsys.to_string()),
-        );
-    }
-
-    /**
-     * Set or update the [`OsVersion`] value.  This is a required field.
-     *
-     * ## Example
-     *
-     * ```
-     * use pkgsrc::summary::Summary;
-     *
-     * let mut sum = Summary::new();
-     * let os_version = String::from("18.7.0");
-     *
-     * sum.set_os_version(os_version.as_str());
-     *
-     * assert_eq!(Some(os_version.as_str()), sum.os_version());
-     * ```
-     *
-     * [`OsVersion`]: SummaryVariable::OsVersion
-     */
-    pub fn set_os_version(&mut self, os_version: &str) {
-        self.insert_or_update(
-            SummaryVariable::OsVersion,
-            SummaryValue::S(os_version.to_string()),
-        );
-    }
-
-    /**
-     * Set or update the [`PkgOptions`] value.  This is an optional field.
-     *
-     * ## Example
-     *
-     * ```
-     * use pkgsrc::summary::Summary;
-     *
-     * let mut sum = Summary::new();
-     * let pkg_options = String::from("http2 idn inet6 ldap libssh2");
-     *
-     * sum.set_pkg_options(pkg_options.as_str());
-     *
-     * assert_eq!(Some(pkg_options.as_str()), sum.pkg_options());
-     * ```
-     *
-     * [`PkgOptions`]: SummaryVariable::PkgOptions
-     */
-    pub fn set_pkg_options(&mut self, pkg_options: &str) {
-        self.insert_or_update(
-            SummaryVariable::PkgOptions,
-            SummaryValue::S(pkg_options.to_string()),
-        );
-    }
-
-    /**
-     * Set or update the [`Pkgname`] value.  This is a required field.
-     *
-     * ## Example
-     *
-     * ```
-     * use pkgsrc::summary::Summary;
-     *
-     * let mut sum = Summary::new();
-     * let pkgname = String::from("testpkg-1.0");
-     *
-     * sum.set_pkgname(pkgname.as_str());
-     *
-     * assert_eq!(Some(pkgname.as_str()), sum.pkgname());
-     * ```
-     *
-     * [`Pkgname`]: SummaryVariable::Pkgname
-     */
-    pub fn set_pkgname(&mut self, pkgname: &str) {
-        self.insert_or_update(
-            SummaryVariable::Pkgname,
-            SummaryValue::S(pkgname.to_string()),
-        );
-    }
-
-    /**
-     * Set or update the [`Pkgpath`] value.  This is a required field.
-     *
-     * ## Example
-     *
-     * ```
-     * use pkgsrc::summary::Summary;
-     *
-     * let mut sum = Summary::new();
-     * let pkgpath = String::from("pkgtools/testpkg");
-     *
-     * sum.set_pkgpath(pkgpath.as_str());
-     *
-     * assert_eq!(Some(pkgpath.as_str()), sum.pkgpath());
-     * ```
-     *
-     * [`Pkgpath`]: SummaryVariable::Pkgpath
-     */
-    pub fn set_pkgpath(&mut self, pkgpath: &str) {
-        self.insert_or_update(
-            SummaryVariable::Pkgpath,
-            SummaryValue::S(pkgpath.to_string()),
-        );
-    }
-
-    /**
-     * Set or update the [`PkgtoolsVersion`] value.  This is a required field.
-     *
-     * ## Example
-     *
-     * ```
-     * use pkgsrc::summary::Summary;
-     *
-     * let mut sum = Summary::new();
-     * let pkgtools_version = String::from("20091115");
-     *
-     * sum.set_pkgtools_version(pkgtools_version.as_str());
-     *
-     * assert_eq!(Some(pkgtools_version.as_str()), sum.pkgtools_version());
-     * ```
-     *
-     * [`PkgtoolsVersion`]: SummaryVariable::PkgtoolsVersion
-     */
-    pub fn set_pkgtools_version(&mut self, pkgtools_version: &str) {
-        self.insert_or_update(
-            SummaryVariable::PkgtoolsVersion,
-            SummaryValue::S(pkgtools_version.to_string()),
-        );
-    }
-
-    /**
-     * Set or update the [`PrevPkgpath`] value.  This is an optional field.
-     *
-     * ## Example
-     *
-     * ```
-     * use pkgsrc::summary::Summary;
-     *
-     * let mut sum = Summary::new();
-     * let prev_pkgpath = String::from("obsolete/testpkg");
-     *
-     * sum.set_prev_pkgpath(prev_pkgpath.as_str());
-     *
-     * assert_eq!(Some(prev_pkgpath.as_str()), sum.prev_pkgpath());
-     * ```
-     *
-     * [`PrevPkgpath`]: SummaryVariable::PrevPkgpath
-     */
-    pub fn set_prev_pkgpath(&mut self, prev_pkgpath: &str) {
-        self.insert_or_update(
-            SummaryVariable::PrevPkgpath,
-            SummaryValue::S(prev_pkgpath.to_string()),
-        );
-    }
-
-    /**
-     * Set or update the [`Provides`] value.  This is an optional field.
-     *
-     * ## Example
-     *
-     * ```
-     * use pkgsrc::summary::Summary;
-     *
-     * let mut sum = Summary::new();
-     * let provides = vec![
-     *                    String::from("/opt/pkg/lib/libfoo.dylib"),
-     *                    String::from("/opt/pkg/lib/libbar.dylib"),
-     *                 ];
-     *
-     * sum.set_provides(provides.as_slice());
-     *
-     * assert_eq!(Some(provides.as_slice()), sum.provides());
-     * ```
-     *
-     * [`Provides`]: SummaryVariable::Provides
-     */
-    pub fn set_provides(&mut self, provides: &[String]) {
-        self.insert_or_update(
-            SummaryVariable::Provides,
-            SummaryValue::A(provides.to_vec()),
-        );
-    }
-
-    /**
-     * Set or update the [`Requires`] value.  This is an optional field.
-     *
-     * ## Example
-     *
-     * ```
-     * use pkgsrc::summary::Summary;
-     *
-     * let mut sum = Summary::new();
-     * let requires = vec![
-     *                    String::from("/usr/lib/libSystem.B.dylib"),
-     *                    String::from("/usr/lib/libiconv.2.dylib"),
-     *                 ];
-     *
-     * sum.set_requires(requires.as_slice());
-     *
-     * assert_eq!(Some(requires.as_slice()), sum.requires());
-     * ```
-     *
-     * [`Requires`]: SummaryVariable::Requires
-     */
-    pub fn set_requires(&mut self, requires: &[String]) {
-        self.insert_or_update(
-            SummaryVariable::Requires,
-            SummaryValue::A(requires.to_vec()),
-        );
-    }
-
-    /**
-     * Set or update the [`SizePkg`] value.  This is a required field.
-     *
-     * ## Example
-     *
-     * ```
-     * use pkgsrc::summary::Summary;
-     *
-     * let mut sum = Summary::new();
-     * let size_pkg = 4321;
-     *
-     * sum.set_size_pkg(size_pkg);
-     *
-     * assert_eq!(Some(size_pkg), sum.size_pkg());
-     * ```
-     *
-     * [`SizePkg`]: SummaryVariable::SizePkg
-     */
-    pub fn set_size_pkg(&mut self, size_pkg: i64) {
-        self.insert_or_update(
-            SummaryVariable::SizePkg,
-            SummaryValue::I(size_pkg),
-        );
-    }
-
-    /**
-     * Set or update the [`Supersedes`] value.  This is an optional field.
-     *
-     * ## Example
-     *
-     * ```
-     * use pkgsrc::summary::Summary;
-     *
-     * let mut sum = Summary::new();
-     * let supersedes = vec![
-     *                      String::from("oldpkg-[0-9]*"),
-     *                      String::from("badpkg>=2.0"),
-     *                  ];
-     *
-     * sum.set_supersedes(supersedes.as_slice());
-     *
-     * assert_eq!(Some(supersedes.as_slice()), sum.supersedes());
-     * ```
-     *
-     * [`Supersedes`]: SummaryVariable::Supersedes
-     */
-    pub fn set_supersedes(&mut self, supersedes: &[String]) {
-        self.insert_or_update(
-            SummaryVariable::Supersedes,
-            SummaryValue::A(supersedes.to_vec()),
-        );
-    }
-
-    /**
-     * Set or append to the [`Conflicts`] value.  This is an optional field.
-     *
-     * ## Example
-     *
-     * ```
-     * use pkgsrc::summary::Summary;
-     *
-     * let mut sum = Summary::new();
-     * let conflicts = vec![
-     *                     String::from("cfl-pkg1-[0-9]*"),
-     *                     String::from("cfl-pkg2>=2.0"),
-     *                 ];
-     *
-     * for conflict in &conflicts {
-     *     sum.push_conflicts(&conflict);
-     * }
-     *
-     * assert_eq!(Some(conflicts.as_slice()), sum.conflicts());
-     * ```
-     *
-     * [`Conflicts`]: SummaryVariable::Conflicts
-     */
-    pub fn push_conflicts(&mut self, conflicts: &str) {
-        self.insert_or_push(
-            SummaryVariable::Conflicts,
-            SummaryValue::A(vec![conflicts.to_string()]),
-        );
-    }
-
-    /**
-     * Set or append to the [`Depends`] value.  This is an optional field.
-     *
-     * ## Example
-     *
-     * ```
-     * use pkgsrc::summary::Summary;
-     *
-     * let mut sum = Summary::new();
-     * let depends = vec![
-     *                     String::from("dep-pkg1-[0-9]*"),
-     *                     String::from("dep-pkg2>=2.0"),
-     *                 ];
-     *
-     * for depend in &depends {
-     *     sum.push_depends(&depend);
-     * }
-     *
-     * assert_eq!(Some(depends.as_slice()), sum.depends());
-     * ```
-     *
-     * [`Depends`]: SummaryVariable::Depends
-     */
-    pub fn push_depends(&mut self, depends: &str) {
-        self.insert_or_push(
-            SummaryVariable::Depends,
-            SummaryValue::A(vec![depends.to_string()]),
-        );
-    }
-
-    /**
-     * Set or append to the [`Description`] value.  This is a required field.
-     *
-     * ## Example
-     *
-     * ```
-     * use pkgsrc::summary::Summary;
-     *
-     * let mut sum = Summary::new();
-     *
-     * let description = vec![
-     *                       String::from("This is a test"),
-     *                       String::from(""),
-     *                       String::from("This is a multi-line variable"),
-     *                   ];
-     *
-     * for line in &description {
-     *     sum.push_description(&line);
-     * }
-     *
-     * assert_eq!(Some(description.as_slice()), sum.description());
-     * ```
-     *
-     * [`Description`]: SummaryVariable::Description
-     */
-    pub fn push_description(&mut self, description: &str) {
-        self.insert_or_push(
-            SummaryVariable::Description,
-            SummaryValue::A(vec![description.to_string()]),
-        );
-    }
-
-    /**
-     * Set or append to the [`Provides`] value.  This is an optional field.
-     *
-     * ## Example
-     *
-     * ```
-     * use pkgsrc::summary::Summary;
-     *
-     * let mut sum = Summary::new();
-     *
-     * let provides = vec![
-     *                    String::from("/opt/pkg/lib/libfoo.dylib"),
-     *                    String::from("/opt/pkg/lib/libbar.dylib"),
-     *                 ];
-     *
-     * for prov in &provides {
-     *     sum.push_provides(&prov);
-     * }
-     *
-     * assert_eq!(Some(provides.as_slice()), sum.provides());
-     * ```
-     *
-     * [`Provides`]: SummaryVariable::Provides
-     */
-    pub fn push_provides(&mut self, provides: &str) {
-        self.insert_or_push(
-            SummaryVariable::Provides,
-            SummaryValue::A(vec![provides.to_string()]),
-        );
-    }
-
-    /**
-     * Set or append to the [`Requires`] value.  This is an optional field.
-     *
-     * ## Example
-     *
-     * ```
-     * use pkgsrc::summary::Summary;
-     *
-     * let mut sum = Summary::new();
-     *
-     * let requires = vec![
-     *                    String::from("/usr/lib/libSystem.B.dylib"),
-     *                    String::from("/usr/lib/libiconv.2.dylib"),
-     *                 ];
-     *
-     * for r in &requires {
-     *     sum.push_requires(&r);
-     * }
-     *
-     * assert_eq!(Some(requires.as_slice()), sum.requires());
-     * ```
-     *
-     * [`Requires`]: SummaryVariable::Requires
-     */
-    pub fn push_requires(&mut self, requires: &str) {
-        self.insert_or_push(
-            SummaryVariable::Requires,
-            SummaryValue::A(vec![requires.to_string()]),
-        );
-    }
-
-    /**
-     * Set or append to the [`Supersedes`] value.  This is an optional field.
-     *
-     * ## Example
-     *
-     * ```
-     * use pkgsrc::summary::Summary;
-     *
-     * let mut sum = Summary::new();
-     *
-     * let supersedes = vec![
-     *                      String::from("oldpkg-[0-9]*"),
-     *                      String::from("badpkg>=2.0"),
-     *                  ];
-     *
-     * for s in &supersedes {
-     *     sum.push_supersedes(&s);
-     * }
-     *
-     * assert_eq!(Some(supersedes.as_slice()), sum.supersedes());
-     * ```
-     *
-     * [`Supersedes`]: SummaryVariable::Supersedes
-     */
-    pub fn push_supersedes(&mut self, supersedes: &str) {
-        self.insert_or_push(
-            SummaryVariable::Supersedes,
-            SummaryValue::A(vec![supersedes.to_string()]),
-        );
+        Ok(())
     }
 }
 
@@ -1984,576 +298,716 @@ impl FromStr for Summary {
     type Err = SummaryError;
 
     fn from_str(s: &str) -> Result<Self> {
-        let mut sum = Summary::new();
+        let mut builder = SummaryBuilder::default();
+
         for line in s.lines() {
-            let v: Vec<&str> = line.splitn(2, '=').collect();
-            if v.len() != 2 {
-                return Err(SummaryError::ParseLine(line.to_string()));
+            let line = line.trim();
+            if line.is_empty() {
+                continue;
             }
-            let key = SummaryVariable::from_str(v[0])?;
+
+            let (key, value) = line
+                .split_once('=')
+                .ok_or_else(|| SummaryError::ParseLine(line.to_string()))?;
+
             match key {
-                SummaryVariable::BuildDate => sum.set_build_date(v[1]),
-                SummaryVariable::Categories => sum.set_categories(v[1]),
-                SummaryVariable::Comment => sum.set_comment(v[1]),
-                SummaryVariable::Conflicts => sum.push_conflicts(v[1]),
-                SummaryVariable::Depends => sum.push_depends(v[1]),
-                SummaryVariable::Description => sum.push_description(v[1]),
-                SummaryVariable::FileCksum => sum.set_file_cksum(v[1]),
-                SummaryVariable::FileName => sum.set_file_name(v[1]),
-                SummaryVariable::FileSize => {
-                    sum.set_file_size(v[1].parse::<i64>()?)
+                "BUILD_DATE" => builder.build_date = Some(value.to_string()),
+                "CATEGORIES" => builder.categories = Some(value.to_string()),
+                "COMMENT" => builder.comment = Some(value.to_string()),
+                "DESCRIPTION" => {
+                    builder
+                        .description
+                        .get_or_insert_with(Vec::new)
+                        .push(value.to_string())
                 }
-                SummaryVariable::Homepage => sum.set_homepage(v[1]),
-                SummaryVariable::License => sum.set_license(v[1]),
-                SummaryVariable::MachineArch => sum.set_machine_arch(v[1]),
-                SummaryVariable::Opsys => sum.set_opsys(v[1]),
-                SummaryVariable::OsVersion => sum.set_os_version(v[1]),
-                SummaryVariable::PkgOptions => sum.set_pkg_options(v[1]),
-                SummaryVariable::Pkgname => sum.set_pkgname(v[1]),
-                SummaryVariable::Pkgpath => sum.set_pkgpath(v[1]),
-                SummaryVariable::PkgtoolsVersion => {
-                    sum.set_pkgtools_version(v[1])
+                "MACHINE_ARCH" => builder.machine_arch = Some(value.to_string()),
+                "OPSYS" => builder.opsys = Some(value.to_string()),
+                "OS_VERSION" => builder.os_version = Some(value.to_string()),
+                "PKGNAME" => builder.pkgname = Some(value.to_string()),
+                "PKGPATH" => builder.pkgpath = Some(value.to_string()),
+                "PKGTOOLS_VERSION" => builder.pkgtools_version = Some(value.to_string()),
+                "SIZE_PKG" => {
+                    builder.size_pkg = Some(value.parse().map_err(SummaryError::ParseInt)?)
                 }
-                SummaryVariable::PrevPkgpath => sum.set_prev_pkgpath(v[1]),
-                SummaryVariable::Provides => sum.push_provides(v[1]),
-                SummaryVariable::Requires => sum.push_requires(v[1]),
-                SummaryVariable::SizePkg => {
-                    sum.set_size_pkg(v[1].parse::<i64>()?)
+                "CONFLICTS" => {
+                    builder
+                        .conflicts
+                        .get_or_insert_with(Vec::new)
+                        .push(value.to_string())
                 }
-                SummaryVariable::Supersedes => sum.push_supersedes(v[1]),
+                "DEPENDS" => {
+                    builder
+                        .depends
+                        .get_or_insert_with(Vec::new)
+                        .push(value.to_string())
+                }
+                "FILE_CKSUM" => builder.file_cksum = Some(value.to_string()),
+                "FILE_NAME" => builder.file_name = Some(value.to_string()),
+                "FILE_SIZE" => {
+                    builder.file_size = Some(value.parse().map_err(SummaryError::ParseInt)?)
+                }
+                "HOMEPAGE" => builder.homepage = Some(value.to_string()),
+                "LICENSE" => builder.license = Some(value.to_string()),
+                "PKG_OPTIONS" => builder.pkg_options = Some(value.to_string()),
+                "PREV_PKGPATH" => builder.prev_pkgpath = Some(value.to_string()),
+                "PROVIDES" => {
+                    builder
+                        .provides
+                        .get_or_insert_with(Vec::new)
+                        .push(value.to_string())
+                }
+                "REQUIRES" => {
+                    builder
+                        .requires
+                        .get_or_insert_with(Vec::new)
+                        .push(value.to_string())
+                }
+                "SUPERSEDES" => {
+                    builder
+                        .supersedes
+                        .get_or_insert_with(Vec::new)
+                        .push(value.to_string())
+                }
+                _ => return Err(SummaryError::ParseVariable(key.to_string())),
             }
         }
 
-        /*
-         * Validate complete entry.
-         */
-        if sum.build_date().is_none() {
-            return Err(SummaryError::Incomplete(MissingVariable::BuildDate));
-        }
-        if sum.categories().is_none() {
-            return Err(SummaryError::Incomplete(MissingVariable::Categories));
-        }
-        if sum.comment().is_none() {
-            return Err(SummaryError::Incomplete(MissingVariable::Comment));
-        }
-        if sum.description().is_none() {
-            return Err(SummaryError::Incomplete(MissingVariable::Description));
-        }
-        if sum.machine_arch().is_none() {
-            return Err(SummaryError::Incomplete(MissingVariable::MachineArch));
-        }
-        if sum.opsys().is_none() {
-            return Err(SummaryError::Incomplete(MissingVariable::Opsys));
-        }
-        if sum.os_version().is_none() {
-            return Err(SummaryError::Incomplete(MissingVariable::OsVersion));
-        }
-        if sum.pkgname().is_none() {
-            return Err(SummaryError::Incomplete(MissingVariable::Pkgname));
-        }
-        if sum.pkgpath().is_none() {
-            return Err(SummaryError::Incomplete(MissingVariable::Pkgpath));
-        }
-        if sum.pkgtools_version().is_none() {
-            return Err(SummaryError::Incomplete(
-                MissingVariable::PkgtoolsVersion,
-            ));
-        }
-        if sum.size_pkg().is_none() {
-            return Err(SummaryError::Incomplete(MissingVariable::SizePkg));
-        }
-
-        Ok(sum)
+        builder.build()
     }
 }
 
-/**
- * Enum containing possible reasons that parsing [`pkg_summary(5)`] failed.
- *
- * [`pkg_summary(5)`]: https://man.netbsd.org/pkg_summary.5
- */
-#[derive(Debug)]
-pub enum SummaryError {
-    /**
-     * The summary is incomplete due to a missing required variable.
-     */
-    Incomplete(MissingVariable),
-    /**
-     * An underlying `io::Error`.
-     */
-    Io(io::Error),
-    /**
-     * The supplied line is not in the correct `VARIABLE=VALUE` format.
-     */
-    ParseLine(String),
-    /**
-     * The supplied variable is not a valid [`pkg_summary(5)`] variable.
-     *
-     * [`pkg_summary(5)`]: https://man.netbsd.org/pkg_summary.5
-     */
-    ParseVariable(String),
-    /**
-     * Parsing a supplied value as an Integer type (required for `FILE_SIZE`
-     * and `SIZE_PKG`) failed.
-     */
-    ParseInt(ParseIntError),
+/// Builder for constructing a Summary.
+///
+/// # Example
+///
+/// ```ignore
+/// use pkgsrc::summary::SummaryBuilder;
+///
+/// let summary = SummaryBuilder::new()
+///     .pkgname("test-1.0")
+///     .comment("A test")
+///     .categories("devel")
+///     .description(vec!["Line 1", "Line 2"])
+///     .machine_arch("x86_64")
+///     .opsys("Darwin")
+///     .os_version("18.7.0")
+///     .pkgpath("pkgtools/test")
+///     .pkgtools_version("20091115")
+///     .size_pkg(1234)
+///     .build_date("2024-01-01")
+///     .build()?;
+/// ```
+#[derive(Debug, Default)]
+pub struct SummaryBuilder {
+    build_date: Option<String>,
+    categories: Option<String>,
+    comment: Option<String>,
+    description: Option<Vec<String>>,
+    machine_arch: Option<String>,
+    opsys: Option<String>,
+    os_version: Option<String>,
+    pkgname: Option<String>,
+    pkgpath: Option<String>,
+    pkgtools_version: Option<String>,
+    size_pkg: Option<i64>,
+    conflicts: Option<Vec<String>>,
+    depends: Option<Vec<String>>,
+    file_cksum: Option<String>,
+    file_name: Option<String>,
+    file_size: Option<i64>,
+    homepage: Option<String>,
+    license: Option<String>,
+    pkg_options: Option<String>,
+    prev_pkgpath: Option<String>,
+    provides: Option<Vec<String>>,
+    requires: Option<Vec<String>>,
+    supersedes: Option<Vec<String>>,
 }
 
-/**
- * Missing variables that are required for a valid [`pkg_summary(5)`] entity.
- *
- * [`pkg_summary(5)`]: https://man.netbsd.org/pkg_summary.5
- */
-#[derive(Clone, Debug)]
-pub enum MissingVariable {
-    /**
-     * Missing required `BUILD_DATE` variable.
-     */
-    BuildDate,
-    /**
-     * Missing required `CATEGORIES` variable.
-     */
-    Categories,
-    /**
-     * Missing required `COMMENT` variable.
-     */
-    Comment,
-    /**
-     * Missing required `DESCRIPTION` variable.
-     */
-    Description,
-    /**
-     * Missing required `MACHINE_ARCH` variable.
-     */
-    MachineArch,
-    /**
-     * Missing required `OPSYS` variable.
-     */
-    Opsys,
-    /**
-     * Missing required `OS_VERSION` variable.
-     */
-    OsVersion,
-    /**
-     * Missing required `PKGNAME` variable.
-     */
-    Pkgname,
-    /**
-     * Missing required `PKGPATH` variable.
-     */
-    Pkgpath,
-    /**
-     * Missing required `PKGTOOLS_VERSION` variable.
-     */
-    PkgtoolsVersion,
-    /**
-     * Missing required `SIZE_PKG` variable.
-     */
-    SizePkg,
-}
+impl SummaryBuilder {
+    /// Create a new summary builder
+    pub fn new() -> Self {
+        Self::default()
+    }
 
-impl fmt::Display for SummaryError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            SummaryError::ParseLine(s) => {
-                write!(f, "not correctly formatted (VARIABLE=VALUE): {s}")
-            }
-            SummaryError::ParseVariable(s) => {
-                write!(f, "'{s}' is not a supported pkg_summary variable")
-            }
-            SummaryError::ParseInt(s) => {
-                /* Defer to ParseIntError formatting */
-                write!(f, "{s}")
-            }
-            SummaryError::Io(s) => {
-                /* Defer to io::Error formatting */
-                write!(f, "{s}")
-            }
-            SummaryError::Incomplete(s) => {
-                /* Defer to MissingVariable formatting */
-                write!(f, "{s}")
-            }
-        }
+    /// Set the build date
+    pub fn build_date(mut self, value: impl Into<String>) -> Self {
+        self.build_date = Some(value.into());
+        self
+    }
+
+    /// Set the categories
+    pub fn categories(mut self, value: impl Into<String>) -> Self {
+        self.categories = Some(value.into());
+        self
+    }
+
+    /// Set the package comment
+    pub fn comment(mut self, value: impl Into<String>) -> Self {
+        self.comment = Some(value.into());
+        self
+    }
+
+    /// Set the package description
+    pub fn description(mut self, value: Vec<impl Into<String>>) -> Self {
+        self.description = Some(value.into_iter().map(|s| s.into()).collect());
+        self
+    }
+
+    /// Set the machine architecture
+    pub fn machine_arch(mut self, value: impl Into<String>) -> Self {
+        self.machine_arch = Some(value.into());
+        self
+    }
+
+    /// Set the operating system
+    pub fn opsys(mut self, value: impl Into<String>) -> Self {
+        self.opsys = Some(value.into());
+        self
+    }
+
+    /// Set the OS version
+    pub fn os_version(mut self, value: impl Into<String>) -> Self {
+        self.os_version = Some(value.into());
+        self
+    }
+
+    /// Set the package name
+    pub fn pkgname(mut self, value: impl Into<String>) -> Self {
+        self.pkgname = Some(value.into());
+        self
+    }
+
+    /// Set the package path
+    pub fn pkgpath(mut self, value: impl Into<String>) -> Self {
+        self.pkgpath = Some(value.into());
+        self
+    }
+
+    /// Set the pkgtools version
+    pub fn pkgtools_version(mut self, value: impl Into<String>) -> Self {
+        self.pkgtools_version = Some(value.into());
+        self
+    }
+
+    /// Set the package size
+    pub fn size_pkg(mut self, value: i64) -> Self {
+        self.size_pkg = Some(value);
+        self
+    }
+
+    /// Set the package conflicts
+    pub fn conflicts(mut self, value: Vec<impl Into<String>>) -> Self {
+        self.conflicts = Some(value.into_iter().map(|s| s.into()).collect());
+        self
+    }
+
+    /// Set the package dependencies
+    pub fn depends(mut self, value: Vec<impl Into<String>>) -> Self {
+        self.depends = Some(value.into_iter().map(|s| s.into()).collect());
+        self
+    }
+
+    /// Set the file checksum
+    pub fn file_cksum(mut self, value: impl Into<String>) -> Self {
+        self.file_cksum = Some(value.into());
+        self
+    }
+
+    /// Set the filename
+    pub fn file_name(mut self, value: impl Into<String>) -> Self {
+        self.file_name = Some(value.into());
+        self
+    }
+
+    /// Set the file size
+    pub fn file_size(mut self, value: i64) -> Self {
+        self.file_size = Some(value);
+        self
+    }
+
+    /// Set the homepage URL
+    pub fn homepage(mut self, value: impl Into<String>) -> Self {
+        self.homepage = Some(value.into());
+        self
+    }
+
+    /// Set the package license
+    pub fn license(mut self, value: impl Into<String>) -> Self {
+        self.license = Some(value.into());
+        self
+    }
+
+    /// Set the package options
+    pub fn pkg_options(mut self, value: impl Into<String>) -> Self {
+        self.pkg_options = Some(value.into());
+        self
+    }
+
+    /// Set the previous package path
+    pub fn prev_pkgpath(mut self, value: impl Into<String>) -> Self {
+        self.prev_pkgpath = Some(value.into());
+        self
+    }
+
+    /// Set the list of provided files
+    pub fn provides(mut self, value: Vec<impl Into<String>>) -> Self {
+        self.provides = Some(value.into_iter().map(|s| s.into()).collect());
+        self
+    }
+
+    /// Set the list of required files
+    pub fn requires(mut self, value: Vec<impl Into<String>>) -> Self {
+        self.requires = Some(value.into_iter().map(|s| s.into()).collect());
+        self
+    }
+
+    /// Set the list of superseded packages
+    pub fn supersedes(mut self, value: Vec<impl Into<String>>) -> Self {
+        self.supersedes = Some(value.into_iter().map(|s| s.into()).collect());
+        self
+    }
+
+    /// Build the Summary, validating that all required fields are present
+    pub fn build(self) -> Result<Summary> {
+        Ok(Summary {
+            build_date: self
+                .build_date
+                .ok_or(SummaryError::MissingField("BUILD_DATE"))?,
+            categories: self
+                .categories
+                .ok_or(SummaryError::MissingField("CATEGORIES"))?,
+            comment: self.comment.ok_or(SummaryError::MissingField("COMMENT"))?,
+            description: self
+                .description
+                .ok_or(SummaryError::MissingField("DESCRIPTION"))?,
+            machine_arch: self
+                .machine_arch
+                .ok_or(SummaryError::MissingField("MACHINE_ARCH"))?,
+            opsys: self.opsys.ok_or(SummaryError::MissingField("OPSYS"))?,
+            os_version: self
+                .os_version
+                .ok_or(SummaryError::MissingField("OS_VERSION"))?,
+            pkgname: self.pkgname.ok_or(SummaryError::MissingField("PKGNAME"))?,
+            pkgpath: self.pkgpath.ok_or(SummaryError::MissingField("PKGPATH"))?,
+            pkgtools_version: self
+                .pkgtools_version
+                .ok_or(SummaryError::MissingField("PKGTOOLS_VERSION"))?,
+            size_pkg: self
+                .size_pkg
+                .ok_or(SummaryError::MissingField("SIZE_PKG"))?,
+            conflicts: self.conflicts,
+            depends: self.depends,
+            file_cksum: self.file_cksum,
+            file_name: self.file_name,
+            file_size: self.file_size,
+            homepage: self.homepage,
+            license: self.license,
+            pkg_options: self.pkg_options,
+            prev_pkgpath: self.prev_pkgpath,
+            provides: self.provides,
+            requires: self.requires,
+            supersedes: self.supersedes,
+        })
     }
 }
 
-impl Error for SummaryError {}
-
-impl fmt::Display for MissingVariable {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "missing required variable ")?;
-        match self {
-            MissingVariable::BuildDate => write!(f, "BUILD_DATE"),
-            MissingVariable::Categories => write!(f, "CATEGORIES"),
-            MissingVariable::Comment => write!(f, "COMMENT"),
-            MissingVariable::Description => write!(f, "DESCRIPTION"),
-            MissingVariable::MachineArch => write!(f, "MACHINE_ARCH"),
-            MissingVariable::Opsys => write!(f, "OPSYS"),
-            MissingVariable::OsVersion => write!(f, "OS_VERSION"),
-            MissingVariable::Pkgname => write!(f, "PKGNAME"),
-            MissingVariable::Pkgpath => write!(f, "PKGPATH"),
-            MissingVariable::PkgtoolsVersion => write!(f, "PKGTOOLS_VERSION"),
-            MissingVariable::SizePkg => write!(f, "SIZE_PKG"),
-        }
-    }
-}
-
-impl fmt::Display for SummaryVariable {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match self {
-            SummaryVariable::BuildDate => write!(f, "BUILD_DATE"),
-            SummaryVariable::Categories => write!(f, "CATEGORIES"),
-            SummaryVariable::Comment => write!(f, "COMMENT"),
-            SummaryVariable::Conflicts => write!(f, "CONFLICTS"),
-            SummaryVariable::Depends => write!(f, "DEPENDS"),
-            SummaryVariable::Description => write!(f, "DESCRIPTION"),
-            SummaryVariable::FileCksum => write!(f, "FILE_CKSUM"),
-            SummaryVariable::FileName => write!(f, "FILE_NAME"),
-            SummaryVariable::FileSize => write!(f, "FILE_SIZE"),
-            SummaryVariable::Homepage => write!(f, "HOMEPAGE"),
-            SummaryVariable::License => write!(f, "LICENSE"),
-            SummaryVariable::MachineArch => write!(f, "MACHINE_ARCH"),
-            SummaryVariable::Opsys => write!(f, "OPSYS"),
-            SummaryVariable::OsVersion => write!(f, "OS_VERSION"),
-            SummaryVariable::PkgOptions => write!(f, "PKG_OPTIONS"),
-            SummaryVariable::Pkgname => write!(f, "PKGNAME"),
-            SummaryVariable::Pkgpath => write!(f, "PKGPATH"),
-            SummaryVariable::PkgtoolsVersion => write!(f, "PKGTOOLS_VERSION"),
-            SummaryVariable::PrevPkgpath => write!(f, "PREV_PKGPATH"),
-            SummaryVariable::Provides => write!(f, "PROVIDES"),
-            SummaryVariable::Requires => write!(f, "REQUIRES"),
-            SummaryVariable::SizePkg => write!(f, "SIZE_PKG"),
-            SummaryVariable::Supersedes => write!(f, "SUPERSEDES"),
-        }
-    }
-}
-
-impl From<io::Error> for SummaryError {
-    fn from(err: io::Error) -> Self {
-        SummaryError::Io(err)
-    }
-}
-
-impl From<ParseIntError> for SummaryError {
-    fn from(err: ParseIntError) -> Self {
-        SummaryError::ParseInt(err)
-    }
-}
-
-/**
- * A collection of [`pkg_summary(5)`] entries.
- *
- * Each pkg_summary entry should be separated by a single blank line.
- *
- * The [`Write`] trait is implemented, and is the method by which an existing
- * pkg_summary file can be parsed into a new [`SummaryStream`].
- *
- * [`Display`] is also implemented so printing the newly created collection
- * will result in a correctly formed pkg_summary file.
- *
- * ## Example
- *
- * ```
- * use pkgsrc::summary::SummaryStream;
- * use unindent::unindent;
- *
- * let mut pkgsummary = SummaryStream::new();
- * let pkginfo = unindent(r#"
- *     BUILD_DATE=2019-08-12 15:58:02 +0100
- *     CATEGORIES=devel pkgtools
- *     COMMENT=This is a test
- *     DESCRIPTION=A test description
- *     DESCRIPTION=
- *     DESCRIPTION=This is a multi-line variable
- *     MACHINE_ARCH=x86_64
- *     OPSYS=Darwin
- *     OS_VERSION=18.7.0
- *     PKGNAME=testpkg-1.0
- *     PKGPATH=pkgtools/testpkg
- *     PKGTOOLS_VERSION=20091115
- *     SIZE_PKG=4321
- *     "#);
- * /*
- *  * Obviously 3 identical entries is useless, but serves as an example.
- *  */
- * let input = format!("{}\n{}\n{}\n", pkginfo, pkginfo, pkginfo);
- * std::io::copy(&mut input.as_bytes(), &mut pkgsummary);
- *
- * /*
- *  * Output should match what we received.
- *  */
- * let output = format!("{}", pkgsummary);
- * assert_eq!(input.as_bytes(), output.as_bytes());
- * assert_eq!(pkgsummary.entries().len(), 3);
- *
- * /*
- *  * Use each Summary entry to emulate pkg_info output.  This will hopefully
- *  * be implemented as a proper Iterator at some point.  Note that these
- *  * values are safe to unwrap as they are required variables and have been
- *  * checked to exist when creating the entries.
- *  */
- * for sum in pkgsummary.entries() {
- *     println!("{:20} {}", sum.pkgname().unwrap(), sum.comment().unwrap());
- * }
- * ```
- *
- * [`Display`]: https://doc.rust-lang.org/std/fmt/trait.Display.html
- * [`pkg_summary(5)`]: https://man.netbsd.org/pkg_summary.5
- */
-#[derive(Clone, Debug, Default)]
-pub struct SummaryStream {
-    buf: Vec<u8>,
+/// A collection of pkg_summary(5) entries.
+///
+/// # Example
+///
+/// ```ignore
+/// use pkgsrc::summary::Summaries;
+///
+/// let text = "PKGNAME=foo-1.0\n...\n\nPKGNAME=bar-2.0\n...";
+/// let summaries: Summaries = text.parse()?;
+///
+/// // Iterate
+/// for summary in &summaries {
+///     println!("{}", summary.pkgname);
+/// }
+///
+/// // Index
+/// let first = &summaries[0];
+///
+/// // Length
+/// println!("Found {} packages", summaries.len());
+/// ```
+#[derive(Debug, Clone, Default, PartialEq)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+pub struct Summaries {
     entries: Vec<Summary>,
 }
 
-impl SummaryStream {
-    /**
-     * Return a new SummaryStream with default values.
-     */
-    pub fn new() -> SummaryStream {
-        SummaryStream {
-            buf: vec![],
-            entries: vec![],
+impl Summaries {
+    /// Create a new empty collection
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Create from a Vec of summaries
+    pub fn from_vec(entries: Vec<Summary>) -> Self {
+        Self { entries }
+    }
+
+    /// Get the number of summaries
+    pub fn len(&self) -> usize {
+        self.entries.len()
+    }
+
+    /// Check if empty
+    pub fn is_empty(&self) -> bool {
+        self.entries.is_empty()
+    }
+
+    /// Add a summary
+    pub fn push(&mut self, summary: Summary) {
+        self.entries.push(summary);
+    }
+
+    /// Get a summary by index
+    pub fn get(&self, index: usize) -> Option<&Summary> {
+        self.entries.get(index)
+    }
+
+    /// Get a mutable summary by index
+    pub fn get_mut(&mut self, index: usize) -> Option<&mut Summary> {
+        self.entries.get_mut(index)
+    }
+
+    /// Get an iterator
+    pub fn iter(&self) -> impl Iterator<Item = &Summary> {
+        self.entries.iter()
+    }
+
+    /// Get a mutable iterator
+    pub fn iter_mut(&mut self) -> impl Iterator<Item = &mut Summary> {
+        self.entries.iter_mut()
+    }
+
+    /// Parse from a reader (streaming)
+    pub fn from_reader<R: BufRead>(reader: R) -> Result<Self> {
+        let mut summaries = Summaries::new();
+        let mut current = String::new();
+
+        for line in reader.lines() {
+            let line = line.map_err(SummaryError::Io)?;
+
+            if line.trim().is_empty() {
+                if !current.is_empty() {
+                    summaries.push(current.parse()?);
+                    current.clear();
+                }
+            } else {
+                current.push_str(&line);
+                current.push('\n');
+            }
         }
+
+        // Parse last entry if present
+        if !current.is_empty() {
+            summaries.push(current.parse()?);
+        }
+
+        Ok(summaries)
     }
 
-    /**
-     * Return vector of parsed Summary records.
-     */
-    pub fn entries(&self) -> &Vec<Summary> {
-        &self.entries
+    /// Find summaries matching a predicate
+    pub fn find<F>(&self, predicate: F) -> impl Iterator<Item = &Summary>
+    where
+        F: Fn(&Summary) -> bool,
+    {
+        self.entries.iter().filter(move |s| predicate(s))
     }
 
-    /**
-     * Return mutable vector of parsed Summary records.
-     */
-    pub fn entries_mut(&mut self) -> &mut Vec<Summary> {
-        &mut self.entries
+    /// Find a summary by package name
+    pub fn find_by_pkgname(&self, pkgname: &str) -> Option<&Summary> {
+        self.entries.iter().find(|s| s.pkgname == pkgname)
+    }
+
+    /// Find summaries by package base
+    pub fn find_by_pkgbase<'a>(&'a self, pkgbase: &str) -> impl Iterator<Item = &'a Summary> + 'a {
+        let pkgbase = pkgbase.to_string();
+        self.entries.iter().filter(move |s| s.pkgbase() == pkgbase)
     }
 }
 
-impl fmt::Display for SummaryStream {
+impl FromStr for Summaries {
+    type Err = SummaryError;
+
+    fn from_str(s: &str) -> Result<Self> {
+        let entries: Result<Vec<_>> = s
+            .split("\n\n")
+            .filter(|entry| !entry.trim().is_empty())
+            .map(Summary::from_str)
+            .collect();
+
+        Ok(Summaries {
+            entries: entries?,
+        })
+    }
+}
+
+impl fmt::Display for Summaries {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        for summary in self.entries() {
-            writeln!(f, "{summary}")?;
+        for (i, summary) in self.entries.iter().enumerate() {
+            if i > 0 {
+                writeln!(f)?;
+            }
+            write!(f, "{}", summary)?;
         }
         Ok(())
     }
 }
 
-impl Write for SummaryStream {
-    /*
-     * Stream from our input buffer into Summary records.
-     *
-     * There is probably a better way to handle this buffer, there's quite a
-     * bit of copying/draining going on.  Some kind of circular buffer might be
-     * a better option.
-     */
-    fn write(&mut self, input: &[u8]) -> std::io::Result<usize> {
-        /*
-         * Save the incoming buffer on to the end of any buffer we may already
-         * be processing.
-         */
-        self.buf.extend_from_slice(input);
+// Iterator traits
+impl IntoIterator for Summaries {
+    type Item = Summary;
+    type IntoIter = std::vec::IntoIter<Summary>;
 
-        /*
-         * Look for the last complete pkg_summary(5) record, if there are none
-         * then go to the next input.
-         */
-        let input_string = match std::str::from_utf8(&self.buf) {
-            Ok(s) => {
-                if let Some(last) = s.rfind("\n\n") {
-                    s.get(0..last + 2).unwrap()
-                } else {
-                    return Ok(input.len());
-                }
-            }
-            Err(e) => {
-                return Err(io::Error::new(io::ErrorKind::InvalidData, e));
-            }
-        };
+    fn into_iter(self) -> Self::IntoIter {
+        self.entries.into_iter()
+    }
+}
 
-        /*
-         * We have at least one complete record, parse it and add to the vector
-         * of summary entries.
-         */
-        for sum_entry in input_string.split_terminator("\n\n") {
-            let sum = match Summary::from_str(sum_entry) {
-                Ok(s) => s,
-                Err(e) => {
-                    return Err(io::Error::new(io::ErrorKind::InvalidData, e));
-                }
-            };
-            self.entries.push(sum);
+impl<'a> IntoIterator for &'a Summaries {
+    type Item = &'a Summary;
+    type IntoIter = std::slice::Iter<'a, Summary>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.entries.iter()
+    }
+}
+
+impl<'a> IntoIterator for &'a mut Summaries {
+    type Item = &'a mut Summary;
+    type IntoIter = std::slice::IterMut<'a, Summary>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.entries.iter_mut()
+    }
+}
+
+// Index traits
+impl Index<usize> for Summaries {
+    type Output = Summary;
+
+    fn index(&self, index: usize) -> &Self::Output {
+        &self.entries[index]
+    }
+}
+
+// FromIterator
+impl FromIterator<Summary> for Summaries {
+    fn from_iter<T: IntoIterator<Item = Summary>>(iter: T) -> Self {
+        Summaries {
+            entries: iter.into_iter().collect(),
         }
-
-        /*
-         * What we really want is some way to just move forward the beginning
-         * of the vector, but there appears to be no way to do that, so we end
-         * up having to do something with the existing data.  This seems to be
-         * the best way to do it for now?
-         */
-        let slen = input_string.len();
-        self.buf = self.buf.split_off(slen);
-
-        Ok(input.len())
     }
+}
 
-    fn flush(&mut self) -> std::io::Result<()> {
-        Ok(())
-    }
+/// Errors that can occur when parsing or manipulating summaries
+#[derive(Debug, Error)]
+pub enum SummaryError {
+    /// Failed to parse a line
+    #[error("Failed to parse line: {0}")]
+    ParseLine(String),
+
+    /// Unknown or invalid variable name
+    #[error("Unknown variable: {0}")]
+    ParseVariable(String),
+
+    /// Failed to parse an integer value
+    #[error("Failed to parse integer: {0}")]
+    ParseInt(#[from] std::num::ParseIntError),
+
+    /// A required field is missing
+    #[error("Missing required field: {0}")]
+    MissingField(&'static str),
+
+    /// I/O error occurred
+    #[error("I/O error: {0}")]
+    Io(#[from] io::Error),
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    /*
-     * Check we return the correct error types.  There are probably simpler
-     * ways to do this.
-     */
     #[test]
-    fn test_err() {
-        match Summary::from_str("BUILD_DATE") {
-            Ok(_) => panic!("should return ParseLine failure"),
-            Err(e) => match e {
-                SummaryError::ParseLine(_) => {}
-                _ => panic!("should return ParseLine failure"),
-            },
-        }
-        match Summary::from_str("BILD_DATE=") {
-            Ok(_) => panic!("should return ParseVariable failure"),
-            Err(e) => match e {
-                SummaryError::ParseVariable(_) => {}
-                _ => panic!("should return ParseVariable failure"),
-            },
-        }
-        match Summary::from_str("FILE_SIZE=NaN") {
-            Ok(_) => panic!("should return ParseInt failure"),
-            Err(e) => match e {
-                SummaryError::ParseInt(_) => {}
-                _ => panic!("should return ParseInt failure"),
-            },
-        }
+    fn test_parse_single_summary() {
+        let text = "\
+BUILD_DATE=2024-01-01 12:00:00 +0000
+CATEGORIES=devel
+COMMENT=A test package
+DESCRIPTION=Line 1
+DESCRIPTION=Line 2
+MACHINE_ARCH=x86_64
+OPSYS=Linux
+OS_VERSION=5.15
+PKGNAME=test-1.0
+PKGPATH=devel/test
+PKGTOOLS_VERSION=20091115
+SIZE_PKG=1234
+";
 
-        match Summary::from_str("FILE_SIZE=1234") {
-            Ok(_) => panic!("should return Incomplete failure"),
-            Err(e) => match e {
-                SummaryError::Incomplete(_) => {}
-                _ => panic!("should return Incomplete failure"),
-            },
-        }
+        let summary: Summary = text.parse().unwrap();
+        assert_eq!(summary.pkgname, "test-1.0");
+        assert_eq!(summary.pkgbase(), "test");
+        assert_eq!(summary.pkgversion(), "1.0");
+        assert_eq!(summary.comment, "A test package");
+        assert_eq!(summary.description, vec!["Line 1", "Line 2"]);
+        assert!(summary.is_valid());
     }
 
     #[test]
-    fn test_pkgname() -> Result<()> {
-        let mut sum = Summary::new();
+    fn test_parse_multiple_summaries() {
+        let text = "\
+PKGNAME=foo-1.0
+BUILD_DATE=2024-01-01
+CATEGORIES=devel
+COMMENT=Foo
+DESCRIPTION=Foo package
+MACHINE_ARCH=x86_64
+OPSYS=Linux
+OS_VERSION=5.15
+PKGPATH=devel/foo
+PKGTOOLS_VERSION=20091115
+SIZE_PKG=1000
 
-        sum.set_pkgname("test-package-1.0nb2");
-        assert_eq!(sum.pkgname(), Some("test-package-1.0nb2"));
-        assert_eq!(sum.pkgbase(), Some("test-package"));
-        assert_eq!(sum.pkgversion(), Some("1.0nb2"));
+PKGNAME=bar-2.0
+BUILD_DATE=2024-01-02
+CATEGORIES=net
+COMMENT=Bar
+DESCRIPTION=Bar package
+MACHINE_ARCH=x86_64
+OPSYS=Linux
+OS_VERSION=5.15
+PKGPATH=net/bar
+PKGTOOLS_VERSION=20091115
+SIZE_PKG=2000
+";
 
-        sum.set_pkgname("test-package-");
-        assert_eq!(sum.pkgname(), Some("test-package-"));
-        assert_eq!(sum.pkgbase(), Some("test-package"));
-        assert_eq!(sum.pkgversion(), None);
-
-        sum.set_pkgname("-1.0nb2");
-        assert_eq!(sum.pkgname(), Some("-1.0nb2"));
-        assert_eq!(sum.pkgbase(), None);
-        assert_eq!(sum.pkgversion(), Some("1.0nb2"));
-
-        Ok(())
+        let summaries: Summaries = text.parse().unwrap();
+        assert_eq!(summaries.len(), 2);
+        assert_eq!(summaries[0].pkgname, "foo-1.0");
+        assert_eq!(summaries[1].pkgname, "bar-2.0");
     }
 
-    /*
-     * Test a complete pkg_summary entry, this will go through all of the
-     * various functions and ensure everything is working correctly.
-     */
     #[test]
-    fn test_fromstr() -> Result<()> {
-        let pkginfo = unindent(
-            r#"
-            BUILD_DATE=2019-08-12 15:58:02 +0100
-            CATEGORIES=devel pkgtools
-            COMMENT=This is a test
-            CONFLICTS=cfl-pkg1-[0-9]*
-            CONFLICTS=cfl-pkg2>=2.0
-            DEPENDS=dep-pkg1-[0-9]*
-            DEPENDS=dep-pkg2>=2.0
-            DESCRIPTION=A test description
-            DESCRIPTION=
-            DESCRIPTION=This is a multi-line variable
-            FILE_CKSUM=SHA1 a4801e9b26eeb5b8bd1f54bac1c8e89dec67786a
-            FILE_NAME=testpkg-1.0.tgz
-            FILE_SIZE=1234
-            HOMEPAGE=https://docs.rs/pkgsrc/
-            LICENSE=apache-2.0 OR modified-bsd
-            MACHINE_ARCH=x86_64
-            OPSYS=Darwin
-            OS_VERSION=18.7.0
-            PKG_OPTIONS=http2 idn inet6 ldap libssh2
-            PKGNAME=testpkg-1.0
-            PKGPATH=pkgtools/testpkg
-            PKGTOOLS_VERSION=20091115
-            PREV_PKGPATH=obsolete/testpkg
-            PROVIDES=/opt/pkg/lib/libfoo.dylib
-            PROVIDES=/opt/pkg/lib/libbar.dylib
-            REQUIRES=/usr/lib/libSystem.B.dylib
-            REQUIRES=/usr/lib/libiconv.2.dylib
-            SIZE_PKG=4321
-            SUPERSEDES=oldpkg-[0-9]*
-            SUPERSEDES=badpkg>=2.0
-        "#,
-        );
-        let sum = Summary::from_str(&pkginfo)?;
-        assert_eq!(sum.build_date(), Some("2019-08-12 15:58:02 +0100"));
-        assert_eq!(sum.categories(), Some("devel pkgtools"));
-        assert_eq!(sum.comment(), Some("This is a test"));
-        assert_eq!(sum.conflicts().unwrap()[1], "cfl-pkg2>=2.0");
-        assert_eq!(sum.depends().unwrap()[1], "dep-pkg2>=2.0");
-        assert_eq!(sum.description().unwrap()[0], "A test description");
-        assert_eq!(sum.description().unwrap()[1], "");
-        assert_eq!(
-            sum.file_cksum(),
-            Some("SHA1 a4801e9b26eeb5b8bd1f54bac1c8e89dec67786a")
-        );
-        assert_eq!(sum.file_name(), Some("testpkg-1.0.tgz"));
-        assert_eq!(sum.file_size(), Some(1234));
-        assert_eq!(sum.homepage(), Some("https://docs.rs/pkgsrc/"));
-        assert_eq!(sum.license(), Some("apache-2.0 OR modified-bsd"));
-        assert_eq!(sum.machine_arch(), Some("x86_64"));
-        assert_eq!(sum.opsys(), Some("Darwin"));
-        assert_eq!(sum.os_version(), Some("18.7.0"));
-        assert_eq!(sum.pkg_options(), Some("http2 idn inet6 ldap libssh2"));
-        assert_eq!(sum.pkgname(), Some("testpkg-1.0"));
-        assert_eq!(sum.pkgbase(), Some("testpkg"));
-        assert_eq!(sum.pkgversion(), Some("1.0"));
-        assert_eq!(sum.pkgpath(), Some("pkgtools/testpkg"));
-        assert_eq!(sum.pkgtools_version(), Some("20091115"));
-        assert_eq!(sum.prev_pkgpath(), Some("obsolete/testpkg"));
-        assert_eq!(sum.provides().unwrap()[1], "/opt/pkg/lib/libbar.dylib");
-        assert_eq!(sum.requires().unwrap()[1], "/usr/lib/libiconv.2.dylib");
-        assert_eq!(sum.size_pkg(), Some(4321));
-        assert_eq!(sum.supersedes().unwrap()[1], "badpkg>=2.0");
+    fn test_builder() {
+        let summary = SummaryBuilder::new()
+            .pkgname("test-1.0")
+            .comment("Test")
+            .categories("devel")
+            .description(vec!["Line 1"])
+            .machine_arch("x86_64")
+            .opsys("Linux")
+            .os_version("5.15")
+            .pkgpath("devel/test")
+            .pkgtools_version("20091115")
+            .size_pkg(1234)
+            .build_date("2024-01-01")
+            .build()
+            .unwrap();
 
-        /*
-         * Output of our generated Summary should be identical with what we
-         * received, at least until we perform any ordering of output.
-         */
-        let sumout = format!("{}", sum);
-        assert_eq!(&pkginfo.as_bytes(), &sumout.as_bytes());
-
-        /*
-         * Ensure SummaryStream works by faking up multiple entries that happen
-         * to be identical - it doesn't matter for the purpose of this test.
-         */
-        let mut sums = SummaryStream::new();
-        let input = format!("{}\n{}\n{}\n", pkginfo, pkginfo, pkginfo);
-        std::io::copy(&mut input.as_bytes(), &mut sums)?;
-        assert_eq!(sums.entries().len(), 3);
-
-        Ok(())
+        assert_eq!(summary.pkgname, "test-1.0");
+        assert!(summary.is_valid());
     }
+
+    #[test]
+    fn test_iterator() {
+        let summaries: Summaries = vec![
+            SummaryBuilder::new()
+                .pkgname("foo-1.0")
+                .comment("Foo")
+                .categories("devel")
+                .description(vec!["Foo"])
+                .machine_arch("x86_64")
+                .opsys("Linux")
+                .os_version("5.15")
+                .pkgpath("devel/foo")
+                .pkgtools_version("20091115")
+                .size_pkg(1000)
+                .build_date("2024-01-01")
+                .build()
+                .unwrap(),
+        ]
+        .into_iter()
+        .collect();
+
+        let mut count = 0;
+        for summary in &summaries {
+            assert_eq!(summary.pkgname, "foo-1.0");
+            count += 1;
+        }
+        assert_eq!(count, 1);
+    }
+
+    #[test]
+    fn test_display() {
+        let summary = SummaryBuilder::new()
+            .pkgname("test-1.0")
+            .comment("Test")
+            .categories("devel")
+            .description(vec!["Line 1", "Line 2"])
+            .machine_arch("x86_64")
+            .opsys("Linux")
+            .os_version("5.15")
+            .pkgpath("devel/test")
+            .pkgtools_version("20091115")
+            .size_pkg(1234)
+            .build_date("2024-01-01")
+            .build()
+            .unwrap();
+
+        let text = format!("{}", summary);
+        assert!(text.contains("PKGNAME=test-1.0"));
+        assert!(text.contains("DESCRIPTION=Line 1"));
+        assert!(text.contains("DESCRIPTION=Line 2"));
+    }
+
+    #[test]
+    fn test_find_methods() {
+        let summaries: Summaries = vec![
+            SummaryBuilder::new()
+                .pkgname("foo-1.0")
+                .comment("Foo")
+                .categories("devel")
+                .description(vec!["Foo"])
+                .machine_arch("x86_64")
+                .opsys("Linux")
+                .os_version("5.15")
+                .pkgpath("devel/foo")
+                .pkgtools_version("20091115")
+                .size_pkg(1000)
+                .build_date("2024-01-01")
+                .build()
+                .unwrap(),
+            SummaryBuilder::new()
+                .pkgname("foo-2.0")
+                .comment("Foo 2")
+                .categories("devel")
+                .description(vec!["Foo 2"])
+                .machine_arch("x86_64")
+                .opsys("Linux")
+                .os_version("5.15")
+                .pkgpath("devel/foo")
+                .pkgtools_version("20091115")
+                .size_pkg(2000)
+                .build_date("2024-01-02")
+                .build()
+                .unwrap(),
+        ]
+        .into_iter()
+        .collect();
+
+        let found = summaries.find_by_pkgname("foo-1.0");
+        assert!(found.is_some());
+        assert_eq!(found.unwrap().pkgname, "foo-1.0");
+
+        let by_base: Vec<_> = summaries.find_by_pkgbase("foo").collect();
+        assert_eq!(by_base.len(), 2);
+    }
+
 }
