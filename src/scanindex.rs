@@ -208,4 +208,14 @@ mod tests {
         let index = ScanIndex::from_reader(input.as_bytes());
         assert!(index.is_err());
     }
+
+    #[test]
+    fn from_str() {
+        use std::str::FromStr;
+
+        let input = "PKGNAME=test-1.0\nMAINTAINER=test@example.com\n";
+        let index = ScanIndex::from_str(input).unwrap();
+        assert_eq!(index.pkgname.pkgname(), "test-1.0");
+        assert_eq!(index.maintainer.as_deref(), Some("test@example.com"));
+    }
 }
