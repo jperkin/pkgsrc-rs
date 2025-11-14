@@ -52,4 +52,4 @@ pub use crate::metadata::{Metadata, MetadataEntry};
 pub use crate::pattern::{Pattern, PatternError};
 pub use crate::pkgname::PkgName;
 pub use crate::pkgpath::{PkgPath, PkgPathError};
-pub use crate::scanindex::ScanIndex;
+pub use crate::scanindex::{ScanIndex, ScanIndexIter};

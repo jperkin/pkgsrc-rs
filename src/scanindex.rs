@@ -47,7 +47,9 @@ use std::str::FromStr;
  *     .expect("Unable to execute make");
  * let stdout = cmd.stdout.unwrap();
  * let reader = BufReader::new(stdout);
- * let index = ScanIndex::from_reader(reader).unwrap();
+ * let index: Vec<_> = ScanIndex::from_reader(reader)
+ *     .collect::<Result<_, _>>()
+ *     .unwrap();
  *
  * // Should return 5 results due to MULTI_VERSION
  * assert_eq!(index.len(), 5);
@@ -102,45 +104,69 @@ impl FromStr for ScanIndex {
 }
 
 impl ScanIndex {
-    /// Return a [`Vec`] of new [`ScanIndex`] items from a reader.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if reading from the reader fails or if parsing fails.
-    pub fn from_reader<R: BufRead>(reader: R) -> io::Result<Vec<Self>> {
-        let mut indexes = vec![];
-        let mut buffer = String::new();
-
-        for line in reader.lines() {
-            let line = line?;
-            /*
-             * The output of pbulk-index should not include empty lines nor
-             * any leading/trailing whitespace, but we do this to be kind and
-             * also to simplify tests.
-             */
-            let line = line.trim();
-            if line.is_empty() {
-                continue;
-            }
-            if line.starts_with("PKGNAME=") && !buffer.is_empty() {
-                let index: Self = buffer.parse().map_err(|e| {
-                    io::Error::new(io::ErrorKind::InvalidData, format!("{e}"))
-                })?;
-                indexes.push(index);
-                buffer.clear();
-            }
-            buffer.push_str(line);
-            buffer.push('\n');
+    /**
+     * Create an iterator that parses [`ScanIndex`] entries from a reader.
+     *
+     * Records are delimited by lines starting with `PKGNAME=`.
+     */
+    pub fn from_reader<R: BufRead>(reader: R) -> ScanIndexIter<R> {
+        ScanIndexIter {
+            lines: reader.lines(),
+            buffer: String::new(),
+            done: false,
         }
-        if !buffer.is_empty() {
-            let index: Self = buffer.parse().map_err(|e| {
-                io::Error::new(io::ErrorKind::InvalidData, format!("{e}"))
-            })?;
-            indexes.push(index);
-        }
-
-        Ok(indexes)
     }
+}
+
+/**
+ * Iterator that parses [`ScanIndex`] entries from a [`BufRead`] source.
+ *
+ * Created by [`ScanIndex::from_reader`].
+ */
+pub struct ScanIndexIter<R> {
+    lines: io::Lines<R>,
+    buffer: String,
+    done: bool,
+}
+
+impl<R: BufRead> Iterator for ScanIndexIter<R> {
+    type Item = io::Result<ScanIndex>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.done {
+            return None;
+        }
+
+        loop {
+            match self.lines.next() {
+                Some(Ok(line)) => {
+                    if line.starts_with("PKGNAME=") && !self.buffer.is_empty() {
+                        let record = std::mem::take(&mut self.buffer);
+                        self.buffer.push_str(&line);
+                        self.buffer.push('\n');
+                        return Some(parse_record(&record));
+                    }
+                    self.buffer.push_str(&line);
+                    self.buffer.push('\n');
+                }
+                Some(Err(e)) => return Some(Err(e)),
+                None => {
+                    self.done = true;
+                    if self.buffer.is_empty() {
+                        return None;
+                    }
+                    return Some(parse_record(&std::mem::take(
+                        &mut self.buffer,
+                    )));
+                }
+            }
+        }
+    }
+}
+
+fn parse_record(s: &str) -> io::Result<ScanIndex> {
+    s.parse()
+        .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, format!("{e}")))
 }
 
 #[cfg(test)]
@@ -161,7 +187,9 @@ mod tests {
         scanfile.push("tests/data/scanindex/pbulk-index.txt");
         let file = File::open(&scanfile).unwrap();
         let reader = BufReader::new(file);
-        let index = ScanIndex::from_reader(reader).unwrap();
+        let index: Vec<_> = ScanIndex::from_reader(reader)
+            .collect::<Result<_, _>>()
+            .unwrap();
         assert_eq!(index.len(), 40);
         assert_eq!(index[0].all_depends.as_ref().unwrap().len(), 11);
         assert_eq!(index[0].scan_depends.as_ref().unwrap().len(), 155);
@@ -172,7 +200,9 @@ mod tests {
     fn duplicate_pkgname() {
         // We do not check for unique PKGNAME, two entries will be created.
         let input = "PKGNAME=foo\nPKGNAME=foo\n";
-        let index = ScanIndex::from_reader(input.as_bytes()).unwrap();
+        let index: Vec<_> = ScanIndex::from_reader(input.as_bytes())
+            .collect::<Result<_, _>>()
+            .unwrap();
         assert_eq!(index.len(), 2);
     }
 
@@ -180,7 +210,9 @@ mod tests {
     fn no_input() {
         // No valid input should just result in an empty index.
         let input = "";
-        let index = ScanIndex::from_reader(input.as_bytes()).unwrap();
+        let index: Vec<_> = ScanIndex::from_reader(input.as_bytes())
+            .collect::<Result<_, _>>()
+            .unwrap();
         assert_eq!(index.len(), 0);
     }
 
@@ -189,7 +221,9 @@ mod tests {
         // A single PKGNAME, even if invalid, will create an index
         // entry but it should be empty.
         let input = "PKGNAME=";
-        let index = ScanIndex::from_reader(input.as_bytes()).unwrap();
+        let index: Vec<_> = ScanIndex::from_reader(input.as_bytes())
+            .collect::<Result<_, _>>()
+            .unwrap();
         assert_eq!(index.len(), 1);
         assert_eq!(index[0].pkgname.pkgname(), "");
     }
@@ -199,14 +233,16 @@ mod tests {
         // If we see any valid field but no PKGNAME (required) then we should
         // generate an error.
         let input = "ALL_DEPENDS=";
-        let index = ScanIndex::from_reader(input.as_bytes());
-        assert!(index.is_err());
+        let result: Result<Vec<_>, _> =
+            ScanIndex::from_reader(input.as_bytes()).collect();
+        assert!(result.is_err());
 
         // If ALL_DEPENDS is specified then it should be correct, i.e. here
         // we're testing that Depend::new errors are propagated.
         let input = "PKGNAME=\nALL_DEPENDS=hello\n";
-        let index = ScanIndex::from_reader(input.as_bytes());
-        assert!(index.is_err());
+        let result: Result<Vec<_>, _> =
+            ScanIndex::from_reader(input.as_bytes()).collect();
+        assert!(result.is_err());
     }
 
     #[test]
@@ -217,5 +253,112 @@ mod tests {
         let index = ScanIndex::from_str(input).unwrap();
         assert_eq!(index.pkgname.pkgname(), "test-1.0");
         assert_eq!(index.maintainer.as_deref(), Some("test@example.com"));
+    }
+
+    #[test]
+    fn error_unknown_variable() {
+        use crate::kv;
+        use std::str::FromStr;
+
+        let input = "PKGNAME=test-1.0\nUNKNOWN=value\n";
+        let err = ScanIndex::from_str(input).unwrap_err();
+        match err {
+            kv::Error::UnknownVariable { variable, span } => {
+                assert_eq!(variable, "UNKNOWN");
+                assert_eq!(span.offset, 17);
+                assert_eq!(span.len, 7);
+                assert_eq!(
+                    &input[span.offset..span.offset + span.len],
+                    "UNKNOWN"
+                );
+            }
+            _ => panic!("expected UnknownVariable error, got {err:?}"),
+        }
+    }
+
+    #[test]
+    fn error_invalid_depend() {
+        use crate::kv;
+        use std::str::FromStr;
+
+        // "invalid" is not a valid Depend (missing ":" separator)
+        let input = "PKGNAME=test-1.0\nALL_DEPENDS=invalid\n";
+        let err = ScanIndex::from_str(input).unwrap_err();
+        match err {
+            kv::Error::Parse { message, span } => {
+                assert!(message.contains("Invalid DEPENDS"));
+                assert_eq!(span.offset, 29);
+                assert_eq!(span.len, 7);
+                assert_eq!(
+                    &input[span.offset..span.offset + span.len],
+                    "invalid"
+                );
+            }
+            _ => panic!("expected Parse error, got {err:?}"),
+        }
+    }
+
+    #[test]
+    fn error_invalid_pkgpath() {
+        use crate::kv;
+        use std::str::FromStr;
+
+        // "bad" is not a valid PkgPath (missing category/package structure)
+        let input = "PKGNAME=test-1.0\nPKG_LOCATION=bad\n";
+        let err = ScanIndex::from_str(input).unwrap_err();
+        match err {
+            kv::Error::Parse { message, span } => {
+                assert!(message.contains("Invalid path"));
+                assert_eq!(span.offset, 30);
+                assert_eq!(span.len, 3);
+                assert_eq!(&input[span.offset..span.offset + span.len], "bad");
+            }
+            _ => panic!("expected Parse error, got {err:?}"),
+        }
+    }
+
+    #[test]
+    fn error_missing_pkgname() {
+        use crate::kv;
+        use std::str::FromStr;
+
+        let input = "MAINTAINER=test@example.com\n";
+        let err = ScanIndex::from_str(input).unwrap_err();
+        match err {
+            kv::Error::Incomplete(field) => {
+                assert_eq!(field, "PKGNAME");
+            }
+            _ => panic!("expected Incomplete error, got {err:?}"),
+        }
+    }
+
+    #[test]
+    fn error_bad_line_format() {
+        use crate::kv;
+        use std::str::FromStr;
+
+        let input = "PKGNAME=test-1.0\nbadline\n";
+        let err = ScanIndex::from_str(input).unwrap_err();
+        match err {
+            kv::Error::ParseLine(span) => {
+                assert_eq!(span.offset, 17);
+                assert_eq!(span.len, 7);
+                assert_eq!(
+                    &input[span.offset..span.offset + span.len],
+                    "badline"
+                );
+            }
+            _ => panic!("expected ParseLine error, got {err:?}"),
+        }
+    }
+
+    #[test]
+    fn error_span_accessor() {
+        use std::str::FromStr;
+
+        let input = "PKGNAME=test-1.0\nUNKNOWN=value\n";
+        let err = ScanIndex::from_str(input).unwrap_err();
+        let span = err.span().expect("should have span");
+        assert_eq!(&input[span.offset..span.offset + span.len], "UNKNOWN");
     }
 }
