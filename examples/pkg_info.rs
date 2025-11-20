@@ -17,12 +17,10 @@
  */
 
 use pkgsrc::pkgdb::{Package, PkgDB};
-use pkgsrc::plist::Plist;
-use pkgsrc::summary::{Result, Summary, SummaryVariable};
+use pkgsrc::summary::{self, Summary};
 use pkgsrc::MetadataEntry;
 use regex::Regex;
 use std::path::Path;
-use std::str::FromStr;
 use structopt::StructOpt;
 
 #[derive(Debug, StructOpt)]
@@ -40,7 +38,7 @@ pub struct OptArgs {
     pkgmatch: Option<String>,
 }
 
-fn output_default(pkg: &Package) -> Result<()> {
+fn output_default(pkg: &Package) -> summary::Result<()> {
     println!(
         "{:20} {}",
         pkg.pkgname(),
@@ -49,67 +47,31 @@ fn output_default(pkg: &Package) -> Result<()> {
     Ok(())
 }
 
-fn output_summary(pkg: &Package) -> Result<()> {
-    let mut sum = Summary::new();
-    sum.set_pkgname(pkg.pkgname());
-    sum.set_comment(pkg.read_metadata(MetadataEntry::Comment)?.trim());
-    sum.set_size_pkg(
-        pkg.read_metadata(MetadataEntry::SizePkg)?
-            .trim()
-            .parse::<i64>()?,
-    );
-    let bi = pkg.read_metadata(MetadataEntry::BuildInfo)?;
-    for line in bi.lines() {
-        let v: Vec<&str> = line.splitn(2, '=').collect();
-        let key = match SummaryVariable::from_str(v[0]) {
-            Ok(k) => k,
-            Err(_) => continue,
-        };
-        match key {
-            SummaryVariable::BuildDate => sum.set_build_date(v[1]),
-            SummaryVariable::Categories => sum.set_categories(v[1]),
-            SummaryVariable::Homepage => sum.set_homepage(v[1]),
-            SummaryVariable::License => sum.set_license(v[1]),
-            SummaryVariable::MachineArch => sum.set_machine_arch(v[1]),
-            SummaryVariable::Opsys => sum.set_opsys(v[1]),
-            SummaryVariable::OsVersion => sum.set_os_version(v[1]),
-            SummaryVariable::PkgOptions => sum.set_pkg_options(v[1]),
-            SummaryVariable::Pkgpath => sum.set_pkgpath(v[1]),
-            SummaryVariable::PkgtoolsVersion => sum.set_pkgtools_version(v[1]),
-            SummaryVariable::PrevPkgpath => sum.set_prev_pkgpath(v[1]),
-            SummaryVariable::Provides => sum.push_provides(v[1]),
-            SummaryVariable::Requires => sum.push_requires(v[1]),
-            SummaryVariable::Supersedes => sum.push_supersedes(v[1]),
-            _ => {}
-        }
-    }
+fn output_summary(pkg: &Package) -> summary::Result<()> {
+    let mut summary_text = String::new();
+
+    summary_text.push_str(&format!("PKGNAME={}\n", pkg.pkgname()));
+    summary_text.push_str(&format!(
+        "COMMENT={}\n",
+        pkg.read_metadata(MetadataEntry::Comment)?.trim()
+    ));
+    summary_text.push_str(&format!(
+        "SIZE_PKG={}\n",
+        pkg.read_metadata(MetadataEntry::SizePkg)?.trim()
+    ));
+    summary_text.push_str(&pkg.read_metadata(MetadataEntry::BuildInfo)?);
+
     for line in pkg.read_metadata(MetadataEntry::Desc)?.lines() {
-        sum.push_description(line);
+        summary_text.push_str(&format!("DESCRIPTION={}\n", line));
     }
 
-    /*
-     * XXX: convert plist Result to summary Result
-     */
-    let plist = Plist::from_bytes(
-        pkg.read_metadata(MetadataEntry::Contents)?.as_bytes(),
-    );
-    let plist = match plist {
-        Ok(p) => p,
-        Err(e) => panic!("bad plist: {}", e),
-    };
-    for dep in plist.depends() {
-        sum.push_depends(dep);
-    }
-    for cfl in plist.conflicts() {
-        sum.push_conflicts(cfl);
-    }
-
+    let sum: Summary = summary_text.parse()?;
     println!("{}", sum);
 
     Ok(())
 }
 
-fn main() -> Result<()> {
+fn main() -> summary::Result<()> {
     let cmd = OptArgs::from_args();
     let mut pkgm: Option<Regex> = None;
 
