@@ -44,11 +44,10 @@
  *
  * ```
  * use pkgsrc::plist::{Plist, Result};
- * use unindent::unindent;
+ * use indoc::indoc;
  *
  * fn main() -> Result<()> {
- *     let input = unindent(
- *         r#"
+ *     let input = indoc! {"
  *         @comment $NetBSD$
  *
  *         @name pkgtest-1.0
@@ -71,8 +70,8 @@
  *         @owner root
  *         @group wheel
  *         bin/foo
- *         @exec echo "I just installed F=%F D=%D B=%B f=%f"
- *         @unexec echo "I just deleted F=%F D=%D B=%B f=%f"
+ *         @exec echo \"I just installed F=%F D=%D B=%B f=%f\"
+ *         @unexec echo \"I just deleted F=%F D=%D B=%B f=%f\"
  *
  *         @comment bin/bar just installed with default permissions
  *
@@ -86,9 +85,9 @@
  *
  *         @ignore
  *         +BUILD_INFO
- *         "#);
+ *     "};
  *
- *      let pkglist = Plist::from_bytes(&input.as_bytes())?;
+ *      let pkglist = Plist::from_bytes(input.as_bytes())?;
  *
  *      assert_eq!(pkglist.pkgname(), Some("pkgtest-1.0"));
  *      assert_eq!(pkglist.depends().len(), 2);
@@ -108,7 +107,7 @@ use std::os::unix::ffi::OsStrExt;
 use std::string::FromUtf8Error;
 
 #[cfg(test)]
-use unindent::unindent;
+use indoc::indoc;
 
 /**
  * A type alias for the result from the creation of either a [`PlistEntry`] or
@@ -981,8 +980,7 @@ mod tests {
      */
     #[test]
     fn test_full_plist() -> Result<()> {
-        let input = unindent(
-            r#"
+        let input = indoc! {"
             @comment $NetBSD$
             @name pkgtest-1.0
             @pkgdep dep-pkg1-[0-9]*
@@ -1010,8 +1008,7 @@ mod tests {
             @dirrm /var/db/pkgsrc-rs-legacy
             @ignore
             +BUILD_INFO
-            "#,
-        );
+        "};
         let plist = Plist::from_bytes(input.as_bytes())?;
         assert_eq!(plist.depends().len(), 2);
         assert_eq!(plist.build_depends().len(), 2);
@@ -1182,8 +1179,7 @@ mod tests {
      */
     #[test]
     fn test_files() -> Result<()> {
-        let input = unindent(
-            r#"
+        let input = indoc! {"
             @cwd /opt/pkg
             bin/good
             @cwd /
@@ -1193,8 +1189,7 @@ mod tests {
             +IGNORE_ME
             @cwd /opt/pkg
             bin/ok
-            "#,
-        );
+        "};
         let plist = Plist::from_bytes(input.as_bytes())?;
         assert_eq!(plist.files(), ["bin/good", "bin/evil", "bin/ok"]);
         assert_eq!(
