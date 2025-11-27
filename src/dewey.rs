@@ -127,6 +127,10 @@ impl DeweyVersion {
                 version.push(-2);
                 idx += 4;
                 continue;
+            } else if slice.starts_with("pre") {
+                version.push(-1);
+                idx += 3;
+                continue;
             } else if slice.starts_with("rc") {
                 version.push(-1);
                 idx += 2;
@@ -449,6 +453,12 @@ mod tests {
         let dv = DeweyVersion::new("ojnknb30_-")?;
         assert_eq!(dv.version, vec![0, 111, 0, 106, 0, 110, 0, 107, 0]);
         assert_eq!(dv.pkgrevision, 30);
+        // Ensure "pre" is parsed correctly.
+        let m = Dewey::new("spandsp>=0.0.6pre18")?;
+        assert!(m.matches("spandsp-0.0.6nb5"));
+        assert!(m.matches("spandsp-0.0.6pre19"));
+        assert!(m.matches("spandsp-0.0.6rc18"));
+        assert!(!m.matches("spandsp-0.0.6rc17"));
         Ok(())
     }
 
