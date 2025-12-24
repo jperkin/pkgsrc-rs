@@ -16,6 +16,7 @@
 
 use crate::kv::Kv;
 use crate::{Depend, PkgName, PkgPath};
+use std::fmt;
 use std::io::{self, BufRead};
 use std::path::PathBuf;
 use std::str::FromStr;
@@ -101,6 +102,61 @@ impl FromStr for ScanIndex {
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         Self::parse(s)
     }
+}
+
+impl fmt::Display for ScanIndex {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        writeln!(f, "PKGNAME={}", self.pkgname)?;
+        if let Some(ref v) = self.pkg_location {
+            writeln!(f, "PKG_LOCATION={v}")?;
+        }
+        write!(f, "ALL_DEPENDS=")?;
+        if let Some(ref deps) = self.all_depends {
+            for (i, d) in deps.iter().enumerate() {
+                if i > 0 {
+                    write!(f, " ")?;
+                }
+                write!(f, "{d}")?;
+            }
+        }
+        writeln!(f)?;
+        writeln!(f, "PKG_SKIP_REASON={}", opt_str(&self.pkg_skip_reason))?;
+        writeln!(f, "PKG_FAIL_REASON={}", opt_str(&self.pkg_fail_reason))?;
+        writeln!(f, "NO_BIN_ON_FTP={}", opt_str(&self.no_bin_on_ftp))?;
+        writeln!(f, "RESTRICTED={}", opt_str(&self.restricted))?;
+        writeln!(f, "CATEGORIES={}", opt_str(&self.categories))?;
+        writeln!(f, "MAINTAINER={}", opt_str(&self.maintainer))?;
+        writeln!(f, "USE_DESTDIR={}", opt_str(&self.use_destdir))?;
+        writeln!(f, "BOOTSTRAP_PKG={}", opt_str(&self.bootstrap_pkg))?;
+        writeln!(f, "USERGROUP_PHASE={}", opt_str(&self.usergroup_phase))?;
+        write!(f, "SCAN_DEPENDS=")?;
+        if let Some(ref paths) = self.scan_depends {
+            for (i, p) in paths.iter().enumerate() {
+                if i > 0 {
+                    write!(f, " ")?;
+                }
+                write!(f, "{}", p.display())?;
+            }
+        }
+        writeln!(f)?;
+        if let Some(ref v) = self.pbulk_weight {
+            writeln!(f, "PBULK_WEIGHT={v}")?;
+        }
+        write!(f, "MULTI_VERSION=")?;
+        if let Some(ref vars) = self.multi_version {
+            for (i, v) in vars.iter().enumerate() {
+                if i > 0 {
+                    write!(f, " ")?;
+                }
+                write!(f, "{v}")?;
+            }
+        }
+        writeln!(f)
+    }
+}
+
+fn opt_str(o: &Option<String>) -> &str {
+    o.as_deref().unwrap_or("")
 }
 
 impl ScanIndex {
@@ -360,5 +416,23 @@ mod tests {
         let err = ScanIndex::from_str(input).unwrap_err();
         let span = err.span().expect("should have span");
         assert_eq!(&input[span.offset..span.offset + span.len], "UNKNOWN");
+    }
+
+    #[test]
+    fn display_roundtrip() {
+        let mut scanfile = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        scanfile.push("tests/data/scanindex/pbulk-index.txt");
+        let file = File::open(&scanfile).unwrap();
+        let reader = BufReader::new(file);
+        let original: Vec<_> = ScanIndex::from_reader(reader)
+            .collect::<Result<_, _>>()
+            .unwrap();
+
+        let output: String = original.iter().map(|s| s.to_string()).collect();
+        let reparsed: Vec<_> = ScanIndex::from_reader(output.as_bytes())
+            .collect::<Result<_, _>>()
+            .unwrap();
+
+        assert_eq!(original, reparsed);
     }
 }
