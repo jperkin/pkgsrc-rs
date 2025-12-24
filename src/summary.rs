@@ -735,7 +735,7 @@ impl Summary {
      * ```
      */
     pub fn conflicts(&self) -> Option<&[String]> {
-        self.conflicts.as_ref().map(|m| m.as_slice())
+        self.conflicts.as_deref()
     }
 
     /**
@@ -784,7 +784,7 @@ impl Summary {
      * ```
      */
     pub fn depends(&self) -> Option<&[String]> {
-        self.depends.as_ref().map(|m| m.as_slice())
+        self.depends.as_deref()
     }
 
     /**
@@ -1416,7 +1416,7 @@ impl Summary {
      * ```
      */
     pub fn provides(&self) -> Option<&[String]> {
-        self.provides.as_ref().map(|m| m.as_slice())
+        self.provides.as_deref()
     }
 
     /**
@@ -1467,7 +1467,7 @@ impl Summary {
      * ```
      */
     pub fn requires(&self) -> Option<&[String]> {
-        self.requires.as_ref().map(|m| m.as_slice())
+        self.requires.as_deref()
     }
 
     /**
@@ -1556,7 +1556,7 @@ impl Summary {
      * ```
      */
     pub fn supersedes(&self) -> Option<&[String]> {
-        self.supersedes.as_ref().map(|m| m.as_slice())
+        self.supersedes.as_deref()
     }
 }
 
