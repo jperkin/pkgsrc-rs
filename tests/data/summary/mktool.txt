@@ -1,0 +1,34 @@
+PKGNAME=mktool-1.4.2
+COMMENT=High performance alternatives for pkgsrc/mk
+SIZE_PKG=6999600
+BUILD_DATE=2025-11-17 22:03:08 +0000
+CATEGORIES=pkgtools
+HOMEPAGE=https://github.com/jperkin/mktool/
+LICENSE=isc
+MACHINE_ARCH=aarch64
+OPSYS=Darwin
+OS_VERSION=23.6.0
+PKGPATH=pkgtools/mktool
+PKGTOOLS_VERSION=20091115
+FILE_NAME=mktool-1.4.2.tgz
+FILE_SIZE=2871260
+DESCRIPTION=This is a highly-performant collection of utilities that provide
+DESCRIPTION=alternate implementations for parts of the pkgsrc mk infrastructure.
+DESCRIPTION=
+DESCRIPTION=Many targets under pkgsrc/mk are implemented using a combination of
+DESCRIPTION=shell and awk, and can suffer from a lack of performance, especially
+DESCRIPTION=when the number of input files grows significantly.
+DESCRIPTION=
+DESCRIPTION=The replacement tools provided by mktool can be anywhere from 5 times
+DESCRIPTION=up to 500 times faster than the defaults.
+DESCRIPTION=
+DESCRIPTION=To enable, install this package or 'cargo install mktool', and then
+DESCRIPTION=add the following lines to your mk.conf:
+DESCRIPTION=
+DESCRIPTION=	TOOLS_PLATFORM.mktool=	/path/to/mktool
+DESCRIPTION=	FETCH_USING=		mktool
+DESCRIPTION=
+DESCRIPTION=pkgsrc will then use mktool for all targets where it is supported.
+DESCRIPTION=
+DESCRIPTION=Homepage:
+DESCRIPTION=https://github.com/jperkin/mktool/
