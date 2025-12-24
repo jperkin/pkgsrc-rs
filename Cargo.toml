@@ -16,7 +16,7 @@ rust-version = "1.85.1"
 edition = "2024"
 
 [dependencies]
-kv-derive = { path = "kv-derive" }
+pkgsrc-kv-derive = { path = "kv-derive", version = "0.1.0" }
 ar = "0.9.0"
 blake2 = "0.10.6"
 digest = "0.10.7"

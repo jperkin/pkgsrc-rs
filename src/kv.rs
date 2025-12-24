@@ -87,7 +87,7 @@ use std::num::ParseIntError;
 use std::path::PathBuf;
 use thiserror::Error;
 
-pub use kv_derive::Kv;
+pub use pkgsrc_kv_derive::Kv;
 
 /**
  * A byte offset and length in the input, for error reporting.
