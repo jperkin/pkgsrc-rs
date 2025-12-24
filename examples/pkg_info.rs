@@ -16,9 +16,9 @@
  * An example pkg_info(8) utility
  */
 
+use pkgsrc::MetadataEntry;
 use pkgsrc::pkgdb::{Package, PkgDB};
 use pkgsrc::summary::{self, Summary};
-use pkgsrc::MetadataEntry;
 use regex::Regex;
 use std::path::Path;
 use structopt::StructOpt;

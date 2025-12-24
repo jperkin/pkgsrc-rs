@@ -14,8 +14,8 @@
  * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
  */
 
-use crate::dewey::{dewey_cmp, Dewey, DeweyError, DeweyOp, DeweyVersion};
 use crate::PkgName;
+use crate::dewey::{Dewey, DeweyError, DeweyOp, DeweyVersion, dewey_cmp};
 use std::fmt;
 use std::str::FromStr;
 use thiserror::Error;

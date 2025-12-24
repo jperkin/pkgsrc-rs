@@ -120,8 +120,8 @@ use std::io::{self, BufRead};
 use std::num::ParseIntError;
 use std::str::FromStr;
 
-use crate::kv::Kv;
 use crate::PkgName;
+use crate::kv::Kv;
 
 pub use crate::kv::Span;
 
