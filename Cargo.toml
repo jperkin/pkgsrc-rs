@@ -4,7 +4,7 @@ members = [".", "kv-derive"]
 [package]
 name = "pkgsrc"
 description = "Library for interacting with a pkgsrc installation"
-version = "0.4.2"
+version = "0.5.0"
 authors = ["Jonathan Perkin <jonathan@perkin.org.uk>"]
 readme = "README.md"
 keywords = ["pkgsrc"]
@@ -12,8 +12,8 @@ license = "ISC"
 repository = "https://github.com/jperkin/pkgsrc-rs"
 homepage = "https://github.com/jperkin/pkgsrc-rs"
 documentation = "https://docs.rs/pkgsrc"
-rust-version = "1.74.1"
-edition = "2021"
+rust-version = "1.85.1"
+edition = "2024"
 
 [dependencies]
 kv-derive = { path = "kv-derive" }
