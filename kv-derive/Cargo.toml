@@ -1,5 +1,5 @@
 [package]
-name = "kv-derive"
+name = "pkgsrc-kv-derive"
 version = "0.1.0"
 authors = ["Jonathan Perkin <jonathan@perkin.org.uk>"]
 license = "ISC"
