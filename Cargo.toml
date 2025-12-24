@@ -4,7 +4,7 @@ members = [".", "kv-derive"]
 [package]
 name = "pkgsrc"
 description = "Library for interacting with a pkgsrc installation"
-version = "0.5.1"
+version = "0.5.2"
 authors = ["Jonathan Perkin <jonathan@perkin.org.uk>"]
 readme = "README.md"
 keywords = ["pkgsrc"]
