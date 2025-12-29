@@ -107,47 +107,34 @@ use std::os::unix::ffi::OsStrExt;
 use std::string::FromUtf8Error;
 
 #[cfg(feature = "serde")]
-mod osstring_serde {
-    use serde::{Deserialize, Deserializer, Serializer};
-    use std::ffi::OsString;
+use serde_with::serde_as;
 
-    pub fn serialize<S>(value: &OsString, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        serializer.serialize_str(&value.to_string_lossy())
-    }
+#[cfg(feature = "serde")]
+#[allow(dead_code)]
+struct OsStringLossy;
 
-    pub fn deserialize<'de, D>(deserializer: D) -> Result<OsString, D::Error>
+#[cfg(feature = "serde")]
+impl serde_with::SerializeAs<OsString> for OsStringLossy {
+    fn serialize_as<S>(
+        source: &OsString,
+        serializer: S,
+    ) -> std::result::Result<S::Ok, S::Error>
     where
-        D: Deserializer<'de>,
+        S: serde::Serializer,
     {
-        let s = String::deserialize(deserializer)?;
-        Ok(OsString::from(s))
+        serializer.serialize_str(&source.to_string_lossy())
     }
 }
 
 #[cfg(feature = "serde")]
-mod osstring_option_serde {
-    use serde::{Deserialize, Deserializer, Serializer};
-    use std::ffi::OsString;
-
-    pub fn serialize<S>(value: &Option<OsString>, serializer: S) -> Result<S::Ok, S::Error>
+impl<'de> serde_with::DeserializeAs<'de, OsString> for OsStringLossy {
+    fn deserialize_as<D>(deserializer: D) -> std::result::Result<OsString, D::Error>
     where
-        S: Serializer,
+        D: serde::Deserializer<'de>,
     {
-        match value {
-            Some(v) => serializer.serialize_some(&v.to_string_lossy().into_owned()),
-            None => serializer.serialize_none(),
-        }
-    }
-
-    pub fn deserialize<'de, D>(deserializer: D) -> Result<Option<OsString>, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        let opt = Option::<String>::deserialize(deserializer)?;
-        Ok(opt.map(OsString::from))
+        use serde::Deserialize;
+        let s = String::deserialize(deserializer)?;
+        Ok(OsString::from(s))
     }
 }
 
@@ -236,25 +223,26 @@ impl From<FromUtf8Error> for PlistError {
  * [`from_bytes()`]: PlistEntry::from_bytes
  */
 #[derive(Clone, Debug, Eq, PartialEq)]
+#[cfg_attr(feature = "serde", serde_as)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum PlistEntry {
     /**
      * Filename to extract relative to the current working directory.
      */
-    File(#[cfg_attr(feature = "serde", serde(with = "osstring_serde"))] OsString),
+    File(#[cfg_attr(feature = "serde", serde_as(as = "OsStringLossy"))] OsString),
     /**
      * Set the internal directory pointer.  All subsequent filenames will be
      * assumed relative to this directory.
      */
-    Cwd(#[cfg_attr(feature = "serde", serde(with = "osstring_serde"))] OsString),
+    Cwd(#[cfg_attr(feature = "serde", serde_as(as = "OsStringLossy"))] OsString),
     /**
      * Execute command as part of the unpacking process.
      */
-    Exec(#[cfg_attr(feature = "serde", serde(with = "osstring_serde"))] OsString),
+    Exec(#[cfg_attr(feature = "serde", serde_as(as = "OsStringLossy"))] OsString),
     /**
      * Execute command as part of the deinstallation process.
      */
-    UnExec(#[cfg_attr(feature = "serde", serde(with = "osstring_serde"))] OsString),
+    UnExec(#[cfg_attr(feature = "serde", serde_as(as = "OsStringLossy"))] OsString),
     /**
      * Set default permission for all subsequently extracted files.
      */
@@ -278,7 +266,7 @@ pub enum PlistEntry {
      * Embed a comment in the packing list.  While specified as mandatory in
      * the manual page, in practise it is not (e.g. `print-PLIST`).
      */
-    Comment(#[cfg_attr(feature = "serde", serde(with = "osstring_option_serde"))] Option<OsString>),
+    Comment(#[cfg_attr(feature = "serde", serde_as(as = "Option<OsStringLossy>"))] Option<OsString>),
     /**
      * Used internally to tell extraction to ignore the next file.
      */
@@ -290,15 +278,15 @@ pub enum PlistEntry {
     /**
      * Declare directory name as managed.
      */
-    PkgDir(#[cfg_attr(feature = "serde", serde(with = "osstring_serde"))] OsString),
+    PkgDir(#[cfg_attr(feature = "serde", serde_as(as = "OsStringLossy"))] OsString),
     /**
      * If directory name exists, it will be deleted at deinstall time.
      */
-    DirRm(#[cfg_attr(feature = "serde", serde(with = "osstring_serde"))] OsString),
+    DirRm(#[cfg_attr(feature = "serde", serde_as(as = "OsStringLossy"))] OsString),
     /**
      * Declare name as the file to be displayed at install time.
      */
-    Display(#[cfg_attr(feature = "serde", serde(with = "osstring_serde"))] OsString),
+    Display(#[cfg_attr(feature = "serde", serde_as(as = "OsStringLossy"))] OsString),
     /**
      * Declare a dependency on the pkgname package.
      */
