@@ -368,7 +368,6 @@ pub struct Distinfo {
      * An optional `$NetBSD: ... $` RCS Id.  As the username portion may
      * contain e.g. ISO-8859 characters it is stored as an [`OsString`].
      */
-    #[cfg_attr(feature = "serde", serde(skip))]
     rcsid: Option<OsString>,
     /**
      * An [`IndexMap`] of [`Entry`] entries for all source distfiles used by
