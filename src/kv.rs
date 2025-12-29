@@ -104,6 +104,7 @@ pub use pkgsrc_kv_derive::Kv;
  * ```
  */
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct Span {
     /** Byte offset where this span starts. */
     pub offset: usize,

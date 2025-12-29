@@ -127,6 +127,7 @@ pub use crate::kv::Span;
 
 /// Error context containing optional entry number and span information.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct ErrorContext {
     entry: Option<usize>,
     span: Option<Span>,
@@ -357,7 +358,8 @@ pub struct Summary {
  * );
  * ```
  */
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct SummaryBuilder {
     lines: Vec<String>,
     allow_unknown: bool,

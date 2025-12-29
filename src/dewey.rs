@@ -37,6 +37,7 @@ pub struct DeweyError {
  * support them (or document them), so we don't bother.
  */
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub(crate) enum DeweyOp {
     LE,
     LT,
@@ -52,6 +53,7 @@ pub(crate) enum DeweyOp {
  * mkcomponent().
  */
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub(crate) struct DeweyVersion {
     version: Vec<i64>,
     pkgrevision: i64,
@@ -168,6 +170,7 @@ impl DeweyVersion {
  * DeweyMatch contains a single pattern to match against.
  */
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 struct DeweyMatch {
     op: DeweyOp,
     version: DeweyVersion,
@@ -226,6 +229,7 @@ impl DeweyMatch {
  * [`Pattern`]: crate::Pattern
  */
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct Dewey {
     pkgname: String,
     matches: Vec<DeweyMatch>,

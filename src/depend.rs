@@ -114,7 +114,8 @@ impl Depend {
 /**
  * Type of dependency (full, build, bootstrap, test, etc.)
  */
-#[derive(Debug, Default)]
+#[derive(Clone, Debug, Default, Eq, Hash, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum DependType {
     /**
      * A regular full pkgsrc dependency for this package, usually specified

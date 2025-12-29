@@ -69,6 +69,7 @@ use thiserror::Error;
  * algorithm calculated for an associated [`Entry`].
  */
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct Checksum {
     /**
      * The [`Digest`] type used for this entry.
@@ -96,6 +97,7 @@ impl Checksum {
  * [`Patchfile`]: EntryType::Patchfile
  */
 #[derive(Clone, Debug, Default, Eq, Hash, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum EntryType {
     /**
      * A source distribution file.
@@ -152,6 +154,7 @@ impl<P: AsRef<Path>> From<P> for EntryType {
  * the distinfo file.
  */
 #[derive(Clone, Debug, Default, Eq, Hash, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct Entry {
     /**
      * Path relative to a certain directory (usually `DISTDIR`) where this
@@ -358,12 +361,14 @@ enum Line {
  * [`from_bytes`]: Distinfo::from_bytes
  * [`new`]: Distinfo::new
  */
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct Distinfo {
     /**
      * An optional `$NetBSD: ... $` RCS Id.  As the username portion may
      * contain e.g. ISO-8859 characters it is stored as an [`OsString`].
      */
+    #[cfg_attr(feature = "serde", serde(skip))]
     rcsid: Option<OsString>,
     /**
      * An [`IndexMap`] of [`Entry`] entries for all source distfiles used by

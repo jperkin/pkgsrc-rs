@@ -106,6 +106,51 @@ use std::fmt;
 use std::os::unix::ffi::OsStrExt;
 use std::string::FromUtf8Error;
 
+#[cfg(feature = "serde")]
+mod osstring_serde {
+    use serde::{Deserialize, Deserializer, Serializer};
+    use std::ffi::OsString;
+
+    pub fn serialize<S>(value: &OsString, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        serializer.serialize_str(&value.to_string_lossy())
+    }
+
+    pub fn deserialize<'de, D>(deserializer: D) -> Result<OsString, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let s = String::deserialize(deserializer)?;
+        Ok(OsString::from(s))
+    }
+}
+
+#[cfg(feature = "serde")]
+mod osstring_option_serde {
+    use serde::{Deserialize, Deserializer, Serializer};
+    use std::ffi::OsString;
+
+    pub fn serialize<S>(value: &Option<OsString>, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        match value {
+            Some(v) => serializer.serialize_some(&v.to_string_lossy().into_owned()),
+            None => serializer.serialize_none(),
+        }
+    }
+
+    pub fn deserialize<'de, D>(deserializer: D) -> Result<Option<OsString>, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let opt = Option::<String>::deserialize(deserializer)?;
+        Ok(opt.map(OsString::from))
+    }
+}
+
 #[cfg(test)]
 use indoc::indoc;
 
@@ -190,25 +235,26 @@ impl From<FromUtf8Error> for PlistError {
  *
  * [`from_bytes()`]: PlistEntry::from_bytes
  */
-#[derive(Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum PlistEntry {
     /**
      * Filename to extract relative to the current working directory.
      */
-    File(OsString),
+    File(#[cfg_attr(feature = "serde", serde(with = "osstring_serde"))] OsString),
     /**
      * Set the internal directory pointer.  All subsequent filenames will be
      * assumed relative to this directory.
      */
-    Cwd(OsString),
+    Cwd(#[cfg_attr(feature = "serde", serde(with = "osstring_serde"))] OsString),
     /**
      * Execute command as part of the unpacking process.
      */
-    Exec(OsString),
+    Exec(#[cfg_attr(feature = "serde", serde(with = "osstring_serde"))] OsString),
     /**
      * Execute command as part of the deinstallation process.
      */
-    UnExec(OsString),
+    UnExec(#[cfg_attr(feature = "serde", serde(with = "osstring_serde"))] OsString),
     /**
      * Set default permission for all subsequently extracted files.
      */
@@ -232,7 +278,7 @@ pub enum PlistEntry {
      * Embed a comment in the packing list.  While specified as mandatory in
      * the manual page, in practise it is not (e.g. `print-PLIST`).
      */
-    Comment(Option<OsString>),
+    Comment(#[cfg_attr(feature = "serde", serde(with = "osstring_option_serde"))] Option<OsString>),
     /**
      * Used internally to tell extraction to ignore the next file.
      */
@@ -244,15 +290,15 @@ pub enum PlistEntry {
     /**
      * Declare directory name as managed.
      */
-    PkgDir(OsString),
+    PkgDir(#[cfg_attr(feature = "serde", serde(with = "osstring_serde"))] OsString),
     /**
      * If directory name exists, it will be deleted at deinstall time.
      */
-    DirRm(OsString),
+    DirRm(#[cfg_attr(feature = "serde", serde(with = "osstring_serde"))] OsString),
     /**
      * Declare name as the file to be displayed at install time.
      */
-    Display(OsString),
+    Display(#[cfg_attr(feature = "serde", serde(with = "osstring_serde"))] OsString),
     /**
      * Declare a dependency on the pkgname package.
      */
@@ -271,7 +317,8 @@ pub enum PlistEntry {
  * List of valid arguments for the `@option` command.  Currently the only
  * supported argument is `preserve`.
  */
-#[derive(Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum PlistOption {
     /**
      * Indicates that any existing files should be moved out of the way before
@@ -459,7 +506,8 @@ impl PlistEntry {
  *
  * [`from_bytes()`]: Plist::from_bytes
  */
-#[derive(Debug, Default, Eq, PartialEq)]
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct Plist {
     entries: Vec<PlistEntry>,
 }
