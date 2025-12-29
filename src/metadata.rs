@@ -63,7 +63,8 @@
  * }
  * ```
  */
-#[derive(Debug, Default)]
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct Metadata {
     build_info: Option<Vec<String>>,
     build_version: Option<Vec<String>>,
@@ -110,7 +111,8 @@ pub struct Metadata {
  * assert_eq!(MetadataEntry::from_filename("+BADFILE"), None);
  * ```
  */
-#[derive(Debug, PartialEq)]
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum MetadataEntry {
     /**
      * Optional package build information stored in `+BUILD_INFO`.

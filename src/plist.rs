@@ -190,7 +190,8 @@ impl From<FromUtf8Error> for PlistError {
  *
  * [`from_bytes()`]: PlistEntry::from_bytes
  */
-#[derive(Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum PlistEntry {
     /**
      * Filename to extract relative to the current working directory.
@@ -271,7 +272,8 @@ pub enum PlistEntry {
  * List of valid arguments for the `@option` command.  Currently the only
  * supported argument is `preserve`.
  */
-#[derive(Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum PlistOption {
     /**
      * Indicates that any existing files should be moved out of the way before
@@ -459,7 +461,8 @@ impl PlistEntry {
  *
  * [`from_bytes()`]: Plist::from_bytes
  */
-#[derive(Debug, Default, Eq, PartialEq)]
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct Plist {
     entries: Vec<PlistEntry>,
 }
