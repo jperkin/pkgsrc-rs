@@ -142,16 +142,16 @@ impl fmt::Display for ScanIndex {
         if let Some(ref v) = self.pbulk_weight {
             writeln!(f, "PBULK_WEIGHT={v}")?;
         }
-        write!(f, "MULTI_VERSION=")?;
         if let Some(ref vars) = self.multi_version {
-            for (i, v) in vars.iter().enumerate() {
-                if i > 0 {
-                    write!(f, " ")?;
+            if !vars.is_empty() {
+                write!(f, "MULTI_VERSION=")?;
+                for v in vars {
+                    write!(f, " {v}")?;
                 }
-                write!(f, "{v}")?;
+                writeln!(f)?;
             }
         }
-        writeln!(f)
+        Ok(())
     }
 }
 
