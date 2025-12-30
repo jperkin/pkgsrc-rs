@@ -19,9 +19,7 @@ use std::str::FromStr;
 use thiserror::Error;
 
 #[cfg(feature = "serde")]
-use serde::Serialize;
-#[cfg(feature = "serde")]
-use serde_with::DeserializeFromStr;
+use serde_with::{DeserializeFromStr, SerializeDisplay};
 
 /**
  * An invalid path was specified trying to create a new [`PkgPath`].
@@ -83,7 +81,7 @@ pub enum PkgPathError {
  * [`as_path`]: PkgPath::as_path
  */
 #[derive(Clone, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
-#[cfg_attr(feature = "serde", derive(Serialize, DeserializeFromStr))]
+#[cfg_attr(feature = "serde", derive(SerializeDisplay, DeserializeFromStr))]
 pub struct PkgPath {
     short: PathBuf,
     full: PathBuf,
