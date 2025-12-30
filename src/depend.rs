@@ -174,7 +174,7 @@ pub enum DependError {
 
 impl fmt::Display for Depend {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}:{}", self.pattern, self.pkgpath.as_path().display())
+        write!(f, "{}:../../{}", self.pattern, self.pkgpath)
     }
 }
 
