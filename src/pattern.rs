@@ -291,6 +291,9 @@ impl Pattern {
      * Given two package names, return the "best" match - that is, the one that
      * is a match with the higher version.  If neither match return [`None`].
      *
+     * When versions compare equal, the lexicographically smaller string is
+     * returned, to match pkg_install's `pkg_order()`.
+     *
      * # Errors
      *
      * Returns [`PatternError::Dewey`] if parsing a package version fails.
@@ -300,23 +303,43 @@ impl Pattern {
         pkg1: &'a str,
         pkg2: &'a str,
     ) -> Result<Option<&'a str>, PatternError> {
+        self.best_match_cmp(pkg1, pkg2, std::cmp::Ordering::Less)
+    }
+
+    /**
+     * Identical to [`Pattern::best_match`] except when versions compare equal,
+     * the lexicographically greater string is returned to match pbulk's
+     * `pkg_order()`.
+     *
+     * # Errors
+     *
+     * Returns [`PatternError::Dewey`] if parsing a package version fails.
+     */
+    pub fn best_match_pbulk<'a>(
+        &self,
+        pkg1: &'a str,
+        pkg2: &'a str,
+    ) -> Result<Option<&'a str>, PatternError> {
+        self.best_match_cmp(pkg1, pkg2, std::cmp::Ordering::Greater)
+    }
+
+    fn best_match_cmp<'a>(
+        &self,
+        pkg1: &'a str,
+        pkg2: &'a str,
+        tiebreak: std::cmp::Ordering,
+    ) -> Result<Option<&'a str>, PatternError> {
         match (self.matches(pkg1), self.matches(pkg2)) {
             (true, false) => Ok(Some(pkg1)),
             (false, true) => Ok(Some(pkg2)),
             (true, true) => {
-                /*
-                 * Compare the version numbers using dewey, before finally
-                 * comparing lexicographically in the case of a tie to match
-                 * pkg_install:pkg_order().  Note that the lexicographic order
-                 * is backwards, the *smaller* string is returned.
-                 */
                 let d1 = DeweyVersion::new(PkgName::new(pkg1).pkgversion())?;
                 let d2 = DeweyVersion::new(PkgName::new(pkg2).pkgversion())?;
                 if dewey_cmp(&d1, &DeweyOp::GT, &d2) {
                     Ok(Some(pkg1))
                 } else if dewey_cmp(&d1, &DeweyOp::LT, &d2) {
                     Ok(Some(pkg2))
-                } else if pkg1 < pkg2 {
+                } else if pkg1.cmp(pkg2) == tiebreak {
                     Ok(Some(pkg1))
                 } else {
                     Ok(Some(pkg2))
@@ -608,6 +631,29 @@ mod tests {
         // In the case of a tie pkg_order() returns the _smaller_ string,
         // which feels backwards, but we aim to preserve compatibility.
         assert_eq!(m.best_match("foo-1.0", "bar-1.0")?, Some("bar-1.0"));
+        Ok(())
+    }
+
+    #[test]
+    fn best_match_order() -> Result<(), PatternError> {
+        let m = Pattern::new("mpg123{,-esound,-nas}>=0.59.18")?;
+        let pkg1 = "mpg123-1";
+        let pkg2 = "mpg123-esound-1";
+        let pkg3 = "mpg123-nas-1";
+        // pkg_install pkg_order returns the smaller string on tie.
+        assert_eq!(m.best_match(pkg1, pkg2)?, Some(pkg1));
+        assert_eq!(m.best_match(pkg2, pkg1)?, Some(pkg1));
+        assert_eq!(m.best_match(pkg2, pkg3)?, Some(pkg2));
+        assert_eq!(m.best_match(pkg3, pkg2)?, Some(pkg2));
+        assert_eq!(m.best_match(pkg1, pkg3)?, Some(pkg1));
+        assert_eq!(m.best_match(pkg3, pkg1)?, Some(pkg1));
+        // pbulk pkg_order() returns the greater string on tie.
+        assert_eq!(m.best_match_pbulk(pkg1, pkg2)?, Some(pkg2));
+        assert_eq!(m.best_match_pbulk(pkg2, pkg1)?, Some(pkg2));
+        assert_eq!(m.best_match_pbulk(pkg2, pkg3)?, Some(pkg3));
+        assert_eq!(m.best_match_pbulk(pkg3, pkg2)?, Some(pkg3));
+        assert_eq!(m.best_match_pbulk(pkg1, pkg3)?, Some(pkg3));
+        assert_eq!(m.best_match_pbulk(pkg3, pkg1)?, Some(pkg3));
         Ok(())
     }
 
