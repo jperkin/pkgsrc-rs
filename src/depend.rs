@@ -234,7 +234,7 @@ mod tests {
     #[test]
     fn test_display() {
         let dep = Depend::new("mktool-[0-9]*:../../pkgtools/mktool").unwrap();
-        assert_eq!(dep.to_string(), "mktool-[0-9]*:pkgtools/mktool");
+        assert_eq!(dep.to_string(), "mktool-[0-9]*:../../pkgtools/mktool");
     }
 
     #[test]
