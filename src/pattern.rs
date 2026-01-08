@@ -360,8 +360,9 @@ impl Pattern {
     /**
      * Return the package base name this pattern matches, if known.
      *
-     * Returns [`Some`] for Dewey and Simple patterns where the base name
-     * can be determined. Returns [`None`] for Glob and Alternate patterns.
+     * Returns [`Some`] for Dewey, Simple, and Glob patterns where the base
+     * name can be determined.  Returns [`None`] for Alternate patterns and
+     * Glob patterns where the base name contains a glob.
      *
      * This is useful for building an index to speed up matching:
      *
@@ -375,6 +376,9 @@ impl Pattern {
      * assert_eq!(p.pkgbase(), Some("foo"));
      *
      * let p = Pattern::new("foo-[0-9]*")?;
+     * assert_eq!(p.pkgbase(), Some("foo"));
+     *
+     * let p = Pattern::new("foo*-1.0")?;
      * assert_eq!(p.pkgbase(), None);
      * # Ok::<(), pkgsrc::PatternError>(())
      * ```
@@ -386,7 +390,14 @@ impl Pattern {
             PatternType::Simple => {
                 self.pattern.rsplit_once('-').map(|(b, _)| b)
             }
-            _ => None,
+            PatternType::Glob => {
+                let end = self
+                    .pattern
+                    .find(['*', '?', '['])
+                    .unwrap_or(self.pattern.len());
+                self.pattern[..end].strip_suffix('-')
+            }
+            PatternType::Alternate => None,
         }
     }
 
@@ -750,5 +761,24 @@ mod tests {
         // Single char pattern
         let p = Pattern::new("f*").unwrap();
         assert!(p.matches("foo"));
+    }
+
+    #[test]
+    fn pattern_pkgbase() -> Result<(), PatternError> {
+        let p = Pattern::new("foo-[0-9]*")?;
+        assert_eq!(p.pkgbase(), Some("foo"));
+        let p = Pattern::new("mpg123-nas-[0-9]*")?;
+        assert_eq!(p.pkgbase(), Some("mpg123-nas"));
+        let p = Pattern::new("foo-1.[0-9]*")?;
+        assert_eq!(p.pkgbase(), None);
+        let p = Pattern::new("{foo,bar}-[0-9]*")?;
+        assert_eq!(p.pkgbase(), None);
+        let p = Pattern::new("foo-bar*-1")?;
+        assert_eq!(p.pkgbase(), None);
+        let p = Pattern::new("*-1.0")?;
+        assert_eq!(p.pkgbase(), None);
+        let p = Pattern::new("fo?-[0-9]*")?;
+        assert_eq!(p.pkgbase(), None);
+        Ok(())
     }
 }
