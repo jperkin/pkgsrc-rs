@@ -358,6 +358,39 @@ impl Pattern {
     }
 
     /**
+     * Return the package base name this pattern matches, if known.
+     *
+     * Returns [`Some`] for Dewey and Simple patterns where the base name
+     * can be determined. Returns [`None`] for Glob and Alternate patterns.
+     *
+     * This is useful for building an index to speed up matching:
+     *
+     * ```
+     * use pkgsrc::Pattern;
+     *
+     * let p = Pattern::new("foo>=1.0")?;
+     * assert_eq!(p.pkgbase(), Some("foo"));
+     *
+     * let p = Pattern::new("foo-1.0")?;
+     * assert_eq!(p.pkgbase(), Some("foo"));
+     *
+     * let p = Pattern::new("foo-[0-9]*")?;
+     * assert_eq!(p.pkgbase(), None);
+     * # Ok::<(), pkgsrc::PatternError>(())
+     * ```
+     */
+    #[must_use]
+    pub fn pkgbase(&self) -> Option<&str> {
+        match self.matchtype {
+            PatternType::Dewey => self.dewey.as_ref().map(|d| d.pkgbase()),
+            PatternType::Simple => {
+                self.pattern.rsplit_once('-').map(|(b, _)| b)
+            }
+            _ => None,
+        }
+    }
+
+    /**
      * Implement csh-style alternate matches.  [`Pattern::new`] has already
      * verified that the pattern is valid and braces are correctly balanced.
      *
