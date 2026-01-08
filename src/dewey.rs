@@ -231,7 +231,7 @@ impl DeweyMatch {
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct Dewey {
-    pkgname: String,
+    pkgbase: String,
     matches: Vec<DeweyMatch>,
 }
 
@@ -328,10 +328,10 @@ impl Dewey {
 
         /*
          * At this point we know we have at least one valid match, extract the
-         * pkgname and return all matches.
+         * pkgbase and return all matches.
          */
-        let pkgname = pattern[0..deweyops[0].0].to_string();
-        Ok(Self { pkgname, matches })
+        let pkgbase = pattern[0..deweyops[0].0].to_string();
+        Ok(Self { pkgbase, matches })
     }
 
     /**
@@ -355,7 +355,7 @@ impl Dewey {
         let Some((base, version)) = pkg.rsplit_once('-') else {
             return false;
         };
-        if base != self.pkgname {
+        if base != self.pkgbase {
             return false;
         }
         let Ok(pkgver) = DeweyVersion::new(version) else {
@@ -367,6 +367,14 @@ impl Dewey {
             }
         }
         true
+    }
+
+    /**
+     * Return the `PKGBASE` name from this pattern.
+     */
+    #[must_use]
+    pub fn pkgbase(&self) -> &str {
+        &self.pkgbase
     }
 }
 
