@@ -352,14 +352,13 @@ impl Dewey {
      */
     #[must_use]
     pub fn matches(&self, pkg: &str) -> bool {
-        let v: Vec<&str> = pkg.rsplitn(2, '-').collect();
-        if v.len() != 2 {
+        let Some((base, version)) = pkg.rsplit_once('-') else {
+            return false;
+        };
+        if base != self.pkgname {
             return false;
         }
-        if v[1] != self.pkgname {
-            return false;
-        }
-        let Ok(pkgver) = DeweyVersion::new(v[0]) else {
+        let Ok(pkgver) = DeweyVersion::new(version) else {
             return false;
         };
         for m in &self.matches {
