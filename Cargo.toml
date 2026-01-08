@@ -4,7 +4,7 @@ members = [".", "kv-derive"]
 [package]
 name = "pkgsrc"
 description = "Library for interacting with a pkgsrc installation"
-version = "0.5.6"
+version = "0.5.7"
 authors = ["Jonathan Perkin <jonathan@perkin.org.uk>"]
 readme = "README.md"
 keywords = ["pkgsrc"]
@@ -37,6 +37,7 @@ indoc = "2"
 regex = "1.11.2"
 serde_json = "1.0"
 structopt = "0.3.26"
+zstd = "0.13"
 
 [features]
 default = []
