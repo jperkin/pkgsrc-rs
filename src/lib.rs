@@ -28,6 +28,7 @@ extern crate self as pkgsrc;
 /*
  * Modules that deserve their own namespace.
  */
+pub mod archive;
 pub mod digest;
 pub mod distinfo;
 pub mod kv;

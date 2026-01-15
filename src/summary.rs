@@ -555,6 +555,7 @@ impl Summary {
         supersedes: Option<Vec<String>>,
         file_name: Option<String>,
         file_size: Option<u64>,
+        file_cksum: Option<String>,
     ) -> Self {
         Self {
             build_date,
@@ -563,7 +564,7 @@ impl Summary {
             conflicts,
             depends,
             description,
-            file_cksum: None,
+            file_cksum,
             file_name,
             file_size,
             homepage,

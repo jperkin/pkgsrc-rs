@@ -16,76 +16,137 @@
  * An example pkg_info(8) utility
  */
 
+use anyhow::{Result, bail};
 use pkgsrc::MetadataEntry;
-use pkgsrc::pkgdb::{Package, PkgDB};
-use pkgsrc::summary::{self, Summary};
+use pkgsrc::archive::{Package, SummaryOptions};
+use pkgsrc::pkgdb::{Package as InstalledPackage, PkgDB};
+use rayon::prelude::*;
 use regex::Regex;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use structopt::StructOpt;
 
 #[derive(Debug, StructOpt)]
 #[structopt(name = "pkg_info", about = "An example pkg_info(8) command")]
 pub struct OptArgs {
-    #[structopt(short = "K", long = "pkg-dbdir", help = "Set PKG_DBDIR")]
+    /// Set PKG_DBDIR for installed packages
+    #[structopt(short = "K", long = "pkg-dbdir")]
     pkg_dbdir: Option<String>,
-    #[structopt(
-        short = "X",
-        long = "summary",
-        help = "Enable pkg_summary(5) output"
-    )]
+
+    /// Enable pkg_summary(5) output
+    #[structopt(short = "X", long = "summary")]
     sumout: bool,
-    #[structopt(parse(from_str))]
-    pkgmatch: Option<String>,
+
+    /// Show all packages (default behavior, for compatibility)
+    #[structopt(short = "a", long = "all")]
+    all: bool,
+
+    /// Number of parallel jobs (default: number of CPUs)
+    #[structopt(short = "j", long = "jobs", default_value = "0")]
+    jobs: usize,
+
+    /// Compute FILE_CKSUM for each package
+    #[structopt(short = "c", long = "file-cksum")]
+    file_cksum: bool,
+
+    /// Package files (.tgz) or pattern to match installed packages
+    #[structopt(parse(from_os_str))]
+    packages: Vec<PathBuf>,
 }
 
-fn output_default(pkg: &Package) -> summary::Result<()> {
+fn output_default(pkg: &InstalledPackage) -> Result<()> {
     println!(
-        "{:20} {}",
+        "{:<19} {}",
         pkg.pkgname(),
         pkg.read_metadata(MetadataEntry::Comment)?.trim()
     );
     Ok(())
 }
 
-fn output_summary(pkg: &Package) -> summary::Result<()> {
-    let mut summary_text = String::new();
+/// Variables from BUILD_INFO that are valid in pkg_summary.
+const SUMMARY_BUILD_VARS: &[&str] = &[
+    "BUILD_DATE",
+    "CATEGORIES",
+    "HOMEPAGE",
+    "LICENSE",
+    "MACHINE_ARCH",
+    "OPSYS",
+    "OS_VERSION",
+    "PKGPATH",
+    "PKGTOOLS_VERSION",
+    "PKG_OPTIONS",
+    "PREV_PKGPATH",
+    "PROVIDES",
+    "REQUIRES",
+    "SUPERSEDES",
+];
 
-    summary_text.push_str(&format!("PKGNAME={}\n", pkg.pkgname()));
-    summary_text.push_str(&format!(
-        "COMMENT={}\n",
-        pkg.read_metadata(MetadataEntry::Comment)?.trim()
-    ));
-    summary_text.push_str(&format!(
-        "SIZE_PKG={}\n",
-        pkg.read_metadata(MetadataEntry::SizePkg)?.trim()
-    ));
-    summary_text.push_str(&pkg.read_metadata(MetadataEntry::BuildInfo)?);
-
-    for line in pkg.read_metadata(MetadataEntry::Desc)?.lines() {
-        summary_text.push_str(&format!("DESCRIPTION={}\n", line));
+fn output_summary(pkg: &InstalledPackage) -> Result<()> {
+    // PKGNAME, DEPENDS, CONFLICTS from +CONTENTS in file order
+    let contents = pkg.read_metadata(MetadataEntry::Contents)?;
+    for line in contents.lines() {
+        if let Some(name) = line.strip_prefix("@name ") {
+            println!("PKGNAME={}", name);
+        } else if let Some(dep) = line.strip_prefix("@pkgdep ") {
+            println!("DEPENDS={}", dep);
+        } else if let Some(cfl) = line.strip_prefix("@pkgcfl ") {
+            println!("CONFLICTS={}", cfl);
+        }
     }
 
-    let sum: Summary = summary_text.parse()?;
-    println!("{}", sum);
+    // COMMENT
+    println!(
+        "COMMENT={}",
+        pkg.read_metadata(MetadataEntry::Comment)?.trim()
+    );
+
+    // SIZE_PKG
+    println!(
+        "SIZE_PKG={}",
+        pkg.read_metadata(MetadataEntry::SizePkg)?.trim()
+    );
+
+    // BUILD_INFO variables (filtered, in file order)
+    for line in pkg.read_metadata(MetadataEntry::BuildInfo)?.lines() {
+        if let Some(var) = line.split('=').next() {
+            if SUMMARY_BUILD_VARS.contains(&var) {
+                println!("{}", line);
+            }
+        }
+    }
+
+    // DESCRIPTION
+    for line in pkg.read_metadata(MetadataEntry::Desc)?.lines() {
+        println!("DESCRIPTION={}", line);
+    }
+
+    // Empty line separator
+    println!();
 
     Ok(())
 }
 
-fn main() -> summary::Result<()> {
-    let cmd = OptArgs::from_args();
-    let mut pkgm: Option<Regex> = None;
+/// Extract summary from a binary package.
+fn extract_summary(
+    path: &Path,
+    opts: &SummaryOptions,
+) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
+    let pkg = Package::open(path)?;
+    let summary = pkg.to_summary_with_opts(opts)?;
+    Ok(summary.to_string())
+}
 
-    if let Some(m) = cmd.pkgmatch {
-        match Regex::new(&m) {
-            Ok(p) => pkgm = Some(p),
-            Err(e) => panic!("bad regex: {}", e),
-        }
-    }
-
-    let dbpath = match cmd.pkg_dbdir {
-        Some(dir) => dir,
-        None => "/opt/pkg/.pkgdb".to_string(),
+/// Process installed packages from PKG_DBDIR.
+fn process_installed(cmd: &OptArgs) -> Result<()> {
+    let pkgm: Option<Regex> = if cmd.packages.len() == 1 {
+        Some(Regex::new(cmd.packages[0].to_string_lossy().as_ref())?)
+    } else {
+        None
     };
+
+    let dbpath = cmd
+        .pkg_dbdir
+        .clone()
+        .unwrap_or_else(|| "/opt/pkg/.pkgdb".to_string());
 
     let pkgdb = PkgDB::open(Path::new(&dbpath))?;
 
@@ -106,4 +167,52 @@ fn main() -> summary::Result<()> {
     }
 
     Ok(())
+}
+
+/// Process binary package files.
+fn process_binary_packages(cmd: &OptArgs) -> Result<()> {
+    if cmd.jobs > 0 {
+        rayon::ThreadPoolBuilder::new()
+            .num_threads(cmd.jobs)
+            .build_global()
+            .ok();
+    }
+
+    let summary_opts = SummaryOptions {
+        compute_file_cksum: cmd.file_cksum,
+    };
+
+    let results: Vec<_> = cmd
+        .packages
+        .par_iter()
+        .map(|path| (path, extract_summary(path, &summary_opts)))
+        .collect();
+
+    for (path, result) in results {
+        match result {
+            Ok(summary) => println!("{}\n", summary),
+            Err(e) => eprintln!("Error processing {}: {}", path.display(), e),
+        }
+    }
+
+    Ok(())
+}
+
+fn main() -> Result<()> {
+    let cmd = OptArgs::from_args();
+
+    if cmd.sumout {
+        // -X with file arguments processes binary packages
+        if !cmd.packages.is_empty() {
+            return process_binary_packages(&cmd);
+        }
+        // -Xa outputs pkg_summary for all installed packages
+        if cmd.all {
+            return process_installed(&cmd);
+        }
+        bail!("missing package name(s)");
+    }
+
+    // Process installed packages
+    process_installed(&cmd)
 }
