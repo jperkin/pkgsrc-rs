@@ -266,6 +266,16 @@ pub enum PlistEntry {
      * Declare a conflict with the pkgcflname package.
      */
     PkgCfl(String),
+    /**
+     * MD5 checksum of the preceding file entry.
+     * Parsed from `@comment MD5:<32-char-hex>`.
+     */
+    FileChecksum(String),
+    /**
+     * Symlink target for the preceding file entry.
+     * Parsed from `@comment Symlink:<target>`.
+     */
+    SymlinkTarget(OsString),
 }
 
 /**
@@ -401,8 +411,34 @@ impl PlistEntry {
                  * handle it as an optional argument.
                  *
                  * Must be an OsString as often contains filenames.
+                 *
+                 * Special cases:
+                 * - "@comment MD5:<hash>" -> FileChecksum (32-char hex MD5)
+                 * - "@comment Symlink:<target>" -> SymlinkTarget
                  */
-                "@comment" => plist_args_osstr_opt!(args, PlistEntry::Comment),
+                "@comment" => {
+                    match args.and_then(OsStr::to_str) {
+                        Some(s) if s.starts_with("MD5:") => {
+                            let hash = &s[4..];
+                            // MD5 hashes are 32 hex characters
+                            if hash.len() == 32
+                                && hash.chars().all(|c| c.is_ascii_hexdigit())
+                            {
+                                Ok(PlistEntry::FileChecksum(hash.to_string()))
+                            } else {
+                                // Invalid MD5 format, treat as regular comment
+                                plist_args_osstr_opt!(args, PlistEntry::Comment)
+                            }
+                        }
+                        Some(s) if s.starts_with("Symlink:") => {
+                            let target = &s[8..];
+                            Ok(PlistEntry::SymlinkTarget(OsString::from(
+                                target,
+                            )))
+                        }
+                        _ => plist_args_osstr_opt!(args, PlistEntry::Comment),
+                    }
+                }
 
                 /*
                  * For now be strict that "@ignore" must not take arguments.
@@ -437,6 +473,32 @@ impl PlistEntry {
             Ok(PlistEntry::File(OsString::from(OsStr::from_bytes(bytes))))
         }
     }
+}
+
+/**
+ * Information about a file in the packing list, including optional metadata.
+ *
+ * This struct combines a file path with its associated metadata from the
+ * packing list, including:
+ * - MD5 checksum (from `@comment MD5:...`)
+ * - Symlink target (from `@comment Symlink:...`)
+ * - File mode, owner, and group (from `@mode`, `@owner`, `@group`)
+ */
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub struct FileInfo {
+    /// The file path relative to the current working directory.
+    pub path: OsString,
+    /// MD5 checksum as 32-character hex string, if present.
+    pub checksum: Option<String>,
+    /// Symlink target path, if this entry represents a symlink.
+    pub symlink_target: Option<OsString>,
+    /// File mode (e.g., "0644", "755"), if set.
+    pub mode: Option<String>,
+    /// File owner username, if set.
+    pub owner: Option<String>,
+    /// File group name, if set.
+    pub group: Option<String>,
 }
 
 /**
@@ -698,6 +760,71 @@ impl Plist {
                 _ => None,
             })
             .collect()
+    }
+
+    /**
+     * Return a vector containing file entries with their associated metadata.
+     *
+     * This method iterates through the packing list and collects file entries
+     * along with their associated metadata:
+     * - MD5 checksum (from following `@comment MD5:...`)
+     * - Symlink target (from following `@comment Symlink:...`)
+     * - Current mode, owner, group (from preceding `@mode`, `@owner`, `@group`)
+     *
+     * Files marked with `@ignore` are not included.
+     */
+    pub fn files_with_info(&self) -> Vec<FileInfo> {
+        let mut result = Vec::new();
+        let mut ignore = false;
+        let mut current_mode: Option<String> = None;
+        let mut current_owner: Option<String> = None;
+        let mut current_group: Option<String> = None;
+
+        let mut i = 0;
+        while i < self.entries.len() {
+            match &self.entries[i] {
+                PlistEntry::Mode(m) => current_mode = m.clone(),
+                PlistEntry::Owner(o) => current_owner = o.clone(),
+                PlistEntry::Group(g) => current_group = g.clone(),
+                PlistEntry::Ignore => ignore = true,
+                PlistEntry::File(path) => {
+                    if ignore {
+                        ignore = false;
+                    } else {
+                        let mut info = FileInfo {
+                            path: path.clone(),
+                            checksum: None,
+                            symlink_target: None,
+                            mode: current_mode.clone(),
+                            owner: current_owner.clone(),
+                            group: current_group.clone(),
+                        };
+
+                        // Look ahead for checksum or symlink target
+                        let mut j = i + 1;
+                        while j < self.entries.len() {
+                            match &self.entries[j] {
+                                PlistEntry::FileChecksum(hash) => {
+                                    info.checksum = Some(hash.clone());
+                                    j += 1;
+                                }
+                                PlistEntry::SymlinkTarget(target) => {
+                                    info.symlink_target = Some(target.clone());
+                                    j += 1;
+                                }
+                                _ => break,
+                            }
+                        }
+
+                        result.push(info);
+                    }
+                }
+                _ => {}
+            }
+            i += 1;
+        }
+
+        result
     }
 
     /**
@@ -1228,6 +1355,110 @@ mod tests {
     fn test_preserve() -> Result<()> {
         assert!(!plist!("@comment not set")?.is_preserve());
         assert!(plist!("@option preserve")?.is_preserve());
+
+        Ok(())
+    }
+
+    /*
+     * Test MD5 checksum parsing from @comment MD5:...
+     */
+    #[test]
+    fn test_file_checksum() -> Result<()> {
+        // Valid MD5 checksum (32 hex chars)
+        let entry =
+            plist_entry!("@comment MD5:d41d8cd98f00b204e9800998ecf8427e")?;
+        assert_eq!(
+            entry,
+            PlistEntry::FileChecksum(
+                "d41d8cd98f00b204e9800998ecf8427e".to_string()
+            )
+        );
+
+        // Invalid MD5 (too short) - treated as regular comment
+        let entry = plist_entry!("@comment MD5:abc123")?;
+        assert!(matches!(entry, PlistEntry::Comment(_)));
+
+        // Invalid MD5 (non-hex chars) - treated as regular comment
+        let entry =
+            plist_entry!("@comment MD5:d41d8cd98f00b204e9800998ecf8427g")?;
+        assert!(matches!(entry, PlistEntry::Comment(_)));
+
+        // Regular comment should still work
+        let entry = plist_entry!("@comment This is a comment")?;
+        assert!(matches!(entry, PlistEntry::Comment(_)));
+
+        Ok(())
+    }
+
+    /*
+     * Test symlink target parsing from @comment Symlink:...
+     */
+    #[test]
+    fn test_symlink_target() -> Result<()> {
+        let entry = plist_entry!("@comment Symlink:/usr/bin/target")?;
+        assert_eq!(
+            entry,
+            PlistEntry::SymlinkTarget(OsString::from("/usr/bin/target"))
+        );
+
+        // Empty symlink target
+        let entry = plist_entry!("@comment Symlink:")?;
+        assert_eq!(entry, PlistEntry::SymlinkTarget(OsString::from("")));
+
+        Ok(())
+    }
+
+    /*
+     * Test files_with_info() returns files with associated metadata.
+     */
+    #[test]
+    fn test_files_with_info() -> Result<()> {
+        let input = indoc! {"
+            @mode 0755
+            @owner root
+            @group wheel
+            bin/myapp
+            @comment MD5:d41d8cd98f00b204e9800998ecf8427e
+            @mode 0644
+            etc/myapp.conf
+            @comment MD5:098f6bcd4621d373cade4e832627b4f6
+            lib/libfoo.so
+            @comment Symlink:libfoo.so.1
+            @ignore
+            +BUILD_INFO
+        "};
+
+        let plist = Plist::from_bytes(input.as_bytes())?;
+        let files = plist.files_with_info();
+
+        assert_eq!(files.len(), 3);
+
+        // First file: bin/myapp with mode 0755, owner root, group wheel
+        assert_eq!(files[0].path, OsString::from("bin/myapp"));
+        assert_eq!(
+            files[0].checksum,
+            Some("d41d8cd98f00b204e9800998ecf8427e".to_string())
+        );
+        assert_eq!(files[0].symlink_target, None);
+        assert_eq!(files[0].mode, Some("0755".to_string()));
+        assert_eq!(files[0].owner, Some("root".to_string()));
+        assert_eq!(files[0].group, Some("wheel".to_string()));
+
+        // Second file: etc/myapp.conf with mode 0644
+        assert_eq!(files[1].path, OsString::from("etc/myapp.conf"));
+        assert_eq!(
+            files[1].checksum,
+            Some("098f6bcd4621d373cade4e832627b4f6".to_string())
+        );
+        assert_eq!(files[1].mode, Some("0644".to_string()));
+
+        // Third file: lib/libfoo.so is a symlink
+        assert_eq!(files[2].path, OsString::from("lib/libfoo.so"));
+        assert_eq!(files[2].checksum, None);
+        assert_eq!(
+            files[2].symlink_target,
+            Some(OsString::from("libfoo.so.1"))
+        );
 
         Ok(())
     }
