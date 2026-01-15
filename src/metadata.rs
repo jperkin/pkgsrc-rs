@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019 Jonathan Perkin <jonathan@perkin.org.uk>
+ * Copyright (c) 2026 Jonathan Perkin <jonathan@perkin.org.uk>
  *
  * Permission to use, copy, modify, and distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -310,8 +310,9 @@ impl Metadata {
         /*
          * Set up various variable types that may be used.
          *
-         * XXX: I'm not 100% sure .trim() is correct here, it might need to be
-         * modified to only strip newlines rather than all whitespace.
+         * For most metadata, trim() is appropriate.  For +DESC specifically,
+         * we only strip trailing newlines to preserve leading whitespace on
+         * description lines (required for pkg_info compatibility).
          */
         let val_string = value.trim().to_string();
         let val_i64 = val_string.parse::<i64>();
@@ -326,7 +327,10 @@ impl Metadata {
             MetadataEntry::Comment => self.comment.push_str(&val_string),
             MetadataEntry::Contents => self.contents.push_str(&val_string),
             MetadataEntry::DeInstall => self.deinstall = Some(val_string),
-            MetadataEntry::Desc => self.desc.push_str(&val_string),
+            MetadataEntry::Desc => {
+                // Only strip trailing newlines, preserve leading whitespace
+                self.desc.push_str(value.trim_end_matches('\n'));
+            }
             MetadataEntry::Display => self.display = Some(val_string),
             MetadataEntry::Install => self.install = Some(val_string),
             MetadataEntry::InstalledInfo => self.installed_info = Some(val_vec),
