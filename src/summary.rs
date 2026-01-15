@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2025 Jonathan Perkin <jonathan@perkin.org.uk>
+ * Copyright (c) 2026 Jonathan Perkin <jonathan@perkin.org.uk>
  *
  * Permission to use, copy, modify, and distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -248,11 +248,16 @@ impl fmt::Display for Summary {
         write_optional_field!(self.prev_pkgpath, "PREV_PKGPATH");
         write_optional_array_field!(self.provides, "PROVIDES");
         write_optional_array_field!(self.requires, "REQUIRES");
+        write_optional_array_field!(self.supersedes, "SUPERSEDES");
         write_optional_field!(self.file_name, "FILE_NAME");
         write_optional_field!(self.file_size, "FILE_SIZE");
         write_optional_field!(self.file_cksum, "FILE_CKSUM");
-        write_optional_array_field!(self.supersedes, "SUPERSEDES");
-        write_required_array_field!(&self.description, "DESCRIPTION");
+        // Always output at least one DESCRIPTION= line, even if empty
+        if self.description.is_empty() {
+            writeln!(f, "DESCRIPTION=")?;
+        } else {
+            write_required_array_field!(&self.description, "DESCRIPTION");
+        }
 
         Ok(())
     }
@@ -524,6 +529,60 @@ impl SummaryBuilder {
 }
 
 impl Summary {
+    /// Create a new Summary with all fields.
+    #[allow(clippy::too_many_arguments)]
+    #[must_use]
+    pub(crate) fn new(
+        pkgname: PkgName,
+        comment: String,
+        size_pkg: u64,
+        build_date: String,
+        categories: Vec<String>,
+        machine_arch: String,
+        opsys: String,
+        os_version: String,
+        pkgpath: String,
+        pkgtools_version: String,
+        description: Vec<String>,
+        conflicts: Option<Vec<String>>,
+        depends: Option<Vec<String>>,
+        homepage: Option<String>,
+        license: Option<String>,
+        pkg_options: Option<String>,
+        prev_pkgpath: Option<String>,
+        provides: Option<Vec<String>>,
+        requires: Option<Vec<String>>,
+        supersedes: Option<Vec<String>>,
+        file_name: Option<String>,
+        file_size: Option<u64>,
+    ) -> Self {
+        Self {
+            build_date,
+            categories,
+            comment,
+            conflicts,
+            depends,
+            description,
+            file_cksum: None,
+            file_name,
+            file_size,
+            homepage,
+            license,
+            machine_arch,
+            opsys,
+            os_version,
+            pkgname,
+            pkgpath,
+            pkgtools_version,
+            pkg_options,
+            prev_pkgpath,
+            provides,
+            requires,
+            size_pkg,
+            supersedes,
+        }
+    }
+
     /**
      * Create an iterator that parses Summary entries from a reader.
      *
