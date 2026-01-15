@@ -308,37 +308,51 @@ impl Metadata {
         value: &str,
     ) -> Result<(), &'static str> {
         /*
-         * Set up various variable types that may be used.
-         *
-         * For most metadata, trim() is appropriate.  For +DESC specifically,
-         * we only strip trailing newlines to preserve leading whitespace on
-         * description lines (required for pkg_info compatibility).
+         * Lazily compute values only when needed to avoid unnecessary
+         * allocations. For most metadata, trim() is appropriate.
+         * For +DESC specifically, we only strip trailing newlines to
+         * preserve leading whitespace on description lines (required
+         * for pkg_info compatibility).
          */
-        let val_string = value.trim().to_string();
-        let val_i64 = val_string.parse::<i64>();
-        let mut val_vec = vec![];
-        for line in val_string.lines() {
-            val_vec.push(line.to_string());
-        }
+
+        // Helper to create trimmed string - only allocates when called
+        let make_string = || value.trim().to_string();
+
+        // Helper to create vec of lines - only allocates when called
+        let make_vec = || {
+            value
+                .trim()
+                .lines()
+                .map(|s| s.to_string())
+                .collect::<Vec<_>>()
+        };
 
         match entry {
-            MetadataEntry::BuildInfo => self.build_info = Some(val_vec),
-            MetadataEntry::BuildVersion => self.build_version = Some(val_vec),
-            MetadataEntry::Comment => self.comment.push_str(&val_string),
-            MetadataEntry::Contents => self.contents.push_str(&val_string),
-            MetadataEntry::DeInstall => self.deinstall = Some(val_string),
+            MetadataEntry::BuildInfo => self.build_info = Some(make_vec()),
+            MetadataEntry::BuildVersion => {
+                self.build_version = Some(make_vec())
+            }
+            MetadataEntry::Comment => self.comment.push_str(value.trim()),
+            MetadataEntry::Contents => self.contents.push_str(value.trim()),
+            MetadataEntry::DeInstall => self.deinstall = Some(make_string()),
             MetadataEntry::Desc => {
                 // Only strip trailing newlines, preserve leading whitespace
                 self.desc.push_str(value.trim_end_matches('\n'));
             }
-            MetadataEntry::Display => self.display = Some(val_string),
-            MetadataEntry::Install => self.install = Some(val_string),
-            MetadataEntry::InstalledInfo => self.installed_info = Some(val_vec),
-            MetadataEntry::MtreeDirs => self.mtree_dirs = Some(val_vec),
-            MetadataEntry::Preserve => self.preserve = Some(val_vec),
-            MetadataEntry::RequiredBy => self.required_by = Some(val_vec),
-            MetadataEntry::SizeAll => self.size_all = Some(val_i64.unwrap()),
-            MetadataEntry::SizePkg => self.size_pkg = Some(val_i64.unwrap()),
+            MetadataEntry::Display => self.display = Some(make_string()),
+            MetadataEntry::Install => self.install = Some(make_string()),
+            MetadataEntry::InstalledInfo => {
+                self.installed_info = Some(make_vec())
+            }
+            MetadataEntry::MtreeDirs => self.mtree_dirs = Some(make_vec()),
+            MetadataEntry::Preserve => self.preserve = Some(make_vec()),
+            MetadataEntry::RequiredBy => self.required_by = Some(make_vec()),
+            MetadataEntry::SizeAll => {
+                self.size_all = Some(value.trim().parse::<i64>().unwrap())
+            }
+            MetadataEntry::SizePkg => {
+                self.size_pkg = Some(value.trim().parse::<i64>().unwrap())
+            }
         }
 
         Ok(())
