@@ -444,6 +444,15 @@ mod tests {
         Ok(())
     }
 
+    #[test]
+    fn dewey_no_operators() {
+        let err = Dewey::new("pkg");
+        assert!(err.is_err());
+        let err = err.unwrap_err();
+        assert_eq!(err.pos, 0);
+        assert_eq!(err.msg, "No dewey operators found");
+    }
+
     /*
      * Any non-ASCII characters are just skipped.
      */
@@ -570,5 +579,47 @@ mod tests {
         let err = err.unwrap_err();
         assert_eq!(err.pos, 2);
         assert_eq!(err.msg, "Version component overflow");
+    }
+
+    #[test]
+    fn dewey_matches_version_overflow() -> Result<(), DeweyError> {
+        let m = Dewey::new("pkg>=1.0")?;
+        assert!(!m.matches("pkg-20251208143052000000"));
+        Ok(())
+    }
+
+    #[test]
+    fn dewey_matches_no_hyphen() -> Result<(), DeweyError> {
+        let m = Dewey::new("pkg>=1.0")?;
+        assert!(!m.matches("pkg1.0"));
+        Ok(())
+    }
+
+    #[test]
+    fn dewey_pkgbase() -> Result<(), DeweyError> {
+        let m = Dewey::new("my-package>=1.0")?;
+        assert_eq!(m.pkgbase(), "my-package");
+        assert!(!m.matches("other-package-1.0"));
+        Ok(())
+    }
+
+    #[test]
+    fn dewey_lt_operator() -> Result<(), DeweyError> {
+        let m = Dewey::new("pkg<2.0")?;
+        assert!(m.matches("pkg-1.0"));
+        assert!(m.matches("pkg-1.9"));
+        assert!(!m.matches("pkg-2.0"));
+        assert!(!m.matches("pkg-3.0"));
+        Ok(())
+    }
+
+    #[test]
+    fn dewey_le_operator() -> Result<(), DeweyError> {
+        let m = Dewey::new("pkg<=2.0")?;
+        assert!(m.matches("pkg-1.0"));
+        assert!(m.matches("pkg-2.0"));
+        assert!(!m.matches("pkg-2.1"));
+        assert!(!m.matches("pkg-3.0"));
+        Ok(())
     }
 }
