@@ -333,7 +333,7 @@ fn generate_serde_impl(name: &Ident, fields: &[ParsedField]) -> TokenStream2 {
                 }
                 FieldKind::Optional | FieldKind::OptionVec | FieldKind::OptionMultiLine => {
                     quote! {
-                        #[serde(rename = #key_name, default, skip_serializing_if = "Option::is_none")]
+                        #[serde(rename = #key_name, default)]
                     }
                 }
                 FieldKind::Collect => {

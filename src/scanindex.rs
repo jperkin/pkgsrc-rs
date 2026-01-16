@@ -18,6 +18,7 @@ use crate::kv::Kv;
 use crate::{Depend, PkgName, PkgPath};
 use std::fmt;
 use std::io::{self, BufRead};
+use std::path::PathBuf;
 use std::str::FromStr;
 
 /**
@@ -86,7 +87,7 @@ pub struct ScanIndex {
     /// needed by this package need to be available.
     pub usergroup_phase: Option<String>,
     /// List of files read during the dependency scanning step.
-    pub scan_depends: Option<Vec<String>>,
+    pub scan_depends: Option<Vec<PathBuf>>,
     /// Numeric build priority of the package. If not set, a value of 100 is
     /// assumed.
     pub pbulk_weight: Option<String>,
@@ -134,7 +135,7 @@ impl fmt::Display for ScanIndex {
                 if i > 0 {
                     write!(f, " ")?;
                 }
-                write!(f, "{p}")?;
+                write!(f, "{}", p.display())?;
             }
         }
         writeln!(f)?;
