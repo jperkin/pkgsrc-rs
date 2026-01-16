@@ -3,15 +3,16 @@
 [![Downloads](https://img.shields.io/crates/d/pkgsrc.svg)](https://crates.io/crates/pkgsrc)
 [![Crates.io](https://img.shields.io/crates/v/pkgsrc.svg)](https://crates.io/crates/pkgsrc)
 [![Documentation](https://docs.rs/pkgsrc/badge.svg)](https://docs.rs/pkgsrc)
+[![License](https://img.shields.io/crates/l/pkgsrc.svg)](https://github.com/jperkin/pkgsrc-rs)
 
 A Rust interface to the pkgsrc infrastructure, binary package archives, and the
 pkg\_install pkgdb.
 
 This is being developed alongside:
 
+ * [bob](https://github.com/jperkin/bob), a pkgsrc package builder.
  * [mktool](https://github.com/jperkin/mktool), a collection of tools that
    provide fast alternate implementations for various pkgsrc/mk scripts.
- * [bob](https://github.com/jperkin/bob), a pkgsrc package builder.
  * [pm](https://github.com/jperkin/pm), an exploration of what a binary package
    manager might look like (not currently being developed).
 
@@ -26,76 +27,57 @@ output format, i.e. list all currently installed packages and their single-line
 comment.
 
 ```rust
-use pkgsrc::{MetadataEntry, PkgDB};
+use pkgsrc::pkgdb::PkgDB;
+use pkgsrc::MetadataEntry;
 use std::path::Path;
 
-fn main() -> Result<(), std::io::Error> {
+fn main() -> std::io::Result<()> {
     let pkgdb = PkgDB::open(Path::new("/var/db/pkg"))?;
 
     for pkg in pkgdb {
         let pkg = pkg?;
-        println!("{:20} {}",
-            pkg.pkgname(),
-            pkg.read_metadata(MetadataEntry::Comment)?
-               .trim()
-        );
+        let comment = pkg.read_metadata(MetadataEntry::Comment)?;
+        println!("{:<19} {}", pkg.pkgname(), comment.trim());
     }
 
     Ok(())
 }
 ```
 
-## Status
+See [`examples/pkg_info.rs`](https://github.com/jperkin/pkgsrc-rs/blob/master/examples/pkg_info.rs)
+for a more complete implementation.
 
-* pkg\_match() is implemented and verified to be correct against a large input
-  of matches.
-* Metadata handles "+\*" files contained in an archive and is able to verify
-  that the archive contains a valid package.
-* PkgDB handles local pkg databases, currently supporting the regular
-  file-backed repository, but with flexible support for future sqlite3-backed
-  repositories.
-* Summary handles pkg\_summary(5) parsing and generation.
+## Features
+
+* [`archive`](https://docs.rs/pkgsrc/latest/pkgsrc/archive/): Read and write
+  binary packages, supporting both unsigned (compressed tarballs) and signed
+  (`ar(1)` archives with GPG signatures) formats. Includes low-level streaming
+  API and high-level `Package` type for fast metadata access.
+* [`digest`](https://docs.rs/pkgsrc/latest/pkgsrc/digest/): Cryptographic
+  hashing using BLAKE2s, MD5, RMD160, SHA1, SHA256, and SHA512, with special
+  handling for pkgsrc patch files.
+* [`distinfo`](https://docs.rs/pkgsrc/latest/pkgsrc/distinfo/): Parse and
+  process `distinfo` files containing checksums for distfiles and patches.
+* [`kv`](https://docs.rs/pkgsrc/latest/pkgsrc/kv/): Key-value parsing utilities.
+* [`pkgdb`](https://docs.rs/pkgsrc/latest/pkgsrc/pkgdb/): Handle local pkg
+  databases, supporting the regular file-backed repository.
+* [`plist`](https://docs.rs/pkgsrc/latest/pkgsrc/plist/): Parse and generate
+  packing lists (`PLIST` files) with support for all `@` commands.
+* [`summary`](https://docs.rs/pkgsrc/latest/pkgsrc/summary/): Parse and generate
+  `pkg_summary(5)` metadata with full validation and span-aware error reporting.
+* [`Pattern`](https://docs.rs/pkgsrc/latest/pkgsrc/struct.Pattern.html),
+  [`Depend`](https://docs.rs/pkgsrc/latest/pkgsrc/struct.Depend.html),
+  [`Dewey`](https://docs.rs/pkgsrc/latest/pkgsrc/struct.Dewey.html): Package
+  matching with `pkg_match()` semantics, verified correct against a large corpus
+  of real-world matches.
 
 ## MSRV
 
-As a library I want to keep it to as old an MSRV as reasonable, and so the
-current requirements are:
+The current requirements are:
 
-* `edition = "2021"`
-* `rust-version = "1.74.1"`
-
-as calculated by `cargo msrv`.  The limiting factor for supporting even older
-versions is serde.  The plan is to keep the requirements to the minimum that
-our dependencies require.
+* `edition = "2024"`
+* `rust-version = "1.85.1"`
 
 # License
 
 This project is licensed under the [ISC](https://opensource.org/licenses/ISC) license.
-
-## Testing/compatibility notes
-
-Generate list of dependency matches.
-
-```bash
-sqlite3 /var/db/pkgin/pkgin.db 'SELECT remote_deps_dewey FROM remote_deps' | sort | uniq > pkgdeps.txt
-```
-
-Generate list of package names
-
-```bash
-sqlite3 /var/db/pkgin/pkgin.db 'SELECT fullpkgname FROM remote_pkg' >pkgnames.txt
-```
-
-Implement the following algorithm in both C and Rust and compare output
-
-```bash
-while read pattern; do
-    while read pkg; do
-        pkg_match "${pattern}" "${pkg}"
-        printf "%s\t%s\t%s", ${pattern}, ${pkg}, $? >> outfile
-    done < pkgnames.txt
-done < pkgdeps.txt
-```
-
-As an added bonus, the C version took 55 seconds to generate 158,916,879
-matches, whilst the Rust version took 42 seconds.
