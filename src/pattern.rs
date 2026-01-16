@@ -761,17 +761,28 @@ mod tests {
         // Single char pattern
         let p = Pattern::new("f*").unwrap();
         assert!(p.matches("foo"));
+
+        // First char mismatch - quick_pkg_match returns false at first char
+        let p = Pattern::new("bar-[0-9]*").unwrap();
+        assert!(!p.matches("foo-1.0"));
+
+        // Second char mismatch - quick_pkg_match returns false at second char
+        let p = Pattern::new("fa-[0-9]*").unwrap();
+        assert!(!p.matches("fo-1.0"));
+
+        // Both chars match but glob fails
+        let p = Pattern::new("fo-[0-9]*").unwrap();
+        assert!(!p.matches("foo-1.0"));
     }
 
     #[test]
     fn pattern_pkgbase() -> Result<(), PatternError> {
+        // Glob patterns
         let p = Pattern::new("foo-[0-9]*")?;
         assert_eq!(p.pkgbase(), Some("foo"));
         let p = Pattern::new("mpg123-nas-[0-9]*")?;
         assert_eq!(p.pkgbase(), Some("mpg123-nas"));
         let p = Pattern::new("foo-1.[0-9]*")?;
-        assert_eq!(p.pkgbase(), None);
-        let p = Pattern::new("{foo,bar}-[0-9]*")?;
         assert_eq!(p.pkgbase(), None);
         let p = Pattern::new("foo-bar*-1")?;
         assert_eq!(p.pkgbase(), None);
@@ -779,6 +790,23 @@ mod tests {
         assert_eq!(p.pkgbase(), None);
         let p = Pattern::new("fo?-[0-9]*")?;
         assert_eq!(p.pkgbase(), None);
+
+        // Alternate patterns
+        let p = Pattern::new("{foo,bar}-[0-9]*")?;
+        assert_eq!(p.pkgbase(), None);
+
+        // Dewey patterns
+        let p = Pattern::new("foo>=1.0")?;
+        assert_eq!(p.pkgbase(), Some("foo"));
+        let p = Pattern::new("pkg-name>=2.0<3.0")?;
+        assert_eq!(p.pkgbase(), Some("pkg-name"));
+
+        // Simple patterns
+        let p = Pattern::new("foo-1.0")?;
+        assert_eq!(p.pkgbase(), Some("foo"));
+        let p = Pattern::new("pkg-name-2.0nb1")?;
+        assert_eq!(p.pkgbase(), Some("pkg-name"));
+
         Ok(())
     }
 }
