@@ -14,6 +14,8 @@
  * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
  */
 
+/*! Package path (category/name) handling. */
+
 use std::path::{Component, Path, PathBuf};
 use std::str::FromStr;
 use thiserror::Error;

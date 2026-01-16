@@ -14,6 +14,8 @@
  * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
  */
 
+/*! Parse `make pbulk-index` output into package records. */
+
 use crate::kv::Kv;
 use crate::{Depend, PkgName, PkgPath};
 use std::fmt;

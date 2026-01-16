@@ -25,31 +25,31 @@
 
 extern crate self as pkgsrc;
 
-/*
- * Modules that deserve their own namespace.
- */
 pub mod archive;
+pub mod depend;
+pub mod dewey;
 pub mod digest;
 pub mod distinfo;
 pub mod kv;
 pub mod metadata;
+pub mod pattern;
 pub mod pkgdb;
+pub mod pkgname;
+pub mod pkgpath;
 pub mod plist;
+pub mod scanindex;
 pub mod summary;
 
-/*
- * Modules that are available in the root.
- */
-mod depend;
-mod dewey;
-mod pattern;
-mod pkgname;
-mod pkgpath;
-mod scanindex;
-
+pub use crate::archive::Archive;
 pub use crate::depend::{Depend, DependError, DependType};
 pub use crate::dewey::{Dewey, DeweyError};
+pub use crate::digest::Digest;
+pub use crate::distinfo::Distinfo;
+pub use crate::metadata::Metadata;
 pub use crate::pattern::{Pattern, PatternError};
+pub use crate::pkgdb::{DBType, PkgDB, PkgDBError};
 pub use crate::pkgname::PkgName;
 pub use crate::pkgpath::{PkgPath, PkgPathError};
+pub use crate::plist::Plist;
 pub use crate::scanindex::{ScanIndex, ScanIndexIter};
+pub use crate::summary::Summary;

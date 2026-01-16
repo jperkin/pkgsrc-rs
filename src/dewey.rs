@@ -14,6 +14,8 @@
  * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
  */
 
+/*! Dewey decimal version comparison. */
+
 use std::cmp::Ordering;
 use thiserror::Error;
 

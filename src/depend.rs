@@ -14,6 +14,8 @@
  * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
  */
 
+/*! Package dependency parsing and matching. */
+
 use crate::{Pattern, PatternError, PkgPath, PkgPathError};
 use std::fmt;
 use std::str::FromStr;

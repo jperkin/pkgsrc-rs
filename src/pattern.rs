@@ -14,6 +14,8 @@
  * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
  */
 
+/*! Package pattern matching with globs and version constraints. */
+
 use crate::PkgName;
 use crate::dewey::{Dewey, DeweyError, DeweyOp, DeweyVersion, dewey_cmp};
 use std::fmt;
