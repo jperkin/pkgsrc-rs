@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019 Jonathan Perkin <jonathan@perkin.org.uk>
+ * Copyright (c) 2026 Jonathan Perkin <jonathan@perkin.org.uk>
  *
  * Permission to use, copy, modify, and distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -17,9 +17,9 @@
  */
 
 use anyhow::{Result, bail};
-use pkgsrc::MetadataEntry;
 use pkgsrc::archive::{Package, SummaryOptions};
-use pkgsrc::pkgdb::{Package as InstalledPackage, PkgDB};
+use pkgsrc::metadata::MetadataReader;
+use pkgsrc::pkgdb::PkgDB;
 use rayon::prelude::*;
 use regex::Regex;
 use std::path::{Path, PathBuf};
@@ -53,12 +53,8 @@ pub struct OptArgs {
     packages: Vec<PathBuf>,
 }
 
-fn output_default(pkg: &InstalledPackage) -> Result<()> {
-    println!(
-        "{:<19} {}",
-        pkg.pkgname(),
-        pkg.read_metadata(MetadataEntry::Comment)?.trim()
-    );
+fn output_default<P: MetadataReader>(pkg: &P) -> Result<()> {
+    println!("{:<19} {}", pkg.pkgname(), pkg.comment()?);
     Ok(())
 }
 
@@ -80,9 +76,12 @@ const SUMMARY_BUILD_VARS: &[&str] = &[
     "SUPERSEDES",
 ];
 
-fn output_summary(pkg: &InstalledPackage) -> Result<()> {
+fn output_summary<P: MetadataReader>(pkg: &P) -> Result<()> {
+    let contents = pkg.contents()?;
+    let comment = pkg.comment()?;
+    let desc = pkg.desc()?;
+
     // PKGNAME, DEPENDS, CONFLICTS from +CONTENTS in file order
-    let contents = pkg.read_metadata(MetadataEntry::Contents)?;
     for line in contents.lines() {
         if let Some(name) = line.strip_prefix("@name ") {
             println!("PKGNAME={}", name);
@@ -93,35 +92,28 @@ fn output_summary(pkg: &InstalledPackage) -> Result<()> {
         }
     }
 
-    // COMMENT
-    println!(
-        "COMMENT={}",
-        pkg.read_metadata(MetadataEntry::Comment)?.trim()
-    );
+    println!("COMMENT={}", comment);
 
-    // SIZE_PKG
-    println!(
-        "SIZE_PKG={}",
-        pkg.read_metadata(MetadataEntry::SizePkg)?.trim()
-    );
+    if let Some(size) = pkg.size_pkg() {
+        println!("SIZE_PKG={}", size.trim());
+    }
 
     // BUILD_INFO variables (filtered, in file order)
-    for line in pkg.read_metadata(MetadataEntry::BuildInfo)?.lines() {
-        if let Some(var) = line.split('=').next() {
-            if SUMMARY_BUILD_VARS.contains(&var) {
-                println!("{}", line);
+    if let Some(build_info) = pkg.build_info() {
+        for line in build_info.lines() {
+            if let Some(var) = line.split('=').next() {
+                if SUMMARY_BUILD_VARS.contains(&var) {
+                    println!("{}", line);
+                }
             }
         }
     }
 
-    // DESCRIPTION
-    for line in pkg.read_metadata(MetadataEntry::Desc)?.lines() {
+    for line in desc.lines() {
         println!("DESCRIPTION={}", line);
     }
 
-    // Empty line separator
     println!();
-
     Ok(())
 }
 

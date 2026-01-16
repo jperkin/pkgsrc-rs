@@ -27,17 +27,17 @@ output format, i.e. list all currently installed packages and their single-line
 comment.
 
 ```rust
+use anyhow::Result;
+use pkgsrc::metadata::MetadataReader;
 use pkgsrc::pkgdb::PkgDB;
-use pkgsrc::MetadataEntry;
 use std::path::Path;
 
-fn main() -> std::io::Result<()> {
+fn main() -> Result<()> {
     let pkgdb = PkgDB::open(Path::new("/var/db/pkg"))?;
 
     for pkg in pkgdb {
         let pkg = pkg?;
-        let comment = pkg.read_metadata(MetadataEntry::Comment)?;
-        println!("{:<19} {}", pkg.pkgname(), comment.trim());
+        println!("{:<19} {}", pkg.pkgname(), pkg.comment()?);
     }
 
     Ok(())

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019 Jonathan Perkin <jonathan@perkin.org.uk>
+ * Copyright (c) 2026 Jonathan Perkin <jonathan@perkin.org.uk>
  *
  * Permission to use, copy, modify, and distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -32,6 +32,7 @@ pub mod archive;
 pub mod digest;
 pub mod distinfo;
 pub mod kv;
+pub mod metadata;
 pub mod pkgdb;
 pub mod plist;
 pub mod summary;
@@ -41,7 +42,6 @@ pub mod summary;
  */
 mod depend;
 mod dewey;
-mod metadata;
 mod pattern;
 mod pkgname;
 mod pkgpath;
@@ -49,7 +49,6 @@ mod scanindex;
 
 pub use crate::depend::{Depend, DependError, DependType};
 pub use crate::dewey::{Dewey, DeweyError};
-pub use crate::metadata::{Metadata, MetadataEntry};
 pub use crate::pattern::{Pattern, PatternError};
 pub use crate::pkgname::PkgName;
 pub use crate::pkgpath::{PkgPath, PkgPathError};

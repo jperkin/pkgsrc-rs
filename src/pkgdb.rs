@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019 Jonathan Perkin <jonathan@perkin.org.uk>
+ * Copyright (c) 2026 Jonathan Perkin <jonathan@perkin.org.uk>
  *
  * Permission to use, copy, modify, and distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -19,7 +19,7 @@
 /*!
  * Module supporting the package database.  WIP.
  */
-use crate::metadata::MetadataEntry;
+use crate::metadata::{Entry, MetadataReader};
 use std::fs;
 use std::fs::ReadDir;
 use std::io;
@@ -54,7 +54,6 @@ pub struct PkgDB {
 /**
  * An installed package in a PkgDB.
  */
-#[derive(Debug, Default)]
 pub struct Package {
     path: PathBuf,
     pkgbase: String,
@@ -110,9 +109,9 @@ impl PkgDB {
          * These 3 metadata files are mandatory.
          */
         let reqd = vec![
-            MetadataEntry::Comment.to_filename(),
-            MetadataEntry::Contents.to_filename(),
-            MetadataEntry::Desc.to_filename(),
+            Entry::Comment.to_filename(),
+            Entry::Contents.to_filename(),
+            Entry::Desc.to_filename(),
         ];
         for file in reqd {
             if !pkgdir.join(file).exists() {
@@ -129,43 +128,206 @@ impl Package {
      * Return a new empty `Package` container.
      */
     pub fn new() -> Package {
-        let package: Package = Default::default();
-        package
+        Package {
+            path: PathBuf::new(),
+            pkgbase: String::new(),
+            pkgname: String::new(),
+            pkgversion: String::new(),
+        }
     }
 
     /**
      * Package basename (no version information).
      */
-    pub fn pkgbase(&self) -> &String {
+    pub fn pkgbase(&self) -> &str {
         &self.pkgbase
     }
 
     /**
      * Full package name including version.
      */
-    pub fn pkgname(&self) -> &String {
+    pub fn pkgname(&self) -> &str {
         &self.pkgname
     }
 
     /**
      * Package version.
      */
-    pub fn pkgversion(&self) -> &String {
+    pub fn pkgversion(&self) -> &str {
         &self.pkgversion
     }
 
     /**
-     * Read metadata for a package.  Return a string representation of the
-     * complete metadata entry.
-     *
-     * XXX: Only supports Files for now.
+     * Read a metadata file, returning its contents.
      */
-    pub fn read_metadata(
-        &self,
-        mentry: MetadataEntry,
-    ) -> Result<String, io::Error> {
-        let fname = self.path.as_path().join(mentry.to_filename());
-        fs::read_to_string(fname)
+    fn read_file(&self, entry: Entry) -> io::Result<String> {
+        fs::read_to_string(self.path.join(entry.to_filename()))
+    }
+
+    /**
+     * Package comment (`+COMMENT`).  Single line description.
+     */
+    pub fn comment(&self) -> io::Result<String> {
+        self.read_file(Entry::Comment).map(|s| s.trim().to_string())
+    }
+
+    /**
+     * Package contents (`+CONTENTS`).  The packing list.
+     */
+    pub fn contents(&self) -> io::Result<String> {
+        self.read_file(Entry::Contents)
+    }
+
+    /**
+     * Package description (`+DESC`).  Multi-line description.
+     */
+    pub fn desc(&self) -> io::Result<String> {
+        self.read_file(Entry::Desc)
+    }
+
+    /**
+     * Build information (`+BUILD_INFO`).
+     */
+    pub fn build_info(&self) -> Option<String> {
+        self.read_file(Entry::BuildInfo).ok()
+    }
+
+    /**
+     * Build version (`+BUILD_VERSION`).
+     */
+    pub fn build_version(&self) -> Option<String> {
+        self.read_file(Entry::BuildVersion).ok()
+    }
+
+    /**
+     * Deinstall script (`+DEINSTALL`).
+     */
+    pub fn deinstall(&self) -> Option<String> {
+        self.read_file(Entry::DeInstall).ok()
+    }
+
+    /**
+     * Display file (`+DISPLAY`).
+     */
+    pub fn display(&self) -> Option<String> {
+        self.read_file(Entry::Display).ok()
+    }
+
+    /**
+     * Install script (`+INSTALL`).
+     */
+    pub fn install(&self) -> Option<String> {
+        self.read_file(Entry::Install).ok()
+    }
+
+    /**
+     * Installed info (`+INSTALLED_INFO`).
+     */
+    pub fn installed_info(&self) -> Option<String> {
+        self.read_file(Entry::InstalledInfo).ok()
+    }
+
+    /**
+     * Mtree dirs (`+MTREE_DIRS`).
+     */
+    pub fn mtree_dirs(&self) -> Option<String> {
+        self.read_file(Entry::MtreeDirs).ok()
+    }
+
+    /**
+     * Preserve file (`+PRESERVE`).
+     */
+    pub fn preserve(&self) -> Option<String> {
+        self.read_file(Entry::Preserve).ok()
+    }
+
+    /**
+     * Required by (`+REQUIRED_BY`).
+     */
+    pub fn required_by(&self) -> Option<String> {
+        self.read_file(Entry::RequiredBy).ok()
+    }
+
+    /**
+     * Total size including dependencies (`+SIZE_ALL`).
+     */
+    pub fn size_all(&self) -> Option<String> {
+        self.read_file(Entry::SizeAll).ok()
+    }
+
+    /**
+     * Package size (`+SIZE_PKG`).
+     */
+    pub fn size_pkg(&self) -> Option<String> {
+        self.read_file(Entry::SizePkg).ok()
+    }
+}
+
+impl Default for Package {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl MetadataReader for Package {
+    fn pkgname(&self) -> &str {
+        &self.pkgname
+    }
+
+    fn comment(&self) -> io::Result<String> {
+        self.read_file(Entry::Comment).map(|s| s.trim().to_string())
+    }
+
+    fn contents(&self) -> io::Result<String> {
+        self.read_file(Entry::Contents)
+    }
+
+    fn desc(&self) -> io::Result<String> {
+        self.read_file(Entry::Desc)
+    }
+
+    fn build_info(&self) -> Option<String> {
+        self.read_file(Entry::BuildInfo).ok()
+    }
+
+    fn build_version(&self) -> Option<String> {
+        self.read_file(Entry::BuildVersion).ok()
+    }
+
+    fn deinstall(&self) -> Option<String> {
+        self.read_file(Entry::DeInstall).ok()
+    }
+
+    fn display(&self) -> Option<String> {
+        self.read_file(Entry::Display).ok()
+    }
+
+    fn install(&self) -> Option<String> {
+        self.read_file(Entry::Install).ok()
+    }
+
+    fn installed_info(&self) -> Option<String> {
+        self.read_file(Entry::InstalledInfo).ok()
+    }
+
+    fn mtree_dirs(&self) -> Option<String> {
+        self.read_file(Entry::MtreeDirs).ok()
+    }
+
+    fn preserve(&self) -> Option<String> {
+        self.read_file(Entry::Preserve).ok()
+    }
+
+    fn required_by(&self) -> Option<String> {
+        self.read_file(Entry::RequiredBy).ok()
+    }
+
+    fn size_all(&self) -> Option<String> {
+        self.read_file(Entry::SizeAll).ok()
+    }
+
+    fn size_pkg(&self) -> Option<String> {
+        self.read_file(Entry::SizePkg).ok()
     }
 }
 

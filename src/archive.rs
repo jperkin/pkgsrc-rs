@@ -107,9 +107,9 @@ use flate2::read::GzDecoder;
 use flate2::write::GzEncoder;
 use tar::{Archive as TarArchive, Builder as TarBuilder, Entries, Header};
 
+use crate::metadata::{Entry, Metadata, MetadataReader};
 use crate::plist::Plist;
 use crate::summary::Summary;
-use crate::{Metadata, MetadataEntry};
 
 /// Parse a mode string (octal) into a u32.
 ///
@@ -865,7 +865,7 @@ impl Package {
 
             // Stop at first non-metadata file (fast path)
             let Some(entry_type) =
-                entry_path.to_str().and_then(MetadataEntry::from_filename)
+                entry_path.to_str().and_then(Entry::from_filename)
             else {
                 break;
             };
@@ -896,7 +896,7 @@ impl Package {
             }
         }
 
-        metadata.is_valid().map_err(|e| {
+        metadata.validate().map_err(|e| {
             Error::MissingMetadata(format!("incomplete package: {}", e))
         })?;
 
@@ -973,9 +973,8 @@ impl Package {
                         let mut tar_entry = tar_entry_result?;
                         let entry_path = tar_entry.path()?.into_owned();
 
-                        let Some(entry_type) = entry_path
-                            .to_str()
-                            .and_then(MetadataEntry::from_filename)
+                        let Some(entry_type) =
+                            entry_path.to_str().and_then(Entry::from_filename)
                         else {
                             break;
                         };
@@ -1018,7 +1017,7 @@ impl Package {
         let pkg_hash =
             pkg_hash_content.map(|c| PkgHash::parse(&c)).transpose()?;
 
-        metadata.is_valid().map_err(|e| {
+        metadata.validate().map_err(|e| {
             Error::MissingMetadata(format!("incomplete package: {}", e))
         })?;
 
@@ -1378,8 +1377,8 @@ impl Package {
 
         Ok(Summary::new(
             pkgname,
-            self.metadata.comment().clone(),
-            self.metadata.size_pkg().unwrap_or(0) as u64,
+            self.metadata.comment().to_string(),
+            self.metadata.size_pkg().unwrap_or(0),
             to_string(self.get_build_info("BUILD_DATE").unwrap_or("")),
             self.get_build_info("CATEGORIES")
                 .unwrap_or("")
@@ -1416,6 +1415,68 @@ impl Package {
             },
             file_cksum,
         ))
+    }
+}
+
+impl MetadataReader for Package {
+    fn pkgname(&self) -> &str {
+        self.plist.pkgname().unwrap_or("")
+    }
+
+    fn comment(&self) -> std::io::Result<String> {
+        Ok(self.metadata.comment().to_string())
+    }
+
+    fn contents(&self) -> std::io::Result<String> {
+        Ok(self.metadata.contents().to_string())
+    }
+
+    fn desc(&self) -> std::io::Result<String> {
+        Ok(self.metadata.desc().to_string())
+    }
+
+    fn build_info(&self) -> Option<String> {
+        self.metadata.build_info().map(|v| v.join("\n"))
+    }
+
+    fn build_version(&self) -> Option<String> {
+        self.metadata.build_version().map(|v| v.join("\n"))
+    }
+
+    fn deinstall(&self) -> Option<String> {
+        self.metadata.deinstall().map(|s| s.to_string())
+    }
+
+    fn display(&self) -> Option<String> {
+        self.metadata.display().map(|s| s.to_string())
+    }
+
+    fn install(&self) -> Option<String> {
+        self.metadata.install().map(|s| s.to_string())
+    }
+
+    fn installed_info(&self) -> Option<String> {
+        self.metadata.installed_info().map(|v| v.join("\n"))
+    }
+
+    fn mtree_dirs(&self) -> Option<String> {
+        self.metadata.mtree_dirs().map(|v| v.join("\n"))
+    }
+
+    fn preserve(&self) -> Option<String> {
+        self.metadata.preserve().map(|v| v.join("\n"))
+    }
+
+    fn required_by(&self) -> Option<String> {
+        self.metadata.required_by().map(|v| v.join("\n"))
+    }
+
+    fn size_all(&self) -> Option<String> {
+        self.metadata.size_all().map(|n| n.to_string())
+    }
+
+    fn size_pkg(&self) -> Option<String> {
+        self.metadata.size_pkg().map(|n| n.to_string())
     }
 }
 
