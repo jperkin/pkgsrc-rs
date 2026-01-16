@@ -17,19 +17,71 @@
  */
 
 /*!
- * Module supporting the package database.  WIP.
+ * Package database access.
+ *
+ * This module provides read access to the pkgsrc package database,
+ * allowing iteration over installed packages and access to their metadata.
+ *
+ * # Example
+ *
+ * ```no_run
+ * use pkgsrc::pkgdb::PkgDB;
+ * use std::io;
+ * use std::path::Path;
+ *
+ * fn main() -> io::Result<()> {
+ *     let db = PkgDB::open(Path::new("/var/db/pkg"))?;
+ *     for result in db {
+ *         let pkg = result?;
+ *         println!("{}: {}", pkg.pkgname(), pkg.comment()?);
+ *     }
+ *     Ok(())
+ * }
+ * ```
  */
 use crate::metadata::{Entry, MetadataReader};
 use std::fs;
 use std::fs::ReadDir;
 use std::io;
 use std::path::{Path, PathBuf};
+use thiserror::Error;
+
+/**
+ * Errors that can occur when working with the package database.
+ */
+#[derive(Debug, Error)]
+pub enum PkgDBError {
+    /**
+     * An I/O error occurred.
+     */
+    #[error("I/O error: {0}")]
+    Io(#[from] io::Error),
+
+    /**
+     * The specified path is not a valid package database.
+     */
+    #[error("Invalid package database: {0}")]
+    InvalidDatabase(PathBuf),
+
+    /**
+     * The package name could not be parsed.
+     */
+    #[error("Invalid package name: {0}")]
+    InvalidPackageName(String),
+
+    /**
+     * The package database iterator was not properly initialized.
+     */
+    #[error("Package database not properly initialized")]
+    UninitializedDatabase,
+}
 
 /**
  * Type of pkgdb.  Currently supported formats are `Files` for the legacy
  * directory of `+*` files, and `Database` for a sqlite3 backend.
  */
-#[derive(Debug)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum DBType {
     /**
      * Standard pkg_install pkgdb using files.
@@ -54,6 +106,7 @@ pub struct PkgDB {
 /**
  * An installed package in a PkgDB.
  */
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Package {
     path: PathBuf,
     pkgbase: String,
@@ -65,61 +118,52 @@ impl PkgDB {
     /**
      * Open an existing `PkgDB`.
      */
-    pub fn open(p: &std::path::Path) -> Result<PkgDB, io::Error> {
-        let mut db = PkgDB {
-            dbtype: DBType::Files,
-            path: PathBuf::new(),
-            readdir: None,
-        };
-
-        /*
-         * Nothing fancy for now, assume that what the user passed is valid,
-         * we'll find out soon enough if it isn't.
-         */
-        if p.is_dir() {
-            db.dbtype = DBType::Files;
-            db.path = PathBuf::from(p);
-            db.readdir = Some(fs::read_dir(&db.path).expect("fail"));
-        } else if p.is_file() {
-            db.dbtype = DBType::Database;
-            db.path = PathBuf::from(p);
+    pub fn open(path: &Path) -> Result<PkgDB, io::Error> {
+        if path.is_dir() {
+            let readdir = fs::read_dir(path)?;
+            Ok(PkgDB {
+                dbtype: DBType::Files,
+                path: path.to_path_buf(),
+                readdir: Some(readdir),
+            })
+        } else if path.is_file() {
+            Ok(PkgDB {
+                dbtype: DBType::Database,
+                path: path.to_path_buf(),
+                readdir: None,
+            })
         } else {
-            return Err(io::Error::new(
-                io::ErrorKind::NotFound,
-                "Invalid pkgdb",
-            ));
+            Err(io::Error::new(io::ErrorKind::NotFound, "Invalid pkgdb"))
         }
-
-        Ok(db)
     }
 
     /**
-     * Ensure package directory is valid.  Only for `DBType::Files`.
+     * Return the path to this package database.
+     */
+    pub fn path(&self) -> &Path {
+        &self.path
+    }
+
+    /**
+     * Return the type of this package database.
+     */
+    pub fn dbtype(&self) -> DBType {
+        self.dbtype
+    }
+
+    /**
+     * Check if a directory is a valid package directory.
+     *
+     * A valid package directory must be a directory containing the three
+     * required metadata files: `+COMMENT`, `+CONTENTS`, and `+DESC`.
      */
     fn is_valid_pkgdir(&self, pkgdir: &Path) -> bool {
-        /*
-         * Skip files such as pkg-vulnerabilities and pkgdb.byfile.db, we're
-         * only interested in directories.
-         */
-        if pkgdir.is_file() {
+        if !pkgdir.is_dir() {
             return false;
         }
-
-        /*
-         * These 3 metadata files are mandatory.
-         */
-        let reqd = vec![
-            Entry::Comment.to_filename(),
-            Entry::Contents.to_filename(),
-            Entry::Desc.to_filename(),
-        ];
-        for file in reqd {
-            if !pkgdir.join(file).exists() {
-                return false;
-            }
-        }
-
-        true
+        pkgdir.join(Entry::Comment.to_filename()).exists()
+            && pkgdir.join(Entry::Contents.to_filename()).exists()
+            && pkgdir.join(Entry::Desc.to_filename()).exists()
     }
 }
 
@@ -155,6 +199,13 @@ impl Package {
      */
     pub fn pkgversion(&self) -> &str {
         &self.pkgversion
+    }
+
+    /**
+     * Return the file system path to this package's metadata directory.
+     */
+    pub fn path(&self) -> &Path {
+        &self.path
     }
 
     /**
@@ -333,40 +384,52 @@ impl MetadataReader for Package {
 
 /**
  * An iterator over the entries of a package database, returning either a
- * valid `Package` handle, an ``io::Error`, or None.
+ * valid `Package` handle, an `io::Error`, or None.
  */
 impl Iterator for PkgDB {
     type Item = io::Result<Package>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        let mut package = Package::new();
-
         match self.dbtype {
             DBType::Files => loop {
-                match self.readdir.as_mut().expect("Bad pkgdb read").next()? {
-                    Ok(dir) => {
-                        if !self.is_valid_pkgdir(&dir.path()) {
-                            continue;
-                        }
-                        match dir.file_name().to_str() {
-                            Some(p) => {
-                                let v: Vec<&str> = p.rsplitn(2, '-').collect();
-                                package.path = dir.path();
-                                package.pkgname = p.to_string();
-                                package.pkgbase = v[0].to_string();
-                                package.pkgversion = v[1].to_string();
-                                return Some(Ok(package));
-                            }
-                            _ => {
-                                return Some(Err(io::Error::new(
-                                    io::ErrorKind::InvalidData,
-                                    "Could not parse package directory",
-                                )));
-                            }
-                        };
-                    }
-                    _ => return None,
+                let readdir = self.readdir.as_mut()?;
+                let entry = match readdir.next()? {
+                    Ok(entry) => entry,
+                    Err(e) => return Some(Err(e)),
                 };
+
+                let path = entry.path();
+                if !self.is_valid_pkgdir(&path) {
+                    continue;
+                }
+
+                let filename = entry.file_name();
+                let dirname = match filename.to_str() {
+                    Some(name) => name,
+                    None => {
+                        return Some(Err(io::Error::new(
+                            io::ErrorKind::InvalidData,
+                            "Could not parse package directory name",
+                        )));
+                    }
+                };
+
+                let (pkgbase, pkgversion) = match dirname.rsplit_once('-') {
+                    Some((base, version)) => (base, version),
+                    None => {
+                        return Some(Err(io::Error::new(
+                            io::ErrorKind::InvalidData,
+                            format!("Invalid package name: {}", dirname),
+                        )));
+                    }
+                };
+
+                return Some(Ok(Package {
+                    path,
+                    pkgname: dirname.to_string(),
+                    pkgbase: pkgbase.to_string(),
+                    pkgversion: pkgversion.to_string(),
+                }));
             },
             DBType::Database => None,
         }
