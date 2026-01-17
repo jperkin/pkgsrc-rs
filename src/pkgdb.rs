@@ -76,7 +76,7 @@ pub struct PkgDB {
 /**
  * An installed package in a PkgDB.
  */
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct InstalledPackage {
     path: PathBuf,
     pkgbase: String,
@@ -145,12 +145,7 @@ impl InstalledPackage {
      */
     #[must_use]
     pub fn new() -> Self {
-        Self {
-            path: PathBuf::new(),
-            pkgbase: String::new(),
-            pkgname: String::new(),
-            pkgversion: String::new(),
-        }
+        Self::default()
     }
 
     /**
@@ -197,12 +192,6 @@ impl InstalledPackage {
             Err(e) if e.kind() == io::ErrorKind::NotFound => Ok(None),
             Err(e) => Err(e),
         }
-    }
-}
-
-impl Default for InstalledPackage {
-    fn default() -> Self {
-        Self::new()
     }
 }
 
