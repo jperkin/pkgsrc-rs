@@ -16,6 +16,7 @@
 
 /*! Package path (category/name) handling. */
 
+use std::borrow::Borrow;
 use std::path::{Component, Path, PathBuf};
 use std::str::FromStr;
 use thiserror::Error;
@@ -177,6 +178,20 @@ impl crate::kv::FromKv for PkgPath {
             message: e.to_string(),
             span,
         })
+    }
+}
+
+impl Borrow<Path> for PkgPath {
+    fn borrow(&self) -> &Path {
+        &self.short
+    }
+}
+
+impl TryFrom<&str> for PkgPath {
+    type Error = PkgPathError;
+
+    fn try_from(s: &str) -> Result<Self, Self::Error> {
+        Self::new(s)
     }
 }
 

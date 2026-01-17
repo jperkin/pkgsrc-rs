@@ -139,7 +139,7 @@ pub type Result<T> = std::result::Result<T, Error>;
 // ============================================================================
 
 /// Compression format for package archives.
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Default, Eq, Hash, PartialEq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum Compression {
     /// No compression (plain .tar)

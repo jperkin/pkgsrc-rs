@@ -116,7 +116,7 @@ impl Depend {
 /**
  * Type of dependency (full, build, bootstrap, test, etc.)
  */
-#[derive(Clone, Debug, Default, Eq, Hash, PartialEq)]
+#[derive(Clone, Copy, Debug, Default, Eq, Hash, PartialEq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum DependType {
     /**
@@ -194,6 +194,14 @@ impl crate::kv::FromKv for Depend {
             message: e.to_string(),
             span,
         })
+    }
+}
+
+impl TryFrom<&str> for Depend {
+    type Error = DependError;
+
+    fn try_from(s: &str) -> Result<Self, Self::Error> {
+        Self::new(s)
     }
 }
 

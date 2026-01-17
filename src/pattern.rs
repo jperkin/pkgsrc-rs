@@ -159,6 +159,14 @@ impl FromStr for Pattern {
     }
 }
 
+impl TryFrom<&str> for Pattern {
+    type Error = PatternError;
+
+    fn try_from(s: &str) -> Result<Self, Self::Error> {
+        Self::new(s)
+    }
+}
+
 impl Pattern {
     /**
      * Compile a pattern.  If the pattern is invalid in any way a

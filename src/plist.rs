@@ -190,7 +190,7 @@ impl From<FromUtf8Error> for PlistError {
  *
  * [`from_bytes()`]: PlistEntry::from_bytes
  */
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum PlistEntry {
     /**
@@ -924,6 +924,24 @@ impl Plist {
             })
             .count()
             > 0
+    }
+}
+
+impl IntoIterator for Plist {
+    type Item = PlistEntry;
+    type IntoIter = std::vec::IntoIter<PlistEntry>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.entries.into_iter()
+    }
+}
+
+impl<'a> IntoIterator for &'a Plist {
+    type Item = &'a PlistEntry;
+    type IntoIter = std::slice::Iter<'a, PlistEntry>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.entries.iter()
     }
 }
 

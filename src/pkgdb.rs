@@ -50,7 +50,7 @@ use std::path::{Path, PathBuf};
  * Type of pkgdb.  Currently supported formats are `Files` for the legacy
  * directory of `+*` files, and `Database` for a sqlite3 backend.
  */
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 #[non_exhaustive]
 pub enum DBType {
     /**
@@ -76,7 +76,7 @@ pub struct PkgDB {
 /**
  * An installed package in a PkgDB.
  */
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Debug, Default, Eq, Hash, PartialEq)]
 pub struct InstalledPackage {
     path: PathBuf,
     pkgbase: String,
