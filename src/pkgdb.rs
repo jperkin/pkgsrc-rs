@@ -12,17 +12,36 @@
  * WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
  * ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
  * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
- *
- * pkgdb.rs - handle the package database
  */
 
 /*!
  * Package database access.
  *
- * This module provides read access to the pkgsrc package database,
- * allowing iteration over installed packages and access to their metadata.
+ * The package database (pkgdb) records which packages are installed on a
+ * system and stores their metadata.  This module provides read access to the
+ * pkgdb, allowing iteration over installed packages and retrieval of their
+ * metadata files.
+ *
+ * # Database Formats
+ *
+ * pkgsrc supports two database formats, selectable via [`DBType`]:
+ *
+ * - **Files** (traditional): Each installed package has a directory under
+ *   `/var/db/pkg` (or the configured `PKG_DBDIR`) containing metadata files
+ *   such as `+COMMENT`, `+CONTENTS`, and `+DESC`.
+ *
+ * - **Database** (experimental): A SQLite database storing all package
+ *   metadata in a single file.  This format is not yet implemented.
+ *
+ * The format is detected automatically when opening a pkgdb: directories
+ * use the Files format, while regular files are assumed to be SQLite
+ * databases.
  *
  * # Example
+ *
+ * Open a pkgdb with [`PkgDB::open`], then iterate over it to get
+ * [`InstalledPackage`] entries.  Each entry provides access to the package
+ * name, version, and metadata files via the [`FileRead`] trait.
  *
  * ```no_run
  * use pkgsrc::metadata::FileRead;
@@ -38,6 +57,19 @@
  *     Ok(())
  * }
  * ```
+ *
+ * # Package Metadata
+ *
+ * Each [`InstalledPackage`] provides access to:
+ *
+ * - **Required files**: `+COMMENT` (short description), `+CONTENTS` (packing
+ *   list), and `+DESC` (long description)
+ * - **Optional files**: `+BUILD_INFO`, `+BUILD_VERSION`, `+INSTALL`,
+ *   `+DEINSTALL`, `+DISPLAY`, `+PRESERVE`, `+REQUIRED_BY`, and others
+ *
+ * These are accessed via the [`FileRead`] trait methods.
+ *
+ * [`FileRead`]: crate::metadata::FileRead
  */
 use crate::metadata::{Entry, FileRead};
 use std::fs;
