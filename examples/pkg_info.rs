@@ -17,7 +17,7 @@
  */
 
 use anyhow::{Result, bail};
-use pkgsrc::archive::{Package, SummaryOptions};
+use pkgsrc::archive::{BinaryPackage, SummaryOptions};
 use pkgsrc::metadata::FileRead;
 use pkgsrc::pkgdb::PkgDB;
 use rayon::prelude::*;
@@ -122,7 +122,7 @@ fn extract_summary(
     path: &Path,
     opts: &SummaryOptions,
 ) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
-    let pkg = Package::open(path)?;
+    let pkg = BinaryPackage::open(path)?;
     let summary = pkg.to_summary_with_opts(opts)?;
     Ok(summary.to_string())
 }

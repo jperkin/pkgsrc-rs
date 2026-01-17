@@ -108,7 +108,7 @@ pub struct PkgDB {
  * An installed package in a PkgDB.
  */
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct Package {
+pub struct InstalledPackage {
     path: PathBuf,
     pkgbase: String,
     pkgname: String,
@@ -168,12 +168,12 @@ impl PkgDB {
     }
 }
 
-impl Package {
+impl InstalledPackage {
     /**
-     * Return a new empty `Package` container.
+     * Return a new empty `InstalledPackage` container.
      */
-    pub fn new() -> Package {
-        Package {
+    pub fn new() -> InstalledPackage {
+        InstalledPackage {
             path: PathBuf::new(),
             pkgbase: String::new(),
             pkgname: String::new(),
@@ -224,13 +224,13 @@ impl Package {
     }
 }
 
-impl Default for Package {
+impl Default for InstalledPackage {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl FileRead for Package {
+impl FileRead for InstalledPackage {
     fn pkgname(&self) -> &str {
         &self.pkgname
     }
@@ -295,10 +295,10 @@ impl FileRead for Package {
 
 /**
  * An iterator over the entries of a package database, returning either a
- * valid `Package` handle, an `io::Error`, or None.
+ * valid `InstalledPackage` handle, an `io::Error`, or None.
  */
 impl Iterator for PkgDB {
-    type Item = io::Result<Package>;
+    type Item = io::Result<InstalledPackage>;
 
     fn next(&mut self) -> Option<Self::Item> {
         match self.dbtype {
@@ -335,7 +335,7 @@ impl Iterator for PkgDB {
                     }
                 };
 
-                return Some(Ok(Package {
+                return Some(Ok(InstalledPackage {
                     path,
                     pkgname: dirname.to_string(),
                     pkgbase: pkgbase.to_string(),

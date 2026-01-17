@@ -37,7 +37,7 @@
  *
  * ## High-level (convenience)
  *
- * - [`Package`]: Cached metadata with fast reads and convenience methods
+ * - [`BinaryPackage`]: Cached metadata with fast reads and convenience methods
  * - [`SignedArchive`]: Output type for signed packages
  *
  * # Examples
@@ -45,9 +45,9 @@
  * ## Fast metadata reading
  *
  * ```no_run
- * use pkgsrc::archive::Package;
+ * use pkgsrc::archive::BinaryPackage;
  *
- * let pkg = Package::open("package-1.0.tgz").unwrap();
+ * let pkg = BinaryPackage::open("package-1.0.tgz").unwrap();
  * println!("Package: {}", pkg.pkgname().unwrap_or("unknown"));
  * println!("Comment: {}", pkg.metadata().comment());
  *
@@ -58,9 +58,9 @@
  * ## Installing a package (iterating entries)
  *
  * ```no_run
- * use pkgsrc::archive::Package;
+ * use pkgsrc::archive::BinaryPackage;
  *
- * let pkg = Package::open("package-1.0.tgz").unwrap();
+ * let pkg = BinaryPackage::open("package-1.0.tgz").unwrap();
  *
  * // Check dependencies first (fast, uses cached metadata)
  * for dep in pkg.plist().depends() {
@@ -86,9 +86,9 @@
  * ## Signing an existing package
  *
  * ```no_run
- * use pkgsrc::archive::Package;
+ * use pkgsrc::archive::BinaryPackage;
  *
- * let pkg = Package::open("package-1.0.tgz").unwrap();
+ * let pkg = BinaryPackage::open("package-1.0.tgz").unwrap();
  * let signature = b"GPG SIGNATURE DATA";
  * pkg.sign(signature).unwrap().write_to("package-1.0-signed.tgz").unwrap();
  * ```
@@ -663,7 +663,7 @@ impl<R: Read> Read for Decoder<R> {
 /// Low-level streaming access to package archives.
 ///
 /// This provides tar-style streaming access to archive entries. For most use
-/// cases, prefer [`Package`] which provides cached metadata and convenience
+/// cases, prefer [`BinaryPackage`] which provides cached metadata and convenience
 /// methods.
 ///
 /// # Example
@@ -749,7 +749,7 @@ impl<R: Read> Archive<R> {
 // Package (high-level, cached metadata)
 // ============================================================================
 
-/// Options for converting a [`Package`] to a [`Summary`].
+/// Options for converting a [`BinaryPackage`] to a [`Summary`].
 #[derive(Debug, Clone, Default)]
 pub struct SummaryOptions {
     /// Compute the SHA256 checksum of the package file.
@@ -762,17 +762,17 @@ pub struct SummaryOptions {
 /// A pkgsrc binary package with cached metadata.
 ///
 /// This provides fast access to package metadata without re-reading the
-/// archive. The metadata is read once during [`Package::open`], and subsequent
-/// operations like [`Package::entries`] or [`Package::extract_to`] re-open
+/// archive. The metadata is read once during [`BinaryPackage::open`], and subsequent
+/// operations like [`BinaryPackage::entries`] or [`BinaryPackage::extract_to`] re-open
 /// the archive as needed.
 ///
 /// # Example
 ///
 /// ```no_run
-/// use pkgsrc::archive::Package;
+/// use pkgsrc::archive::BinaryPackage;
 ///
 /// // Fast metadata access
-/// let pkg = Package::open("package-1.0.tgz").unwrap();
+/// let pkg = BinaryPackage::open("package-1.0.tgz").unwrap();
 /// println!("Name: {}", pkg.pkgname().unwrap_or("unknown"));
 /// println!("Comment: {}", pkg.metadata().comment());
 ///
@@ -783,7 +783,7 @@ pub struct SummaryOptions {
 /// pkg.extract_to("/usr/pkg").unwrap();
 /// ```
 #[derive(Debug)]
-pub struct Package {
+pub struct BinaryPackage {
     /// Path to the package file.
     path: PathBuf,
 
@@ -812,7 +812,7 @@ pub struct Package {
     file_size: u64,
 }
 
-impl Package {
+impl BinaryPackage {
     /// Open a package from a file path.
     ///
     /// This reads only the metadata entries at the start of the archive,
@@ -1136,9 +1136,9 @@ impl Package {
     /// # Example
     ///
     /// ```no_run
-    /// use pkgsrc::archive::{Package, ExtractOptions};
+    /// use pkgsrc::archive::{BinaryPackage, ExtractOptions};
     ///
-    /// let pkg = Package::open("package-1.0.tgz").unwrap();
+    /// let pkg = BinaryPackage::open("package-1.0.tgz").unwrap();
     /// let options = ExtractOptions::new().with_mode();
     /// let extracted = pkg.extract_with_plist("/usr/pkg", options).unwrap();
     /// for file in &extracted {
@@ -1326,9 +1326,9 @@ impl Package {
     /// # Example
     ///
     /// ```no_run
-    /// use pkgsrc::archive::{Package, SummaryOptions};
+    /// use pkgsrc::archive::{BinaryPackage, SummaryOptions};
     ///
-    /// let pkg = Package::open("package-1.0.tgz").unwrap();
+    /// let pkg = BinaryPackage::open("package-1.0.tgz").unwrap();
     /// let opts = SummaryOptions { compute_file_cksum: true };
     /// let summary = pkg.to_summary_with_opts(&opts).unwrap();
     /// ```
@@ -1418,7 +1418,7 @@ impl Package {
     }
 }
 
-impl FileRead for Package {
+impl FileRead for BinaryPackage {
     fn pkgname(&self) -> &str {
         self.plist.pkgname().unwrap_or("")
     }
@@ -1480,10 +1480,10 @@ impl FileRead for Package {
     }
 }
 
-impl TryFrom<&Package> for Summary {
+impl TryFrom<&BinaryPackage> for Summary {
     type Error = Error;
 
-    fn try_from(pkg: &Package) -> Result<Self> {
+    fn try_from(pkg: &BinaryPackage) -> Result<Self> {
         pkg.to_summary()
     }
 }
@@ -1662,7 +1662,7 @@ impl<W: Write> Builder<W> {
 
 /// A signed binary package ready to be written.
 ///
-/// This is created by [`Package::sign`] or [`SignedArchive::from_unsigned`].
+/// This is created by [`BinaryPackage::sign`] or [`SignedArchive::from_unsigned`].
 #[derive(Debug)]
 pub struct SignedArchive {
     pkgname: String,
