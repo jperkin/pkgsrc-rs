@@ -4,7 +4,7 @@ members = [".", "kv-derive"]
 [package]
 name = "pkgsrc"
 description = "Rust interface to pkgsrc packages and infrastructure"
-version = "0.6.1"
+version = "0.7.0"
 authors = ["Jonathan Perkin <jonathan@perkin.org.uk>"]
 readme = "README.md"
 keywords = ["pkgsrc"]
@@ -16,7 +16,7 @@ rust-version = "1.85.1"
 edition = "2024"
 
 [dependencies]
-pkgsrc-kv-derive = { path = "kv-derive", version = "0.1.0" }
+pkgsrc-kv-derive = { path = "kv-derive", version = "0.2.0" }
 ar = "0.9.0"
 blake2 = "0.10.6"
 digest = "0.10.7"

@@ -1,11 +1,11 @@
 [package]
 name = "pkgsrc-kv-derive"
-version = "0.1.0"
+version = "0.2.0"
 authors = ["Jonathan Perkin <jonathan@perkin.org.uk>"]
 license = "ISC"
 repository = "https://github.com/jperkin/pkgsrc-rs"
 description = "Derive macro for KEY=VALUE parsing"
-edition = "2021"
+edition = "2024"
 
 [lib]
 proc-macro = true
