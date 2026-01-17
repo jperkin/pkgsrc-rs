@@ -791,7 +791,7 @@ pub struct SummaryOptions {
 ///
 /// This provides fast access to package metadata without re-reading the
 /// archive. The metadata is read once during [`BinaryPackage::open`], and subsequent
-/// operations like [`BinaryPackage::entries`] or [`BinaryPackage::extract_to`] re-open
+/// operations like [`BinaryPackage::archive`] or [`BinaryPackage::extract_to`] re-open
 /// the archive as needed.
 ///
 /// # Example
