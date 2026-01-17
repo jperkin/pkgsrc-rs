@@ -415,9 +415,8 @@ impl Distinfo {
     /**
      * Return a new empty [`Distinfo`].
      */
-    pub fn new() -> Distinfo {
-        let di: Distinfo = Default::default();
-        di
+    pub fn new() -> Self {
+        Self::default()
     }
 
     /**

@@ -144,8 +144,8 @@ impl InstalledPackage {
      * Return a new empty `InstalledPackage` container.
      */
     #[must_use]
-    pub fn new() -> InstalledPackage {
-        InstalledPackage {
+    pub fn new() -> Self {
+        Self {
             path: PathBuf::new(),
             pkgbase: String::new(),
             pkgname: String::new(),

@@ -576,17 +576,16 @@ impl Plist {
      * Return an empty new [`Plist`].
      */
     #[must_use]
-    pub fn new() -> Plist {
-        let plist: Plist = Default::default();
-        plist
+    pub fn new() -> Self {
+        Self::default()
     }
 
     /**
      * Construct a new [`Plist`] from a stream of bytes representing lines
      * from a package list.
      */
-    pub fn from_bytes(bytes: &[u8]) -> Result<Plist> {
-        let mut plist = Plist::new();
+    pub fn from_bytes(bytes: &[u8]) -> Result<Self> {
+        let mut plist = Self::new();
 
         /*
          * Look through the byte stream, splitting entries on newlines, and

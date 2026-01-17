@@ -275,8 +275,8 @@ impl Metadata {
      * Create a new empty metadata container.
      */
     #[must_use]
-    pub fn new() -> Metadata {
-        Metadata::default()
+    pub fn new() -> Self {
+        Self::default()
     }
 
     /**
