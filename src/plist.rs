@@ -99,6 +99,24 @@
  *      Ok(())
  * }
  * ```
+ *
+ * [`Plist`] implements [`IntoIterator`], allowing direct iteration over entries:
+ *
+ * ```
+ * use pkgsrc::plist::{Plist, PlistEntry, Result};
+ *
+ * fn main() -> Result<()> {
+ *     let plist = Plist::from_bytes(b"@name pkg-1.0\nbin/foo\nbin/bar")?;
+ *
+ *     for entry in &plist {
+ *         if let PlistEntry::File(path) = entry {
+ *             println!("File: {}", path.to_string_lossy());
+ *         }
+ *     }
+ *
+ *     Ok(())
+ * }
+ * ```
  */
 use std::error::Error;
 use std::ffi::{OsStr, OsString};
@@ -1490,6 +1508,36 @@ mod tests {
             files[2].symlink_target,
             Some(OsString::from("libfoo.so.1"))
         );
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_into_iterator() -> Result<()> {
+        let plist = plist!("@name pkg-1.0\nbin/foo\n@pkgdep dep-[0-9]*\nbin/bar")?;
+
+        let entries: Vec<_> = plist.into_iter().collect();
+        assert_eq!(entries.len(), 4);
+        assert!(matches!(entries[0], PlistEntry::Name(_)));
+        assert!(matches!(entries[1], PlistEntry::File(_)));
+        assert!(matches!(entries[2], PlistEntry::PkgDep(_)));
+        assert!(matches!(entries[3], PlistEntry::File(_)));
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_iter_by_ref() -> Result<()> {
+        let plist = plist!("@name pkg-1.0\nbin/foo\nbin/bar")?;
+
+        let file_count = (&plist)
+            .into_iter()
+            .filter(|e| matches!(e, PlistEntry::File(_)))
+            .count();
+        assert_eq!(file_count, 2);
+
+        // plist is still usable after iteration by reference
+        assert_eq!(plist.pkgname(), Some("pkg-1.0"));
 
         Ok(())
     }
