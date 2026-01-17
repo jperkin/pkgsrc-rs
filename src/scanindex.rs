@@ -224,7 +224,7 @@ impl<R: BufRead> Iterator for ScanIndexIter<R> {
 
 fn parse_record(s: &str) -> io::Result<ScanIndex> {
     s.parse()
-        .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, format!("{e}")))
+        .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))
 }
 
 #[cfg(test)]
