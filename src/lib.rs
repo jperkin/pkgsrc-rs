@@ -47,7 +47,7 @@ pub use crate::digest::Digest;
 pub use crate::distinfo::Distinfo;
 pub use crate::metadata::Metadata;
 pub use crate::pattern::{Pattern, PatternError};
-pub use crate::pkgdb::{DBType, PkgDB, PkgDBError};
+pub use crate::pkgdb::{DBType, PkgDB};
 pub use crate::pkgname::PkgName;
 pub use crate::pkgpath::{PkgPath, PkgPathError};
 pub use crate::plist::Plist;

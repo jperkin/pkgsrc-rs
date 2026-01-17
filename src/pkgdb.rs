@@ -45,37 +45,6 @@ use std::fs;
 use std::fs::ReadDir;
 use std::io;
 use std::path::{Path, PathBuf};
-use thiserror::Error;
-
-/**
- * Errors that can occur when working with the package database.
- */
-#[derive(Debug, Error)]
-pub enum PkgDBError {
-    /**
-     * An I/O error occurred.
-     */
-    #[error("I/O error: {0}")]
-    Io(#[from] io::Error),
-
-    /**
-     * The specified path is not a valid package database.
-     */
-    #[error("Invalid package database: {0}")]
-    InvalidDatabase(PathBuf),
-
-    /**
-     * The package name could not be parsed.
-     */
-    #[error("Invalid package name: {0}")]
-    InvalidPackageName(String),
-
-    /**
-     * The package database iterator was not properly initialized.
-     */
-    #[error("Package database not properly initialized")]
-    UninitializedDatabase,
-}
 
 /**
  * Type of pkgdb.  Currently supported formats are `Files` for the legacy
