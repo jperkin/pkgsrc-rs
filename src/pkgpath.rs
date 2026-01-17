@@ -14,7 +14,62 @@
  * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
  */
 
-/*! Package path (category/name) handling. */
+/*!
+ * Package path (category/name) parsing and normalization.
+ *
+ * In pkgsrc, every package resides in a directory structure of the form
+ * `category/package`, where `category` groups related packages (such as
+ * `devel`, `net`, or `www`) and `package` is the specific package name.
+ *
+ * This location is referred to as the `PKGPATH` and is stored as metadata
+ * in binary packages.  Within pkgsrc itself, packages reference each other
+ * using relative paths like `../../category/package` to traverse back to
+ * the pkgsrc root before descending into the target package directory.
+ *
+ * [`PkgPath`] handles both formats:
+ *
+ * - **Short form**: `category/package` (as stored in `PKGPATH` metadata)
+ * - **Full form**: `../../category/package` (as used in Makefiles)
+ *
+ * Either form can be used as input, and both are accessible after parsing.
+ *
+ * # Examples
+ *
+ * ```
+ * use pkgsrc::PkgPath;
+ * use std::ffi::OsStr;
+ *
+ * // Parse from short form
+ * let p = PkgPath::new("pkgtools/pkg_install")?;
+ * assert_eq!(p.as_path(), OsStr::new("pkgtools/pkg_install"));
+ * assert_eq!(p.as_full_path(), OsStr::new("../../pkgtools/pkg_install"));
+ *
+ * // Parse from full form
+ * let p = PkgPath::new("../../devel/gmake")?;
+ * assert_eq!(p.as_path(), OsStr::new("devel/gmake"));
+ * assert_eq!(p.as_full_path(), OsStr::new("../../devel/gmake"));
+ *
+ * // Invalid paths are rejected
+ * assert!(PkgPath::new("../pkg_install").is_err());  // wrong depth
+ * assert!(PkgPath::new("pkg_install").is_err());     // missing category
+ * # Ok::<(), pkgsrc::PkgPathError>(())
+ * ```
+ *
+ * # Display and Conversion
+ *
+ * [`PkgPath`] displays as the short form and implements [`AsRef<Path>`] for
+ * use with filesystem operations.
+ *
+ * ```
+ * use pkgsrc::PkgPath;
+ *
+ * let p = PkgPath::new("../../www/nginx")?;
+ * assert_eq!(format!("{p}"), "www/nginx");
+ * # Ok::<(), pkgsrc::PkgPathError>(())
+ * ```
+ *
+ * [`AsRef<Path>`]: std::path::Path
+ */
 
 use std::borrow::Borrow;
 use std::path::{Component, Path, PathBuf};
