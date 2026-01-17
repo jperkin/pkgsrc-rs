@@ -28,10 +28,9 @@
  * use pkgsrc::metadata::FileRead;
  * use pkgsrc::pkgdb::PkgDB;
  * use std::io;
- * use std::path::Path;
  *
  * fn main() -> io::Result<()> {
- *     let db = PkgDB::open(Path::new("/var/db/pkg"))?;
+ *     let db = PkgDB::open("/var/db/pkg")?;
  *     for result in db {
  *         let pkg = result?;
  *         println!("{}: {}", pkg.pkgname(), pkg.comment()?);
@@ -88,7 +87,8 @@ impl PkgDB {
     /**
      * Open an existing `PkgDB`.
      */
-    pub fn open(path: &Path) -> Result<PkgDB, io::Error> {
+    pub fn open(path: impl AsRef<Path>) -> Result<PkgDB, io::Error> {
+        let path = path.as_ref();
         if path.is_dir() {
             let readdir = fs::read_dir(path)?;
             Ok(PkgDB {

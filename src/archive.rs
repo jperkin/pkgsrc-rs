@@ -169,8 +169,8 @@ impl Compression {
 
     /// Detect compression format from file extension.
     #[must_use]
-    pub fn from_extension(path: &Path) -> Option<Self> {
-        let name = path.file_name()?.to_str()?;
+    pub fn from_extension(path: impl AsRef<Path>) -> Option<Self> {
+        let name = path.as_ref().file_name()?.to_str()?;
         let lower = name.to_lowercase();
 
         if lower.ends_with(".tgz") || lower.ends_with(".tar.gz") {
@@ -984,7 +984,7 @@ impl BinaryPackage {
                     || name.ends_with(".tar") =>
                 {
                     // Detect compression from inner tarball name
-                    compression = Compression::from_extension(Path::new(&name))
+                    compression = Compression::from_extension(&name)
                         .unwrap_or(Compression::Gzip);
 
                     let decompressed: Box<dyn Read> = match compression {
@@ -1825,23 +1825,23 @@ mod tests {
     #[test]
     fn test_compression_from_extension() {
         assert_eq!(
-            Compression::from_extension(Path::new("foo.tgz")),
+            Compression::from_extension("foo.tgz"),
             Some(Compression::Gzip)
         );
         assert_eq!(
-            Compression::from_extension(Path::new("foo.tar.gz")),
+            Compression::from_extension("foo.tar.gz"),
             Some(Compression::Gzip)
         );
         assert_eq!(
-            Compression::from_extension(Path::new("foo.tzst")),
+            Compression::from_extension("foo.tzst"),
             Some(Compression::Zstd)
         );
         assert_eq!(
-            Compression::from_extension(Path::new("foo.tar.zst")),
+            Compression::from_extension("foo.tar.zst"),
             Some(Compression::Zstd)
         );
         assert_eq!(
-            Compression::from_extension(Path::new("foo.tar")),
+            Compression::from_extension("foo.tar"),
             Some(Compression::None)
         );
     }
