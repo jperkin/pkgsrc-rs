@@ -14,7 +14,64 @@
  * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
  */
 
-/*! Package name parsing into base, version, and revision components. */
+/*!
+ * Package name parsing into base, version, and revision components.
+ *
+ * In pkgsrc, every package has a `PKGNAME` that uniquely identifies a specific
+ * version of a package.
+ *
+ * ```text
+ * PKGNAME = PKGBASE-PKGVERSION
+ * PKGVERSION = VERSION[nbPKGREVISION]
+ * ```
+ *
+ * For example, `mktool-1.4.2nb3` breaks down as:
+ *
+ * - **PKGBASE**: `mktool` - the package name
+ * - **PKGVERSION**: `1.4.2nb3` - the full version string
+ * - **VERSION**: `1.4.2` - the upstream version
+ * - **PKGREVISION**: `3` - the pkgsrc-specific revision
+ *
+ * The `PKGBASE` and `PKGVERSION` are separated by the last hyphen (`-`) in the
+ * string. The `PKGREVISION` suffix (`nb` followed by a number) indicates
+ * pkgsrc-specific changes that do not correspond to an upstream release.
+ *
+ * # Examples
+ *
+ * ```
+ * use pkgsrc::PkgName;
+ *
+ * let pkg = PkgName::new("nginx-1.25.3nb2");
+ * assert_eq!(pkg.pkgbase(), "nginx");
+ * assert_eq!(pkg.pkgversion(), "1.25.3nb2");
+ * assert_eq!(pkg.pkgrevision(), Some(2));
+ *
+ * // Package with hyphenated name
+ * let pkg = PkgName::new("p5-libwww-6.77");
+ * assert_eq!(pkg.pkgbase(), "p5-libwww");
+ * assert_eq!(pkg.pkgversion(), "6.77");
+ * assert_eq!(pkg.pkgrevision(), None);
+ *
+ * // Package without revision
+ * let pkg = PkgName::new("curl-8.5.0");
+ * assert_eq!(pkg.pkgbase(), "curl");
+ * assert_eq!(pkg.pkgversion(), "8.5.0");
+ * assert_eq!(pkg.pkgrevision(), None);
+ * ```
+ *
+ * # PKGREVISION
+ *
+ * The `PKGREVISION` is incremented by pkgsrc maintainers when:
+ *
+ * - A dependency is updated and the package needs rebuilding
+ * - pkgsrc-specific patches are modified
+ * - Build or packaging changes are made
+ *
+ * For version comparison, `1.0nb1` > `1.0` > `1.0rc1`. See the [`dewey`] module
+ * for details on version comparison rules.
+ *
+ * [`dewey`]: crate::dewey
+ */
 
 use std::borrow::Borrow;
 use std::hash::{Hash, Hasher};

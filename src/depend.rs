@@ -14,7 +14,53 @@
  * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
  */
 
-/*! Package dependency parsing and matching. */
+/*!
+ * Package dependency parsing and matching.
+ *
+ * In pkgsrc, packages declare their dependencies using `DEPENDS` and related
+ * variables in their `Makefile`. A dependency entry has the format
+ * `pattern:pkgpath`, where:
+ *
+ * - **pattern** is a [`Pattern`] specifying which package versions satisfy the
+ *   dependency (e.g., `mktool-[0-9]*` or `openssl>=1.1<3.0`)
+ * - **pkgpath** is a [`PkgPath`] indicating where to find the package in the
+ *   pkgsrc tree (e.g., `../../pkgtools/mktool`)
+ *
+ * # Dependency Types
+ *
+ * pkgsrc supports several dependency types, represented by [`DependType`]:
+ *
+ * - **Full** (`DEPENDS`): Runtime dependencies required by the installed package
+ * - **Build** (`BUILD_DEPENDS`): Only needed during compilation
+ * - **Bootstrap**: Infrastructure dependencies (e.g., digest tools)
+ * - **Tool** (`TOOL_DEPENDS`, `USE_TOOLS`): Host tools required for building
+ * - **Test** (`TEST_DEPENDS`): Only needed for running the test suite
+ *
+ * # Example
+ *
+ * ```
+ * use pkgsrc::{Depend, Pattern, PkgPath};
+ *
+ * // Parse a dependency from a Makefile entry
+ * let dep = Depend::new("mktool-[0-9]*:../../pkgtools/mktool")?;
+ *
+ * // Access the pattern to check if packages match
+ * assert!(dep.pattern().matches("mktool-1.4.2"));
+ * assert!(!dep.pattern().matches("otherpkg-1.0"));
+ *
+ * // Access the pkgpath to find the package in pkgsrc
+ * assert_eq!(dep.pkgpath().as_path().to_str(), Some("pkgtools/mktool"));
+ *
+ * // Dependencies with version constraints
+ * let dep = Depend::new("openssl>=1.1<3.0:../../security/openssl")?;
+ * assert!(dep.pattern().matches("openssl-1.1.1w"));
+ * assert!(!dep.pattern().matches("openssl-3.0.0"));
+ * # Ok::<(), pkgsrc::DependError>(())
+ * ```
+ *
+ * [`Pattern`]: crate::Pattern
+ * [`PkgPath`]: crate::PkgPath
+ */
 
 use crate::{Pattern, PatternError, PkgPath, PkgPathError};
 use std::fmt;

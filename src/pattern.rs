@@ -14,7 +14,94 @@
  * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
  */
 
-/*! Package pattern matching with globs and version constraints. */
+/*!
+ * Package pattern matching with globs and version constraints.
+ *
+ * Pattern matching is fundamental to pkgsrc's dependency system. When a package
+ * declares a dependency like `DEPENDS+=mktool-[0-9]*:../../pkgtools/mktool`, the
+ * pattern `mktool-[0-9]*` specifies which versions of `mktool` satisfy the
+ * dependency.
+ *
+ * This module supports all pattern types used across pkgsrc:
+ *
+ * # Pattern Types
+ *
+ * ## Glob Patterns
+ *
+ * The most common pattern type, using standard UNIX glob syntax:
+ *
+ * - `*` matches any sequence of characters
+ * - `?` matches any single character
+ * - `[...]` matches any character in the set
+ *
+ * ```
+ * use pkgsrc::Pattern;
+ *
+ * // Match any version of mktool
+ * let p = Pattern::new("mktool-[0-9]*")?;
+ * assert!(p.matches("mktool-1.4.2"));
+ * assert!(p.matches("mktool-2.0"));
+ * assert!(!p.matches("mktool-abc"));  // doesn't start with digit
+ * # Ok::<(), pkgsrc::PatternError>(())
+ * ```
+ *
+ * ## Dewey Patterns
+ *
+ * Version range patterns using comparison operators (`>`, `>=`, `<`, `<=`):
+ *
+ * ```
+ * use pkgsrc::Pattern;
+ *
+ * // Require librsvg 2.12.x through 2.40.x
+ * let p = Pattern::new("librsvg>=2.12<2.41")?;
+ * assert!(!p.matches("librsvg-2.11"));
+ * assert!(p.matches("librsvg-2.40.21"));
+ * assert!(!p.matches("librsvg-2.41"));
+ * # Ok::<(), pkgsrc::PatternError>(())
+ * ```
+ *
+ * ## Alternate Patterns
+ *
+ * csh-style brace expansion for matching multiple package names:
+ *
+ * ```
+ * use pkgsrc::Pattern;
+ *
+ * // Accept any MySQL-compatible database
+ * let p = Pattern::new("{mysql,mariadb,percona}-client-[0-9]*")?;
+ * assert!(p.matches("mysql-client-8.0.36"));
+ * assert!(p.matches("mariadb-client-11.4.3"));
+ * assert!(!p.matches("postgresql-client-16.4"));
+ * # Ok::<(), pkgsrc::PatternError>(())
+ * ```
+ *
+ * ## Simple Patterns
+ *
+ * Exact string matches (rarely used):
+ *
+ * ```
+ * use pkgsrc::Pattern;
+ *
+ * let p = Pattern::new("specific-pkg-1.0")?;
+ * assert!(p.matches("specific-pkg-1.0"));
+ * assert!(!p.matches("specific-pkg-1.1"));
+ * # Ok::<(), pkgsrc::PatternError>(())
+ * ```
+ *
+ * # Best Match Selection
+ *
+ * When multiple packages match a pattern, use [`Pattern::best_match`] to select
+ * the highest version:
+ *
+ * ```
+ * use pkgsrc::Pattern;
+ *
+ * let p = Pattern::new("pkg-[0-9]*")?;
+ * assert_eq!(p.best_match("pkg-1.0", "pkg-2.0")?, Some("pkg-2.0"));
+ * assert_eq!(p.best_match("pkg-2.0", "other-1.0")?, Some("pkg-2.0"));
+ * # Ok::<(), pkgsrc::PatternError>(())
+ * ```
+ */
 
 use crate::PkgName;
 use crate::dewey::{Dewey, DeweyError, DeweyOp, DeweyVersion, dewey_cmp};

@@ -14,7 +14,54 @@
  * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
  */
 
-/*! Parse `make pbulk-index` output into package records. */
+/*!
+ * Parse `make pbulk-index` output into package records.
+ *
+ * The `pbulk-index` make target is part of pkgsrc's infrastructure. It outputs
+ * machine-readable information about a package that is used to plan and execute
+ * bulk builds across the entire pkgsrc tree.
+ *
+ * When you run `make pbulk-index` in a package directory, it outputs a series
+ * of `KEY=VALUE` pairs containing:
+ *
+ * - Package name and location in the pkgsrc tree
+ * - All dependencies required to build the package
+ * - Skip/fail reasons if the package cannot be built
+ * - License and distribution restrictions
+ * - Build metadata (categories, maintainer, etc.)
+ *
+ * # Output Format
+ *
+ * The output consists of multiple records separated by blank lines. Each record
+ * contains one package (a single `PKGPATH` may produce multiple records if
+ * `MULTI_VERSION` is used):
+ *
+ * # Example
+ *
+ * ```no_run
+ * use pkgsrc::ScanIndex;
+ * use std::io::BufReader;
+ * use std::process::{Command, Stdio};
+ *
+ * // Run pbulk-index on a package
+ * let output = Command::new("make")
+ *     .current_dir("/usr/pkgsrc/www/nginx")
+ *     .arg("pbulk-index")
+ *     .output()
+ *     .expect("failed to execute make");
+ *
+ * // Parse the output
+ * let reader = BufReader::new(&output.stdout[..]);
+ * for result in ScanIndex::from_reader(reader) {
+ *     let record = result?;
+ *     println!("Package: {}", record.pkgname);
+ *     if let Some(deps) = &record.all_depends {
+ *         println!("  Dependencies: {}", deps.len());
+ *     }
+ * }
+ * # Ok::<(), std::io::Error>(())
+ * ```
+ */
 
 use crate::kv::Kv;
 use crate::{Depend, PkgName, PkgPath};

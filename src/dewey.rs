@@ -14,7 +14,75 @@
  * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
  */
 
-/*! Dewey decimal version comparison. */
+/*!
+ * Dewey decimal version comparison for pkgsrc packages.
+ *
+ * Despite the name, pkgsrc's "dewey" version comparison has nothing to do with
+ * the [Dewey Decimal Classification] system used in libraries. It is simply a
+ * version comparison algorithm used to match packages against version
+ * constraints.
+ *
+ * Dewey patterns are commonly used in pkgsrc `DEPENDS` to specify acceptable
+ * version ranges. For example, a package might require `openssl>=1.1<3.0` to
+ * indicate compatibility with OpenSSL 1.1.x through 2.x but not 3.x.
+ *
+ * # Version Comparison Rules
+ *
+ * Version strings are parsed into numeric components with special handling for
+ * common release modifiers:
+ *
+ * | Modifier(s)       | Numeric Weight |
+ * |-------------------|----------------|
+ * | `alpha`           | `-3`           |
+ * | `beta`            | `-2`           |
+ * | `pre`, `rc`       | `-1`           |
+ * | `pl`, `_`, `.`    | `0`            |
+ * | empty value       | `0`            |
+ *
+ * This means that `1.0alpha` < `1.0beta` < `1.0rc1` < `1.0` < `1.0pl1` < `1.1`.
+ *
+ * The `nb` suffix indicates a pkgsrc-specific revision (e.g., `1.0nb2` is the
+ * second pkgsrc revision of version 1.0) and is compared as a final tiebreaker.
+ *
+ * # Supported Operators
+ *
+ * - `>` - Greater than
+ * - `>=` - Greater than or equal
+ * - `<` - Less than
+ * - `<=` - Less than or equal
+ *
+ * Up to two operators can be combined to specify a range, with the greater-than
+ * operator coming first (e.g., `>=1.0<2.0`).
+ *
+ * # Example
+ *
+ * ```
+ * use pkgsrc::Dewey;
+ *
+ * // Require OpenSSL 1.1.x or later, but before 3.0
+ * let m = Dewey::new("openssl>=1.1.0<3.0")?;
+ * assert!(!m.matches("openssl-1.0.2u"));   // too old
+ * assert!(m.matches("openssl-1.1.1w"));    // OK
+ * assert!(m.matches("openssl-2.0.0"));     // OK (hypothetical)
+ * assert!(!m.matches("openssl-3.0.0"));    // too new
+ *
+ * // Pre-release versions are considered older than the release
+ * let m = Dewey::new("pkg>=1.0")?;
+ * assert!(!m.matches("pkg-1.0rc1"));  // 1.0rc1 < 1.0
+ * assert!(m.matches("pkg-1.0"));      // exactly 1.0
+ * assert!(m.matches("pkg-1.0nb1"));   // 1.0 with pkgsrc revision
+ * # Ok::<(), pkgsrc::DeweyError>(())
+ * ```
+ *
+ * # Note
+ *
+ * Most users should use [`Pattern`] instead of [`Dewey`] directly. [`Pattern`]
+ * automatically handles dewey patterns along with glob and alternate patterns,
+ * providing a unified interface for all pkgsrc pattern matching.
+ *
+ * [Dewey Decimal Classification]: https://en.wikipedia.org/wiki/Dewey_Decimal_Classification
+ * [`Pattern`]: crate::Pattern
+ */
 
 use std::cmp::Ordering;
 use thiserror::Error;
