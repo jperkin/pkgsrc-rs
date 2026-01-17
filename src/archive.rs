@@ -53,7 +53,7 @@
  *
  * // Convert to summary for repository management
  * let summary = pkg.to_summary()?;
- * # Ok::<(), pkgsrc::archive::Error>(())
+ * # Ok::<(), pkgsrc::archive::ArchiveError>(())
  * ```
  *
  * ## Installing a package (iterating entries)
@@ -70,7 +70,7 @@
  *
  * // Extract files (re-reads archive)
  * pkg.extract_to("/usr/pkg")?;
- * # Ok::<(), pkgsrc::archive::Error>(())
+ * # Ok::<(), pkgsrc::archive::ArchiveError>(())
  * ```
  *
  * ## Building a new package
@@ -83,7 +83,7 @@
  * builder.append_metadata_file("+COMMENT", b"A test package")?;
  * builder.append_file("bin/hello", b"#!/bin/sh\necho hello", 0o755)?;
  * builder.finish()?;
- * # Ok::<(), pkgsrc::archive::Error>(())
+ * # Ok::<(), pkgsrc::archive::ArchiveError>(())
  * ```
  *
  * ## Signing an existing package
@@ -94,7 +94,7 @@
  * let pkg = BinaryPackage::open("package-1.0.tgz")?;
  * let signature = b"GPG SIGNATURE DATA";
  * pkg.sign(signature)?.write_to("package-1.0-signed.tgz")?;
- * # Ok::<(), pkgsrc::archive::Error>(())
+ * # Ok::<(), pkgsrc::archive::ArchiveError>(())
  * ```
  */
 
@@ -136,7 +136,7 @@ const GZIP_MAGIC: [u8; 2] = [0x1f, 0x8b];
 const ZSTD_MAGIC: [u8; 4] = [0x28, 0xb5, 0x2f, 0xfd];
 
 /// Result type for archive operations.
-pub type Result<T> = std::result::Result<T, Error>;
+pub type Result<T> = std::result::Result<T, ArchiveError>;
 
 // ============================================================================
 // Compression
@@ -270,13 +270,13 @@ impl fmt::Display for PkgHashAlgorithm {
 }
 
 impl std::str::FromStr for PkgHashAlgorithm {
-    type Err = Error;
+    type Err = ArchiveError;
 
     fn from_str(s: &str) -> std::result::Result<Self, Self::Err> {
         match s.to_uppercase().as_str() {
             "SHA512" => Ok(Self::Sha512),
             "SHA256" => Ok(Self::Sha256),
-            _ => Err(Error::UnsupportedAlgorithm(s.to_string())),
+            _ => Err(ArchiveError::UnsupportedAlgorithm(s.to_string())),
         }
     }
 }
@@ -288,7 +288,7 @@ impl std::str::FromStr for PkgHashAlgorithm {
 /// Error type for archive operations.
 #[derive(Debug, thiserror::Error)]
 #[non_exhaustive]
-pub enum Error {
+pub enum ArchiveError {
     /// I/O error.
     #[error("I/O error: {0}")]
     Io(#[from] io::Error),
@@ -446,7 +446,7 @@ impl PkgHash {
         let lines: Vec<&str> = content.lines().collect();
 
         if lines.is_empty() || lines[0] != "pkgsrc signature" {
-            return Err(Error::InvalidPkgHash(
+            return Err(ArchiveError::InvalidPkgHash(
                 "missing 'pkgsrc signature' header".into(),
             ));
         }
@@ -462,7 +462,7 @@ impl PkgHash {
                 match key {
                     "version" => {
                         pkg_hash.version = value.parse().map_err(|_| {
-                            Error::InvalidPkgHash(format!(
+                            ArchiveError::InvalidPkgHash(format!(
                                 "invalid version: {}",
                                 value
                             ))
@@ -476,7 +476,7 @@ impl PkgHash {
                     }
                     "block size" => {
                         pkg_hash.block_size = value.parse().map_err(|_| {
-                            Error::InvalidPkgHash(format!(
+                            ArchiveError::InvalidPkgHash(format!(
                                 "invalid block size: {}",
                                 value
                             ))
@@ -484,7 +484,7 @@ impl PkgHash {
                     }
                     "file size" => {
                         pkg_hash.file_size = value.parse().map_err(|_| {
-                            Error::InvalidPkgHash(format!(
+                            ArchiveError::InvalidPkgHash(format!(
                                 "invalid file size: {}",
                                 value
                             ))
@@ -492,7 +492,7 @@ impl PkgHash {
                         header_complete = true;
                     }
                     _ => {
-                        return Err(Error::InvalidPkgHash(format!(
+                        return Err(ArchiveError::InvalidPkgHash(format!(
                             "unknown header field: {}",
                             key
                         )));
@@ -514,7 +514,7 @@ impl PkgHash {
         }
 
         if pkg_hash.pkgname.is_empty() {
-            return Err(Error::InvalidPkgHash("missing pkgname".into()));
+            return Err(ArchiveError::InvalidPkgHash("missing pkgname".into()));
         }
 
         Ok(pkg_hash)
@@ -600,14 +600,14 @@ impl PkgHash {
             total_size += bytes_read as u64;
 
             if hash_idx >= self.hashes.len() {
-                return Err(Error::HashMismatch(
+                return Err(ArchiveError::HashMismatch(
                     "more data than expected".into(),
                 ));
             }
 
             let computed = self.algorithm.hash_hex(&buffer[..bytes_read]);
             if computed != self.hashes[hash_idx] {
-                return Err(Error::HashMismatch(format!(
+                return Err(ArchiveError::HashMismatch(format!(
                     "block {} hash mismatch",
                     hash_idx
                 )));
@@ -617,14 +617,14 @@ impl PkgHash {
         }
 
         if total_size != self.file_size {
-            return Err(Error::HashMismatch(format!(
+            return Err(ArchiveError::HashMismatch(format!(
                 "file size mismatch: expected {}, got {}",
                 self.file_size, total_size
             )));
         }
 
         if hash_idx != self.hashes.len() {
-            return Err(Error::HashMismatch(
+            return Err(ArchiveError::HashMismatch(
                 "fewer blocks than expected".into(),
             ));
         }
@@ -705,7 +705,7 @@ impl<R: Read> Read for Decoder<R> {
 ///     let entry = entry?;
 ///     println!("{}", entry.path()?.display());
 /// }
-/// # Ok::<(), pkgsrc::archive::Error>(())
+/// # Ok::<(), pkgsrc::archive::ArchiveError>(())
 /// ```
 pub struct Archive<R: Read> {
     inner: TarArchive<Decoder<R>>,
@@ -814,7 +814,7 @@ pub struct SummaryOptions {
 ///
 /// // Extract files (re-reads archive)
 /// pkg.extract_to("/usr/pkg")?;
-/// # Ok::<(), pkgsrc::archive::Error>(())
+/// # Ok::<(), pkgsrc::archive::ArchiveError>(())
 /// ```
 #[derive(Debug)]
 pub struct BinaryPackage {
@@ -909,7 +909,7 @@ impl BinaryPackage {
             let mut content = String::with_capacity(entry_size);
             entry.read_to_string(&mut content)?;
             metadata.read_metadata(entry_type, &content).map_err(|e| {
-                Error::InvalidMetadata(format!(
+                ArchiveError::InvalidMetadata(format!(
                     "{}: {}",
                     entry_path.display(),
                     e
@@ -931,7 +931,7 @@ impl BinaryPackage {
         }
 
         metadata.validate().map_err(|e| {
-            Error::MissingMetadata(format!("incomplete package: {}", e))
+            ArchiveError::MissingMetadata(format!("incomplete package: {}", e))
         })?;
 
         Ok(Self {
@@ -1020,7 +1020,7 @@ impl BinaryPackage {
                         tar_entry.read_to_string(&mut content)?;
                         metadata.read_metadata(entry_type, &content).map_err(
                             |e| {
-                                Error::InvalidMetadata(format!(
+                                ArchiveError::InvalidMetadata(format!(
                                     "{}: {}",
                                     entry_path.display(),
                                     e
@@ -1052,7 +1052,7 @@ impl BinaryPackage {
             pkg_hash_content.map(|c| PkgHash::parse(&c)).transpose()?;
 
         metadata.validate().map_err(|e| {
-            Error::MissingMetadata(format!("incomplete package: {}", e))
+            ArchiveError::MissingMetadata(format!("incomplete package: {}", e))
         })?;
 
         Ok(Self {
@@ -1191,7 +1191,7 @@ impl BinaryPackage {
     /// for file in &extracted {
     ///     println!("Extracted: {}", file.path.display());
     /// }
-    /// # Ok::<(), pkgsrc::archive::Error>(())
+    /// # Ok::<(), pkgsrc::archive::ArchiveError>(())
     /// ```
     #[cfg(unix)]
     pub fn extract_with_plist(
@@ -1338,7 +1338,7 @@ impl BinaryPackage {
     pub fn sign(&self, signature: &[u8]) -> Result<SignedArchive> {
         let pkgname = self
             .pkgname()
-            .ok_or_else(|| Error::MissingMetadata("pkgname".into()))?
+            .ok_or_else(|| ArchiveError::MissingMetadata("pkgname".into()))?
             .to_string();
 
         // Read the tarball data
@@ -1379,7 +1379,7 @@ impl BinaryPackage {
     /// let pkg = BinaryPackage::open("package-1.0.tgz")?;
     /// let opts = SummaryOptions { compute_file_cksum: true };
     /// let summary = pkg.to_summary_with_opts(&opts)?;
-    /// # Ok::<(), pkgsrc::archive::Error>(())
+    /// # Ok::<(), pkgsrc::archive::ArchiveError>(())
     /// ```
     pub fn to_summary_with_opts(
         &self,
@@ -1391,7 +1391,7 @@ impl BinaryPackage {
             .plist
             .pkgname()
             .map(crate::PkgName::new)
-            .ok_or_else(|| Error::MissingMetadata("PKGNAME".into()))?;
+            .ok_or_else(|| ArchiveError::MissingMetadata("PKGNAME".into()))?;
 
         // Helper to convert Vec<&str> to Option<Vec<String>>, avoiding allocation when empty
         fn to_opt_vec(v: Vec<&str>) -> Option<Vec<String>> {
@@ -1530,7 +1530,7 @@ impl FileRead for BinaryPackage {
 }
 
 impl TryFrom<&BinaryPackage> for Summary {
-    type Error = Error;
+    type Error = ArchiveError;
 
     fn try_from(pkg: &BinaryPackage) -> Result<Self> {
         pkg.to_summary()
@@ -1594,7 +1594,7 @@ impl<W: Write> Encoder<W> {
 /// builder.append_file("bin/hello", b"#!/bin/sh\necho hello", 0o755)?;
 ///
 /// builder.finish()?;
-/// # Ok::<(), pkgsrc::archive::Error>(())
+/// # Ok::<(), pkgsrc::archive::ArchiveError>(())
 /// ```
 pub struct Builder<W: Write> {
     inner: TarBuilder<Encoder<W>>,
@@ -1642,7 +1642,7 @@ impl<W: Write> Builder<W> {
                 zstd::DEFAULT_COMPRESSION_LEVEL,
             )?),
             Compression::None => {
-                return Err(Error::UnsupportedCompression(
+                return Err(ArchiveError::UnsupportedCompression(
                     "uncompressed archives not supported for building".into(),
                 ));
             }

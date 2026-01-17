@@ -175,7 +175,7 @@ impl AsRef<Path> for PkgPath {
 
 impl crate::kv::FromKv for PkgPath {
     fn from_kv(value: &str, span: crate::kv::Span) -> crate::kv::Result<Self> {
-        Self::new(value).map_err(|e| crate::kv::Error::Parse {
+        Self::new(value).map_err(|e| crate::kv::KvError::Parse {
             message: e.to_string(),
             span,
         })

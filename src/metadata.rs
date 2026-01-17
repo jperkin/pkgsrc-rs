@@ -26,12 +26,12 @@
  *
  * ```no_run
  * use flate2::read::GzDecoder;
- * use pkgsrc::metadata::{Entry, Error, Metadata};
+ * use pkgsrc::metadata::{Entry, MetadataError, Metadata};
  * use std::fs::File;
  * use std::io::Read;
  * use tar::Archive;
  *
- * fn main() -> Result<(), Error> {
+ * fn main() -> Result<(), MetadataError> {
  *     let pkg = File::open("package-1.0.tgz")?;
  *     let mut archive = Archive::new(GzDecoder::new(pkg));
  *     let mut metadata = Metadata::new();
@@ -74,7 +74,7 @@ use thiserror::Error;
  * A metadata parsing or validation error.
  */
 #[derive(Debug, Error)]
-pub enum Error {
+pub enum MetadataError {
     /**
      * A required metadata field is missing or empty.
      */
@@ -201,14 +201,14 @@ pub struct Metadata {
  * # Example
  *
  * ```
- * use pkgsrc::metadata::{Entry, Error};
+ * use pkgsrc::metadata::{Entry, MetadataError};
  * use std::str::FromStr;
  *
  * let e = Entry::Desc;
  * assert_eq!(e.to_filename(), "+DESC");
  * assert_eq!(Entry::from_str("+DESC")?, e);
  * assert!(Entry::from_str("+BADFILE").is_err());
- * # Ok::<(), Error>(())
+ * # Ok::<(), MetadataError>(())
  * ```
  */
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
@@ -398,14 +398,14 @@ impl Metadata {
      *
      * # Errors
      *
-     * Returns [`Error::InvalidValue`] if `+SIZE_ALL` or `+SIZE_PKG`
+     * Returns [`MetadataError::InvalidValue`] if `+SIZE_ALL` or `+SIZE_PKG`
      * contain invalid integer values.
      */
     pub fn read_metadata(
         &mut self,
         entry: Entry,
         value: &str,
-    ) -> Result<(), Error> {
+    ) -> Result<(), MetadataError> {
         let make_string = || value.trim().to_string();
         let make_vec = || {
             value
@@ -433,7 +433,7 @@ impl Metadata {
             Entry::SizeAll => {
                 self.size_all =
                     Some(value.trim().parse::<u64>().map_err(|e| {
-                        Error::InvalidValue {
+                        MetadataError::InvalidValue {
                             field: "+SIZE_ALL",
                             source: e,
                         }
@@ -442,7 +442,7 @@ impl Metadata {
             Entry::SizePkg => {
                 self.size_pkg =
                     Some(value.trim().parse::<u64>().map_err(|e| {
-                        Error::InvalidValue {
+                        MetadataError::InvalidValue {
                             field: "+SIZE_PKG",
                             source: e,
                         }
@@ -460,18 +460,18 @@ impl Metadata {
      *
      * # Errors
      *
-     * Returns [`Error::MissingRequired`] if any required field is
+     * Returns [`MetadataError::MissingRequired`] if any required field is
      * missing or empty.
      */
-    pub fn validate(&self) -> Result<(), Error> {
+    pub fn validate(&self) -> Result<(), MetadataError> {
         if self.comment.is_empty() {
-            return Err(Error::MissingRequired("+COMMENT"));
+            return Err(MetadataError::MissingRequired("+COMMENT"));
         }
         if self.contents.is_empty() {
-            return Err(Error::MissingRequired("+CONTENTS"));
+            return Err(MetadataError::MissingRequired("+CONTENTS"));
         }
         if self.desc.is_empty() {
-            return Err(Error::MissingRequired("+DESC"));
+            return Err(MetadataError::MissingRequired("+DESC"));
         }
         Ok(())
     }
@@ -494,10 +494,11 @@ impl fmt::Display for Entry {
 }
 
 impl FromStr for Entry {
-    type Err = Error;
+    type Err = MetadataError;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        Self::from_filename(s).ok_or_else(|| Error::UnknownEntry(s.to_string()))
+        Self::from_filename(s)
+            .ok_or_else(|| MetadataError::UnknownEntry(s.to_string()))
     }
 }
 
@@ -557,7 +558,7 @@ impl Entry {
 mod tests {
     use super::*;
 
-    type Result<T> = std::result::Result<T, Error>;
+    type Result<T> = std::result::Result<T, MetadataError>;
 
     #[test]
     fn test_metadata_new() {
@@ -599,7 +600,7 @@ mod tests {
         m.read_metadata(Entry::BuildInfo, "KEY1=val1\nKEY2=val2\n")?;
         let info = m
             .build_info()
-            .ok_or(Error::MissingRequired("+BUILD_INFO"))?;
+            .ok_or(MetadataError::MissingRequired("+BUILD_INFO"))?;
         assert_eq!(info.len(), 2);
         assert_eq!(info[0], "KEY1=val1");
         assert_eq!(info[1], "KEY2=val2");
@@ -620,14 +621,14 @@ mod tests {
     fn test_read_metadata_invalid_size() {
         let mut m = Metadata::new();
         let result = m.read_metadata(Entry::SizeAll, "not a number");
-        assert!(matches!(result, Err(Error::InvalidValue { .. })));
+        assert!(matches!(result, Err(MetadataError::InvalidValue { .. })));
     }
 
     #[test]
     fn test_read_metadata_negative_size() {
         let mut m = Metadata::new();
         let result = m.read_metadata(Entry::SizeAll, "-100");
-        assert!(matches!(result, Err(Error::InvalidValue { .. })));
+        assert!(matches!(result, Err(MetadataError::InvalidValue { .. })));
     }
 
     #[test]
@@ -642,12 +643,13 @@ mod tests {
         assert_eq!(m.deinstall(), Some("#!/bin/sh\nexit 0"));
         assert_eq!(m.install(), Some("#!/bin/sh\nexit 0"));
         assert_eq!(m.display(), Some("Important message"));
-        let preserve =
-            m.preserve().ok_or(Error::MissingRequired("+PRESERVE"))?;
+        let preserve = m
+            .preserve()
+            .ok_or(MetadataError::MissingRequired("+PRESERVE"))?;
         assert_eq!(preserve, &["yes"]);
         let required_by = m
             .required_by()
-            .ok_or(Error::MissingRequired("+REQUIRED_BY"))?;
+            .ok_or(MetadataError::MissingRequired("+REQUIRED_BY"))?;
         assert_eq!(required_by, &["pkg1", "pkg2"]);
         Ok(())
     }
@@ -657,7 +659,7 @@ mod tests {
         let m = Metadata::new();
         assert!(matches!(
             m.validate(),
-            Err(Error::MissingRequired("+COMMENT"))
+            Err(MetadataError::MissingRequired("+COMMENT"))
         ));
     }
 
@@ -667,7 +669,7 @@ mod tests {
         m.read_metadata(Entry::Comment, "Test")?;
         assert!(matches!(
             m.validate(),
-            Err(Error::MissingRequired("+CONTENTS"))
+            Err(MetadataError::MissingRequired("+CONTENTS"))
         ));
         Ok(())
     }
@@ -677,7 +679,10 @@ mod tests {
         let mut m = Metadata::new();
         m.read_metadata(Entry::Comment, "Test")?;
         m.read_metadata(Entry::Contents, "bin/foo")?;
-        assert!(matches!(m.validate(), Err(Error::MissingRequired("+DESC"))));
+        assert!(matches!(
+            m.validate(),
+            Err(MetadataError::MissingRequired("+DESC"))
+        ));
         Ok(())
     }
 
@@ -719,7 +724,7 @@ mod tests {
         assert_eq!("+SIZE_PKG".parse::<Entry>()?, Entry::SizePkg);
 
         let result = "+INVALID".parse::<Entry>();
-        assert!(matches!(result, Err(Error::UnknownEntry(_))));
+        assert!(matches!(result, Err(MetadataError::UnknownEntry(_))));
         Ok(())
     }
 
@@ -770,7 +775,7 @@ mod tests {
         for entry in entries {
             let filename = entry.to_filename();
             let parsed = Entry::from_filename(filename)
-                .ok_or(Error::UnknownEntry(filename.to_string()))?;
+                .ok_or(MetadataError::UnknownEntry(filename.to_string()))?;
             assert_eq!(entry, parsed);
         }
         Ok(())
@@ -778,10 +783,10 @@ mod tests {
 
     #[test]
     fn test_error_display() {
-        let err = Error::MissingRequired("+COMMENT");
+        let err = MetadataError::MissingRequired("+COMMENT");
         assert_eq!(err.to_string(), "Missing or empty +COMMENT");
 
-        let err = Error::UnknownEntry("+BADFILE".to_string());
+        let err = MetadataError::UnknownEntry("+BADFILE".to_string());
         assert_eq!(err.to_string(), "Unknown metadata entry: +BADFILE");
     }
 
@@ -815,39 +820,47 @@ mod tests {
 
         let build_info = m
             .build_info()
-            .ok_or(Error::MissingRequired("+BUILD_INFO"))?;
+            .ok_or(MetadataError::MissingRequired("+BUILD_INFO"))?;
         assert_eq!(build_info, &["a"]);
         let build_version = m
             .build_version()
-            .ok_or(Error::MissingRequired("+BUILD_VERSION"))?;
+            .ok_or(MetadataError::MissingRequired("+BUILD_VERSION"))?;
         assert_eq!(build_version, &["b"]);
-        let deinstall =
-            m.deinstall().ok_or(Error::MissingRequired("+DEINSTALL"))?;
+        let deinstall = m
+            .deinstall()
+            .ok_or(MetadataError::MissingRequired("+DEINSTALL"))?;
         assert_eq!(deinstall, "c");
-        let display = m.display().ok_or(Error::MissingRequired("+DISPLAY"))?;
+        let display = m
+            .display()
+            .ok_or(MetadataError::MissingRequired("+DISPLAY"))?;
         assert_eq!(display, "d");
-        let install = m.install().ok_or(Error::MissingRequired("+INSTALL"))?;
+        let install = m
+            .install()
+            .ok_or(MetadataError::MissingRequired("+INSTALL"))?;
         assert_eq!(install, "e");
         let installed_info = m
             .installed_info()
-            .ok_or(Error::MissingRequired("+INSTALLED_INFO"))?;
+            .ok_or(MetadataError::MissingRequired("+INSTALLED_INFO"))?;
         assert_eq!(installed_info, &["f"]);
         let mtree_dirs = m
             .mtree_dirs()
-            .ok_or(Error::MissingRequired("+MTREE_DIRS"))?;
+            .ok_or(MetadataError::MissingRequired("+MTREE_DIRS"))?;
         assert_eq!(mtree_dirs, &["g"]);
-        let preserve =
-            m.preserve().ok_or(Error::MissingRequired("+PRESERVE"))?;
+        let preserve = m
+            .preserve()
+            .ok_or(MetadataError::MissingRequired("+PRESERVE"))?;
         assert_eq!(preserve, &["h"]);
         let required_by = m
             .required_by()
-            .ok_or(Error::MissingRequired("+REQUIRED_BY"))?;
+            .ok_or(MetadataError::MissingRequired("+REQUIRED_BY"))?;
         assert_eq!(required_by, &["i"]);
-        let size_all =
-            m.size_all().ok_or(Error::MissingRequired("+SIZE_ALL"))?;
+        let size_all = m
+            .size_all()
+            .ok_or(MetadataError::MissingRequired("+SIZE_ALL"))?;
         assert_eq!(size_all, 100);
-        let size_pkg =
-            m.size_pkg().ok_or(Error::MissingRequired("+SIZE_PKG"))?;
+        let size_pkg = m
+            .size_pkg()
+            .ok_or(MetadataError::MissingRequired("+SIZE_PKG"))?;
         assert_eq!(size_pkg, 200);
         Ok(())
     }

@@ -73,7 +73,7 @@
  * assert_eq!(pkg.all_depends.len(), 2);
  * assert_eq!(pkg.all_depends[0].len(), 1);
  * assert_eq!(pkg.all_depends[1].len(), 2);
- * # Ok::<(), pkgsrc::kv::Error>(())
+ * # Ok::<(), pkgsrc::kv::KvError>(())
  * ```
  *
  * [`PkgName`]: crate::PkgName
@@ -120,7 +120,7 @@ impl From<Span> for std::ops::Range<usize> {
 
 /** Errors that can occur during parsing. */
 #[derive(Debug, Error)]
-pub enum Error {
+pub enum KvError {
     /** A line was not in `KEY=VALUE` format. */
     #[error("line is not in KEY=VALUE format")]
     ParseLine(Span),
@@ -158,7 +158,7 @@ pub enum Error {
     },
 }
 
-impl Error {
+impl KvError {
     /** Returns the [`Span`] for this error, if available. */
     #[must_use]
     pub const fn span(&self) -> Option<Span> {
@@ -172,8 +172,8 @@ impl Error {
     }
 }
 
-/** A [`Result`](std::result::Result) type alias using [`enum@Error`]. */
-pub type Result<T> = std::result::Result<T, Error>;
+/** A [`Result`](std::result::Result) type alias using [`KvError`]. */
+pub type Result<T> = std::result::Result<T, KvError>;
 
 /**
  * Trait for types that can be parsed from a KEY=VALUE string.
@@ -187,15 +187,15 @@ pub type Result<T> = std::result::Result<T, Error>;
  * # Example
  *
  * ```
- * use pkgsrc::kv::{FromKv, Error, Span};
+ * use pkgsrc::kv::{FromKv, KvError, Span};
  *
  * struct MyId(u32);
  *
  * impl FromKv for MyId {
- *     fn from_kv(value: &str, span: Span) -> Result<Self, Error> {
+ *     fn from_kv(value: &str, span: Span) -> Result<Self, KvError> {
  *         value.parse::<u32>()
  *             .map(MyId)
- *             .map_err(|e| Error::Parse {
+ *             .map_err(|e| KvError::Parse {
  *                 message: e.to_string(),
  *                 span,
  *             })
@@ -227,7 +227,7 @@ macro_rules! impl_fromkv_for_int {
         $(
             impl FromKv for $t {
                 fn from_kv(value: &str, span: Span) -> Result<Self> {
-                    value.parse().map_err(|source: ParseIntError| Error::ParseInt {
+                    value.parse().map_err(|source: ParseIntError| KvError::ParseInt {
                         source,
                         span,
                     })
@@ -252,7 +252,7 @@ impl FromKv for bool {
         match value.to_lowercase().as_str() {
             "true" | "yes" | "1" => Ok(true),
             "false" | "no" | "0" => Ok(false),
-            _ => Err(Error::Parse {
+            _ => Err(KvError::Parse {
                 message: format!("invalid boolean: {value}"),
                 span,
             }),
@@ -390,7 +390,7 @@ mod tests {
     fn derive_missing_required() {
         let input = "PKGNAME=mktool-1.4.2\n";
         let result = SimplePackage::parse(input);
-        assert!(matches!(result, Err(Error::Incomplete(_))));
+        assert!(matches!(result, Err(KvError::Incomplete(_))));
     }
 
     #[derive(Kv, Debug, PartialEq)]
@@ -446,7 +446,7 @@ mod tests {
             SIZE_PKG=not_a_number
         "};
         let result = SimplePackage::parse(input);
-        assert!(matches!(result, Err(Error::ParseInt { .. })));
+        assert!(matches!(result, Err(KvError::ParseInt { .. })));
     }
 
     #[test]
@@ -457,7 +457,7 @@ mod tests {
             SIZE_PKG=6999600
         "};
         let result = SimplePackage::parse(input);
-        assert!(matches!(result, Err(Error::ParseLine(_))));
+        assert!(matches!(result, Err(KvError::ParseLine(_))));
     }
 
     #[derive(Kv, Debug, PartialEq)]
@@ -487,7 +487,7 @@ mod tests {
         let all_depends = pkg
             .all_depends
             .as_ref()
-            .ok_or(Error::Incomplete("all_depends".to_string()))?;
+            .ok_or(KvError::Incomplete("all_depends".to_string()))?;
         assert_eq!(all_depends.len(), 2);
         Ok(())
     }
@@ -499,7 +499,7 @@ mod tests {
             ALL_DEPENDS=invalid
         "};
         let result = ScanIndexTest::parse(input);
-        assert!(matches!(result, Err(Error::Parse { .. })));
+        assert!(matches!(result, Err(KvError::Parse { .. })));
     }
 
     #[derive(Kv, Debug, PartialEq)]

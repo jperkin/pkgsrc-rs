@@ -50,7 +50,7 @@
 //!
 //! ```
 //! use indoc::indoc;
-//! use pkgsrc::kv::{Error, Kv};
+//! use pkgsrc::kv::{KvError, Kv};
 //! use pkgsrc::PkgName;
 //!
 //! #[derive(Kv)]
@@ -77,7 +77,7 @@
 //!
 //! // Missing required fields return an error.
 //! assert!(Package::parse("PKGNAME=bar-1.0\n").is_err());
-//! # Ok::<(), Error>(())
+//! # Ok::<(), KvError>(())
 //! ```
 //!
 //! Use `collect` to collect unhandled keys into a `HashMap`, for example
@@ -86,7 +86,7 @@
 //! ```
 //! use indoc::indoc;
 //! use std::collections::HashMap;
-//! use pkgsrc::kv::{Error, Kv};
+//! use pkgsrc::kv::{KvError, Kv};
 //!
 //! #[derive(Kv)]
 //! pub struct BuildInfo {
@@ -107,7 +107,7 @@
 //! assert_eq!(info.machine_arch, Some("x86_64".to_string()));
 //! assert_eq!(info.vars.get("PKGPATH"), Some(&"devel/example".to_string()));
 //! assert_eq!(info.vars.get("VARBASE"), None);
-//! # Ok::<(), Error>(())
+//! # Ok::<(), KvError>(())
 //! ```
 
 #![deny(missing_docs)]
@@ -179,7 +179,7 @@ fn generate_impl(input: &DeriveInput) -> syn::Result<TokenStream2> {
             /// - A required field is missing
             /// - A value fails to parse into its target type
             /// - An unknown key is encountered (unless `allow_unknown` is set)
-            pub fn parse(input: &str) -> std::result::Result<Self, ::pkgsrc::kv::Error> {
+            pub fn parse(input: &str) -> std::result::Result<Self, ::pkgsrc::kv::KvError> {
                 use ::pkgsrc::kv::FromKv;
 
                 #(#field_decls)*
@@ -198,7 +198,7 @@ fn generate_impl(input: &DeriveInput) -> syn::Result<TokenStream2> {
                     let eq_pos = match line.find('=') {
                         Some(p) => p,
                         None => {
-                            return Err(::pkgsrc::kv::Error::ParseLine(::pkgsrc::kv::Span {
+                            return Err(::pkgsrc::kv::KvError::ParseLine(::pkgsrc::kv::Span {
                                 offset: line_offset,
                                 len: line.len(),
                             }));
@@ -301,7 +301,7 @@ fn generate_unknown_handling(
         None => {
             quote! {
                 unknown => {
-                    return Err(::pkgsrc::kv::Error::UnknownVariable {
+                    return Err(::pkgsrc::kv::KvError::UnknownVariable {
                         variable: unknown.to_string(),
                         span: ::pkgsrc::kv::Span {
                             offset: line_offset,
@@ -641,7 +641,7 @@ impl ParsedField {
         match self.kind {
             FieldKind::Required | FieldKind::Vec | FieldKind::MultiLine => {
                 quote! {
-                    #ident.ok_or_else(|| ::pkgsrc::kv::Error::Incomplete(#key_name.to_string()))?
+                    #ident.ok_or_else(|| ::pkgsrc::kv::KvError::Incomplete(#key_name.to_string()))?
                 }
             }
             FieldKind::Optional

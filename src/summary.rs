@@ -35,7 +35,7 @@
  *   [`SummaryBuilder::vars`], then call [`SummaryBuilder::build`] to validate
  *   and construct the entry.
  *
- * Parsing operations return [`enum@Error`] on failure.  Each error variant
+ * Parsing operations return [`SummaryError`] on failure.  Each error variant
  * includes span information for use with pretty-printing error reporting
  * libraries such as [`ariadne`] or [`miette`] which can be helpful to show
  * exact locations of errors.
@@ -50,11 +50,11 @@
  *
  * ```
  * use flate2::read::GzDecoder;
- * use pkgsrc::summary::{Error, Summary};
+ * use pkgsrc::summary::{SummaryError, Summary};
  * use std::fs::File;
  * use std::io::BufReader;
  *
- * # fn main() -> Result<(), Error> {
+ * # fn main() -> Result<(), SummaryError> {
  * let path = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/data/summary/pkg_summary.gz");
  * let file = File::open(path).expect("failed to open pkg_summary.gz");
  * let reader = BufReader::new(GzDecoder::new(file));
@@ -186,9 +186,9 @@ use indoc::indoc;
 
 /**
  * A type alias for the result from parsing a [`Summary`], with
- * [`enum@Error`] returned in [`Err`] variants.
+ * [`SummaryError`] returned in [`Err`] variants.
  */
-pub type Result<T> = std::result::Result<T, Error>;
+pub type Result<T> = std::result::Result<T, SummaryError>;
 
 /*
  * Note that (as far as my reading of it suggests) we cannot return an error
@@ -455,14 +455,14 @@ impl SummaryBuilder {
      *
      * ## Errors
      *
-     * Returns [`Error`] if the input is invalid.  Applications may want to
-     * ignore [`Error::UnknownVariable`] if they wish to be future-proof
+     * Returns [`SummaryError`] if the input is invalid.  Applications may want to
+     * ignore [`SummaryError::UnknownVariable`] if they wish to be future-proof
      * against potential new additions to the `pkg_summary` format.
      *
      * ## Examples
      *
      * ```
-     * use pkgsrc::summary::{Error, SummaryBuilder};
+     * use pkgsrc::summary::{SummaryError, SummaryBuilder};
      *
      * let path = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/data/summary/mktool.txt");
      * let input = std::fs::read_to_string(path).expect("failed to read mktool.txt");
@@ -482,7 +482,7 @@ impl SummaryBuilder {
      *     SummaryBuilder::new()
      *         .vars(["PKGNAME=testpkg-1.0", "COMMENT=Test"])
      *         .build(),
-     *     Err(Error::Incomplete { .. })
+     *     Err(SummaryError::Incomplete { .. })
      * ));
      *
      * // Contains a line not in VARIABLE=VALUE format.
@@ -490,7 +490,7 @@ impl SummaryBuilder {
      *     SummaryBuilder::new()
      *         .vars(["not a valid line"])
      *         .build(),
-     *     Err(Error::ParseLine { .. })
+     *     Err(SummaryError::ParseLine { .. })
      * ));
      *
      * // Unknown variable name.
@@ -498,7 +498,7 @@ impl SummaryBuilder {
      *     SummaryBuilder::new()
      *         .vars(["UNKNOWN=value"])
      *         .build(),
-     *     Err(Error::UnknownVariable { .. })
+     *     Err(SummaryError::UnknownVariable { .. })
      * ));
      *
      * // Invalid integer value (with all other required fields present).
@@ -518,7 +518,7 @@ impl SummaryBuilder {
      *             "SIZE_PKG=not_a_number",
      *         ])
      *         .build(),
-     *     Err(Error::ParseInt { .. })
+     *     Err(SummaryError::ParseInt { .. })
      * ));
      * ```
      */
@@ -1624,10 +1624,10 @@ impl Summary {
 }
 
 impl FromStr for Summary {
-    type Err = Error;
+    type Err = SummaryError;
 
     fn from_str(s: &str) -> Result<Self> {
-        Summary::parse(s).map_err(Error::from)
+        Summary::parse(s).map_err(SummaryError::from)
     }
 }
 
@@ -1640,7 +1640,7 @@ fn parse_summary(
     if allow_unknown || allow_incomplete {
         parse_summary_lenient(s, allow_unknown, allow_incomplete)
     } else {
-        Summary::parse(s).map_err(Error::from)
+        Summary::parse(s).map_err(SummaryError::from)
     }
 }
 
@@ -1684,12 +1684,13 @@ fn parse_summary_lenient(
         let line_offset = line.as_ptr() as usize - s.as_ptr() as usize;
 
         let (key, value) =
-            line.split_once('=').ok_or_else(|| Error::ParseLine {
-                context: ErrorContext::new(Span {
-                    offset: line_offset,
-                    len: line.len(),
-                }),
-            })?;
+            line.split_once('=')
+                .ok_or_else(|| SummaryError::ParseLine {
+                    context: ErrorContext::new(Span {
+                        offset: line_offset,
+                        len: line.len(),
+                    }),
+                })?;
 
         let value_offset = line_offset + key.len() + 1;
         let value_span = Span {
@@ -1849,7 +1850,7 @@ fn parse_summary_lenient(
             }
             unknown => {
                 if !allow_unknown {
-                    return Err(Error::UnknownVariable {
+                    return Err(SummaryError::UnknownVariable {
                         variable: unknown.to_string(),
                         context: ErrorContext::new(Span {
                             offset: line_offset,
@@ -1865,7 +1866,7 @@ fn parse_summary_lenient(
     let build_date = if allow_incomplete {
         build_date.unwrap_or_default()
     } else {
-        build_date.ok_or_else(|| Error::Incomplete {
+        build_date.ok_or_else(|| SummaryError::Incomplete {
             field: "BUILD_DATE".to_string(),
             context: ErrorContext::default(),
         })?
@@ -1874,7 +1875,7 @@ fn parse_summary_lenient(
     let categories = if allow_incomplete {
         categories.unwrap_or_default()
     } else {
-        categories.ok_or_else(|| Error::Incomplete {
+        categories.ok_or_else(|| SummaryError::Incomplete {
             field: "CATEGORIES".to_string(),
             context: ErrorContext::default(),
         })?
@@ -1883,7 +1884,7 @@ fn parse_summary_lenient(
     let comment = if allow_incomplete {
         comment.unwrap_or_default()
     } else {
-        comment.ok_or_else(|| Error::Incomplete {
+        comment.ok_or_else(|| SummaryError::Incomplete {
             field: "COMMENT".to_string(),
             context: ErrorContext::default(),
         })?
@@ -1892,7 +1893,7 @@ fn parse_summary_lenient(
     let description = if allow_incomplete {
         description.unwrap_or_default()
     } else {
-        description.ok_or_else(|| Error::Incomplete {
+        description.ok_or_else(|| SummaryError::Incomplete {
             field: "DESCRIPTION".to_string(),
             context: ErrorContext::default(),
         })?
@@ -1901,7 +1902,7 @@ fn parse_summary_lenient(
     let machine_arch = if allow_incomplete {
         machine_arch.unwrap_or_default()
     } else {
-        machine_arch.ok_or_else(|| Error::Incomplete {
+        machine_arch.ok_or_else(|| SummaryError::Incomplete {
             field: "MACHINE_ARCH".to_string(),
             context: ErrorContext::default(),
         })?
@@ -1910,7 +1911,7 @@ fn parse_summary_lenient(
     let opsys = if allow_incomplete {
         opsys.unwrap_or_default()
     } else {
-        opsys.ok_or_else(|| Error::Incomplete {
+        opsys.ok_or_else(|| SummaryError::Incomplete {
             field: "OPSYS".to_string(),
             context: ErrorContext::default(),
         })?
@@ -1919,7 +1920,7 @@ fn parse_summary_lenient(
     let os_version = if allow_incomplete {
         os_version.unwrap_or_default()
     } else {
-        os_version.ok_or_else(|| Error::Incomplete {
+        os_version.ok_or_else(|| SummaryError::Incomplete {
             field: "OS_VERSION".to_string(),
             context: ErrorContext::default(),
         })?
@@ -1928,7 +1929,7 @@ fn parse_summary_lenient(
     let pkgname = if allow_incomplete {
         pkgname.unwrap_or_else(|| PkgName::new("unknown-0"))
     } else {
-        pkgname.ok_or_else(|| Error::Incomplete {
+        pkgname.ok_or_else(|| SummaryError::Incomplete {
             field: "PKGNAME".to_string(),
             context: ErrorContext::default(),
         })?
@@ -1937,7 +1938,7 @@ fn parse_summary_lenient(
     let pkgpath = if allow_incomplete {
         pkgpath.unwrap_or_default()
     } else {
-        pkgpath.ok_or_else(|| Error::Incomplete {
+        pkgpath.ok_or_else(|| SummaryError::Incomplete {
             field: "PKGPATH".to_string(),
             context: ErrorContext::default(),
         })?
@@ -1946,7 +1947,7 @@ fn parse_summary_lenient(
     let pkgtools_version = if allow_incomplete {
         pkgtools_version.unwrap_or_default()
     } else {
-        pkgtools_version.ok_or_else(|| Error::Incomplete {
+        pkgtools_version.ok_or_else(|| SummaryError::Incomplete {
             field: "PKGTOOLS_VERSION".to_string(),
             context: ErrorContext::default(),
         })?
@@ -1955,7 +1956,7 @@ fn parse_summary_lenient(
     let size_pkg = if allow_incomplete {
         size_pkg.unwrap_or(0)
     } else {
-        size_pkg.ok_or_else(|| Error::Incomplete {
+        size_pkg.ok_or_else(|| SummaryError::Incomplete {
             field: "SIZE_PKG".to_string(),
             context: ErrorContext::default(),
         })?
@@ -1988,8 +1989,8 @@ fn parse_summary_lenient(
     })
 }
 
-fn kv_to_summary_error(e: crate::kv::Error) -> Error {
-    Error::from(e)
+fn kv_to_summary_error(e: crate::kv::KvError) -> SummaryError {
+    SummaryError::from(e)
 }
 
 /**
@@ -2032,14 +2033,16 @@ impl<R: BufRead> Iterator for SummaryIter<R> {
                                 self.allow_unknown,
                                 self.allow_incomplete,
                             )
-                            .map_err(|e: Error| {
-                                e.with_entry_span(Span {
-                                    offset: 0,
-                                    len: entry_len,
-                                })
-                                .with_entry(entry)
-                                .adjust_offset(entry_start)
-                            }),
+                            .map_err(
+                                |e: SummaryError| {
+                                    e.with_entry_span(Span {
+                                        offset: 0,
+                                        len: entry_len,
+                                    })
+                                    .with_entry(entry)
+                                    .adjust_offset(entry_start)
+                                },
+                            ),
                         )
                     };
                 }
@@ -2065,7 +2068,7 @@ impl<R: BufRead> Iterator for SummaryIter<R> {
                                     self.allow_incomplete,
                                 )
                                 .map_err(
-                                    |e: Error| {
+                                    |e: SummaryError| {
                                         e.with_entry_span(Span {
                                             offset: 0,
                                             len: entry_len,
@@ -2081,7 +2084,7 @@ impl<R: BufRead> Iterator for SummaryIter<R> {
                         self.byte_offset += line_bytes;
                     }
                 }
-                Err(e) => return Some(Err(Error::Io(e))),
+                Err(e) => return Some(Err(SummaryError::Io(e))),
             }
         }
     }
@@ -2115,7 +2118,7 @@ impl<R: BufRead> SummaryIter<R> {
  */
 #[derive(Debug, thiserror::Error)]
 #[non_exhaustive]
-pub enum Error {
+pub enum SummaryError {
     /// The summary is incomplete due to a missing required field.
     #[error("missing required field '{field}'")]
     Incomplete {
@@ -2176,27 +2179,27 @@ pub enum Error {
     },
 }
 
-impl From<crate::kv::Error> for Error {
-    fn from(e: crate::kv::Error) -> Self {
+impl From<crate::kv::KvError> for SummaryError {
+    fn from(e: crate::kv::KvError) -> Self {
         match e {
-            crate::kv::Error::ParseLine(span) => Self::ParseLine {
+            crate::kv::KvError::ParseLine(span) => Self::ParseLine {
                 context: ErrorContext::new(span),
             },
-            crate::kv::Error::Incomplete(field) => Self::Incomplete {
+            crate::kv::KvError::Incomplete(field) => Self::Incomplete {
                 field,
                 context: ErrorContext::default(),
             },
-            crate::kv::Error::UnknownVariable { variable, span } => {
+            crate::kv::KvError::UnknownVariable { variable, span } => {
                 Self::UnknownVariable {
                     variable,
                     context: ErrorContext::new(span),
                 }
             }
-            crate::kv::Error::ParseInt { source, span } => Self::ParseInt {
+            crate::kv::KvError::ParseInt { source, span } => Self::ParseInt {
                 source,
                 context: ErrorContext::new(span),
             },
-            crate::kv::Error::Parse { message, span } => Self::Parse {
+            crate::kv::KvError::Parse { message, span } => Self::Parse {
                 message,
                 context: ErrorContext::new(span),
             },
@@ -2204,7 +2207,7 @@ impl From<crate::kv::Error> for Error {
     }
 }
 
-impl Error {
+impl SummaryError {
     /**
      * Returns the entry index where the error occurred.
      *
@@ -2321,12 +2324,12 @@ mod tests {
         let err = Summary::from_str("BUILD_DATE")
             .err()
             .ok_or("expected error")?;
-        assert!(matches!(err, Error::ParseLine { .. }));
+        assert!(matches!(err, SummaryError::ParseLine { .. }));
 
         let err = Summary::from_str("BILD_DATE=")
             .err()
             .ok_or("expected error")?;
-        assert!(matches!(err, Error::UnknownVariable { .. }));
+        assert!(matches!(err, SummaryError::UnknownVariable { .. }));
 
         // FILE_SIZE=NaN with all required fields should error on parse
         let input = indoc! {"
@@ -2344,12 +2347,12 @@ mod tests {
             FILE_SIZE=NaN
         "};
         let err = Summary::from_str(input).err().ok_or("expected error")?;
-        assert!(matches!(err, Error::ParseInt { .. }));
+        assert!(matches!(err, SummaryError::ParseInt { .. }));
 
         let err = Summary::from_str("FILE_SIZE=1234")
             .err()
             .ok_or("expected error")?;
-        assert!(matches!(err, Error::Incomplete { .. }));
+        assert!(matches!(err, SummaryError::Incomplete { .. }));
         Ok(())
     }
 
@@ -2359,7 +2362,7 @@ mod tests {
         let err = Summary::from_str("BUILD_DATE=2019-08-12\nBAD LINE\n")
             .err()
             .ok_or("expected error")?;
-        assert!(matches!(err, Error::ParseLine { .. }));
+        assert!(matches!(err, SummaryError::ParseLine { .. }));
         let span = err.span().ok_or("should have span")?;
         assert_eq!(span.offset, 22); // byte offset to "BAD LINE" (0-based)
         assert_eq!(span.len, 8); // length of "BAD LINE"
@@ -2370,7 +2373,7 @@ mod tests {
             .err()
             .ok_or("expected error")?;
         assert!(
-            matches!(err, Error::UnknownVariable { variable, .. } if variable == "INVALID_KEY")
+            matches!(err, SummaryError::UnknownVariable { variable, .. } if variable == "INVALID_KEY")
         );
 
         // Test multi-entry parsing includes entry index
@@ -2425,13 +2428,14 @@ mod tests {
         "};
         let trimmed = input.trim();
 
-        let err =
-            Summary::from_str(trimmed).err().ok_or(Error::Incomplete {
+        let err = Summary::from_str(trimmed).err().ok_or(
+            SummaryError::Incomplete {
                 field: "expected error".to_string(),
                 context: ErrorContext::default(),
-            })?;
+            },
+        )?;
         assert!(
-            matches!(err, Error::UnknownVariable { variable, .. } if variable == "UNKNOWN_FIELD")
+            matches!(err, SummaryError::UnknownVariable { variable, .. } if variable == "UNKNOWN_FIELD")
         );
 
         let pkg = parse_summary(trimmed, true, false)?;
@@ -2465,7 +2469,7 @@ mod tests {
 
         // Without allow_unknown should fail
         let mut iter = Summary::from_reader(input.trim().as_bytes());
-        let result = iter.next().ok_or(Error::Incomplete {
+        let result = iter.next().ok_or(SummaryError::Incomplete {
             field: "expected entry".to_string(),
             context: ErrorContext::default(),
         })?;
@@ -2474,7 +2478,7 @@ mod tests {
         // With allow_unknown should succeed
         let mut iter =
             Summary::from_reader(input.trim().as_bytes()).allow_unknown(true);
-        let result = iter.next().ok_or(Error::Incomplete {
+        let result = iter.next().ok_or(SummaryError::Incomplete {
             field: "expected entry".to_string(),
             context: ErrorContext::default(),
         })?;
@@ -2494,7 +2498,7 @@ mod tests {
 
         // Without allow_incomplete should fail
         let mut iter = Summary::from_reader(input.trim().as_bytes());
-        let result = iter.next().ok_or(Error::Incomplete {
+        let result = iter.next().ok_or(SummaryError::Incomplete {
             field: "expected entry".to_string(),
             context: ErrorContext::default(),
         })?;
@@ -2503,7 +2507,7 @@ mod tests {
         // With allow_incomplete should succeed
         let mut iter = Summary::from_reader(input.trim().as_bytes())
             .allow_incomplete(true);
-        let result = iter.next().ok_or(Error::Incomplete {
+        let result = iter.next().ok_or(SummaryError::Incomplete {
             field: "expected entry".to_string(),
             context: ErrorContext::default(),
         })?;

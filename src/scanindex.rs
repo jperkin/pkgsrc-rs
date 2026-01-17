@@ -99,7 +99,7 @@ pub struct ScanIndex {
 }
 
 impl FromStr for ScanIndex {
-    type Err = crate::kv::Error;
+    type Err = crate::kv::KvError;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         Self::parse(s)
@@ -230,7 +230,7 @@ fn parse_record(s: &str) -> io::Result<ScanIndex> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::kv::Error;
+    use crate::kv::KvError;
     use anyhow::Context;
     use std::fs::File;
     use std::io::BufReader;
@@ -318,7 +318,7 @@ mod tests {
     }
 
     #[test]
-    fn from_str() -> Result<(), Error> {
+    fn from_str() -> Result<(), KvError> {
         use std::str::FromStr;
 
         let input = "PKGNAME=test-1.0\nMAINTAINER=test@example.com\n";
@@ -329,15 +329,15 @@ mod tests {
     }
 
     #[test]
-    fn error_unknown_variable() -> Result<(), Error> {
+    fn error_unknown_variable() -> Result<(), KvError> {
         use std::str::FromStr;
 
         let input = "PKGNAME=test-1.0\nUNKNOWN=value\n";
         let err = ScanIndex::from_str(input)
             .err()
-            .ok_or(Error::Incomplete("expected error".to_string()))?;
+            .ok_or(KvError::Incomplete("expected error".to_string()))?;
         match err {
-            Error::UnknownVariable { variable, span } => {
+            KvError::UnknownVariable { variable, span } => {
                 assert_eq!(variable, "UNKNOWN");
                 assert_eq!(span.offset, 17);
                 assert_eq!(span.len, 7);
@@ -352,16 +352,16 @@ mod tests {
     }
 
     #[test]
-    fn error_invalid_depend() -> Result<(), Error> {
+    fn error_invalid_depend() -> Result<(), KvError> {
         use std::str::FromStr;
 
         // "invalid" is not a valid Depend (missing ":" separator)
         let input = "PKGNAME=test-1.0\nALL_DEPENDS=invalid\n";
         let err = ScanIndex::from_str(input)
             .err()
-            .ok_or(Error::Incomplete("expected error".to_string()))?;
+            .ok_or(KvError::Incomplete("expected error".to_string()))?;
         match err {
-            Error::Parse { message, span } => {
+            KvError::Parse { message, span } => {
                 assert!(message.contains("Invalid DEPENDS"));
                 assert_eq!(span.offset, 29);
                 assert_eq!(span.len, 7);
@@ -376,16 +376,16 @@ mod tests {
     }
 
     #[test]
-    fn error_invalid_pkgpath() -> Result<(), Error> {
+    fn error_invalid_pkgpath() -> Result<(), KvError> {
         use std::str::FromStr;
 
         // "bad" is not a valid PkgPath (missing category/package structure)
         let input = "PKGNAME=test-1.0\nPKG_LOCATION=bad\n";
         let err = ScanIndex::from_str(input)
             .err()
-            .ok_or(Error::Incomplete("expected error".to_string()))?;
+            .ok_or(KvError::Incomplete("expected error".to_string()))?;
         match err {
-            Error::Parse { message, span } => {
+            KvError::Parse { message, span } => {
                 assert!(message.contains("Invalid path"));
                 assert_eq!(span.offset, 30);
                 assert_eq!(span.len, 3);
@@ -397,15 +397,15 @@ mod tests {
     }
 
     #[test]
-    fn error_missing_pkgname() -> Result<(), Error> {
+    fn error_missing_pkgname() -> Result<(), KvError> {
         use std::str::FromStr;
 
         let input = "MAINTAINER=test@example.com\n";
         let err = ScanIndex::from_str(input)
             .err()
-            .ok_or(Error::Incomplete("expected error".to_string()))?;
+            .ok_or(KvError::Incomplete("expected error".to_string()))?;
         match err {
-            Error::Incomplete(field) => {
+            KvError::Incomplete(field) => {
                 assert_eq!(field, "PKGNAME");
             }
             _ => panic!("expected Incomplete error, got {err:?}"),
@@ -414,15 +414,15 @@ mod tests {
     }
 
     #[test]
-    fn error_bad_line_format() -> Result<(), Error> {
+    fn error_bad_line_format() -> Result<(), KvError> {
         use std::str::FromStr;
 
         let input = "PKGNAME=test-1.0\nbadline\n";
         let err = ScanIndex::from_str(input)
             .err()
-            .ok_or(Error::Incomplete("expected error".to_string()))?;
+            .ok_or(KvError::Incomplete("expected error".to_string()))?;
         match err {
-            Error::ParseLine(span) => {
+            KvError::ParseLine(span) => {
                 assert_eq!(span.offset, 17);
                 assert_eq!(span.len, 7);
                 assert_eq!(
@@ -436,16 +436,16 @@ mod tests {
     }
 
     #[test]
-    fn error_span_accessor() -> Result<(), Error> {
+    fn error_span_accessor() -> Result<(), KvError> {
         use std::str::FromStr;
 
         let input = "PKGNAME=test-1.0\nUNKNOWN=value\n";
         let err = ScanIndex::from_str(input)
             .err()
-            .ok_or(Error::Incomplete("expected error".to_string()))?;
+            .ok_or(KvError::Incomplete("expected error".to_string()))?;
         let span = err
             .span()
-            .ok_or(Error::Incomplete("expected span".to_string()))?;
+            .ok_or(KvError::Incomplete("expected span".to_string()))?;
         assert_eq!(&input[span.offset..span.offset + span.len], "UNKNOWN");
         Ok(())
     }

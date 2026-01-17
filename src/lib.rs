@@ -66,20 +66,20 @@
  * Extract files from a binary package:
  *
  * ```no_run
- * use pkgsrc::archive::{Archive, Error};
+ * use pkgsrc::archive::{Archive, ArchiveError};
  *
  * let mut archive = Archive::open("/path/to/package.tgz")?;
  * for entry in archive.entries()? {
  *     let entry = entry?;
  *     println!("{}", entry.path()?.display());
  * }
- * # Ok::<(), Error>(())
+ * # Ok::<(), ArchiveError>(())
  * ```
  *
  * Parse a pkg_summary file to enumerate available packages:
  *
  * ```no_run
- * use pkgsrc::summary::{Error, Summary};
+ * use pkgsrc::summary::{SummaryError, Summary};
  * use std::fs::File;
  * use std::io::BufReader;
  *
@@ -89,7 +89,7 @@
  *     let pkg = entry?;
  *     println!("{}: {}", pkg.pkgname(), pkg.comment());
  * }
- * # Ok::<(), Error>(())
+ * # Ok::<(), SummaryError>(())
  * ```
  *
  * Match packages using patterns:
@@ -130,16 +130,17 @@ pub mod plist;
 pub mod scanindex;
 pub mod summary;
 
-pub use crate::archive::Archive;
+pub use crate::archive::{Archive, ArchiveError};
 pub use crate::depend::{Depend, DependError, DependType};
 pub use crate::dewey::{Dewey, DeweyError};
 pub use crate::digest::Digest;
 pub use crate::distinfo::Distinfo;
-pub use crate::metadata::Metadata;
+pub use crate::kv::KvError;
+pub use crate::metadata::{Metadata, MetadataError};
 pub use crate::pattern::{Pattern, PatternError};
 pub use crate::pkgdb::{DBType, PkgDB};
 pub use crate::pkgname::PkgName;
 pub use crate::pkgpath::{PkgPath, PkgPathError};
 pub use crate::plist::Plist;
 pub use crate::scanindex::{ScanIndex, ScanIndexIter};
-pub use crate::summary::Summary;
+pub use crate::summary::{Summary, SummaryError};
