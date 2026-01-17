@@ -22,6 +22,10 @@
  * operating systems.  This crate provides types and utilities for working
  * with pkgsrc packages, the package database, and pkgsrc infrastructure.
  *
+ * It is used by [bob](https://github.com/jperkin/bob), a pkgsrc package
+ * builder, and [mktool](https://github.com/jperkin/mktool), a collection of
+ * fast alternate implementations for various pkgsrc/mk scripts.
+ *
  * ## Modules
  *
  * The crate is organised into modules that handle different aspects of pkgsrc:
@@ -34,14 +38,14 @@
  * | [`digest`] | Cryptographic hash functions for file verification |
  * | [`distinfo`] | Parse and verify distinfo files |
  * | [`kv`] | Parse KEY=VALUE formatted data |
- * | [`metadata`] | Read package metadata from +* files |
+ * | [`metadata`] | Read package metadata from `+*` files |
  * | [`pattern`] | Match packages against glob, dewey, and alternate patterns |
  * | [`pkgdb`] | Access the installed package database |
  * | [`pkgname`] | Parse package names into name and version components |
  * | [`pkgpath`] | Parse pkgsrc package paths (category/package) |
  * | [`plist`] | Parse packing list (PLIST) files |
  * | [`scanindex`] | Parse pbulk-index scan output |
- * | [`summary`] | Parse pkg_summary(5) files |
+ * | [`summary`] | Parse [`pkg_summary(5)`] files |
  *
  * ## Examples
  *
@@ -103,6 +107,8 @@
  *
  * - `serde`: Enable serialization and deserialization support via
  *   [serde](https://serde.rs/) for various types.
+ *
+ * [`pkg_summary(5)`]: https://man.netbsd.org/pkg_summary.5
  */
 
 #![deny(missing_docs)]
