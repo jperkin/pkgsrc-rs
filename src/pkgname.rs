@@ -16,6 +16,10 @@
 
 /*! Package name parsing into base, version, and revision components. */
 
+use std::borrow::Borrow;
+use std::hash::{Hash, Hasher};
+use std::str::FromStr;
+
 #[cfg(feature = "serde")]
 use serde_with::{DeserializeFromStr, SerializeDisplay};
 
@@ -72,7 +76,7 @@ use serde_with::{DeserializeFromStr, SerializeDisplay};
  * assert_eq!(pkg.pkgrevision(), None);
  * ```
  */
-#[derive(Clone, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
+#[derive(Clone, Debug, Default, Eq, Ord, PartialEq, PartialOrd)]
 #[cfg_attr(feature = "serde", derive(SerializeDisplay, DeserializeFromStr))]
 pub struct PkgName {
     pkgname: String,
@@ -187,11 +191,31 @@ impl PartialEq<String> for PkgName {
     }
 }
 
-impl std::str::FromStr for PkgName {
+impl FromStr for PkgName {
     type Err = std::convert::Infallible;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         Ok(Self::new(s))
+    }
+}
+
+impl AsRef<str> for PkgName {
+    fn as_ref(&self) -> &str {
+        &self.pkgname
+    }
+}
+
+impl Borrow<str> for PkgName {
+    fn borrow(&self) -> &str {
+        &self.pkgname
+    }
+}
+
+// Hash must be consistent with Borrow<str> - only hash the pkgname field
+// so that HashMap::get("foo-1.0") works when the key is PkgName::new("foo-1.0")
+impl Hash for PkgName {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.pkgname.hash(state);
     }
 }
 
@@ -260,6 +284,32 @@ mod tests {
         assert_eq!(pkg, "mktool-1.3.2nb2");
         assert_eq!(pkg, "mktool-1.3.2nb2".to_string());
         assert_ne!(pkg, "notmktool-1.0");
+    }
+
+    #[test]
+    fn pkgname_as_ref() {
+        let pkg = PkgName::new("mktool-1.3.2nb2");
+        let s: &str = pkg.as_ref();
+        assert_eq!(s, "mktool-1.3.2nb2");
+
+        // Test that it works with generic functions expecting AsRef<str>
+        fn takes_asref(s: impl AsRef<str>) -> usize {
+            s.as_ref().len()
+        }
+        assert_eq!(takes_asref(&pkg), 15);
+    }
+
+    #[test]
+    fn pkgname_borrow() {
+        use std::collections::HashMap;
+
+        // Test that PkgName can be used as HashMap key with &str lookup
+        let mut map: HashMap<PkgName, i32> = HashMap::new();
+        map.insert(PkgName::new("foo-1.0"), 42);
+
+        // Can look up by &str due to Borrow<str>
+        assert_eq!(map.get("foo-1.0"), Some(&42));
+        assert_eq!(map.get("bar-2.0"), None);
     }
 
     #[test]

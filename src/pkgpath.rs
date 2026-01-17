@@ -165,6 +165,12 @@ impl FromStr for PkgPath {
     }
 }
 
+impl AsRef<Path> for PkgPath {
+    fn as_ref(&self) -> &Path {
+        &self.short
+    }
+}
+
 impl crate::kv::FromKv for PkgPath {
     fn from_kv(value: &str, span: crate::kv::Span) -> crate::kv::Result<Self> {
         Self::new(value).map_err(|e| crate::kv::Error::Parse {
@@ -218,5 +224,20 @@ mod tests {
         assert_eq!(PkgPath::new("../../foo/bar/ojnk/"), err);
         // ".. /" gets parsed as a Normal file named ".. ".
         assert_eq!(PkgPath::new(".. /../foo/bar"), err);
+    }
+
+    #[test]
+    fn pkgpath_as_ref() {
+        let p = PkgPath::new("pkgtools/pkg_install").unwrap();
+
+        // AsRef<Path> returns the short path
+        let path: &Path = p.as_ref();
+        assert_eq!(path, Path::new("pkgtools/pkg_install"));
+
+        // Test that it works with generic functions expecting AsRef<Path>
+        fn takes_asref(p: impl AsRef<Path>) -> bool {
+            p.as_ref().starts_with("pkgtools")
+        }
+        assert!(takes_asref(&p));
     }
 }
