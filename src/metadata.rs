@@ -107,8 +107,21 @@ pub enum Error {
  *
  * This trait abstracts over different package sources (binary archives,
  * installed packages) providing a unified interface for accessing metadata.
+ *
+ * # Return Types
+ *
+ * - Required metadata (`comment`, `contents`, `desc`) returns `io::Result<String>`
+ *   since these files must exist for a valid package.
+ *
+ * - Optional metadata returns `io::Result<Option<String>>`:
+ *   - `Ok(Some(content))` - File exists and was read successfully
+ *   - `Ok(None)` - File does not exist (this is normal for optional metadata)
+ *   - `Err(e)` - An I/O error occurred (permission denied, disk failure, etc.)
+ *
+ * This design ensures that real I/O errors are propagated to callers rather
+ * than being silently swallowed as "file not found".
  */
-pub trait MetadataReader {
+pub trait FileRead {
     /** Package name including version (e.g., "foo-1.0"). */
     fn pkgname(&self) -> &str;
 
@@ -122,37 +135,37 @@ pub trait MetadataReader {
     fn desc(&self) -> io::Result<String>;
 
     /** Build information (`+BUILD_INFO`). */
-    fn build_info(&self) -> Option<String>;
+    fn build_info(&self) -> io::Result<Option<String>>;
 
     /** Build version (`+BUILD_VERSION`). */
-    fn build_version(&self) -> Option<String>;
+    fn build_version(&self) -> io::Result<Option<String>>;
 
     /** Deinstall script (`+DEINSTALL`). */
-    fn deinstall(&self) -> Option<String>;
+    fn deinstall(&self) -> io::Result<Option<String>>;
 
     /** Display file (`+DISPLAY`). */
-    fn display(&self) -> Option<String>;
+    fn display(&self) -> io::Result<Option<String>>;
 
     /** Install script (`+INSTALL`). */
-    fn install(&self) -> Option<String>;
+    fn install(&self) -> io::Result<Option<String>>;
 
     /** Installed info (`+INSTALLED_INFO`). */
-    fn installed_info(&self) -> Option<String>;
+    fn installed_info(&self) -> io::Result<Option<String>>;
 
     /** Mtree dirs (`+MTREE_DIRS`). */
-    fn mtree_dirs(&self) -> Option<String>;
+    fn mtree_dirs(&self) -> io::Result<Option<String>>;
 
     /** Preserve file (`+PRESERVE`). */
-    fn preserve(&self) -> Option<String>;
+    fn preserve(&self) -> io::Result<Option<String>>;
 
     /** Required by (`+REQUIRED_BY`). */
-    fn required_by(&self) -> Option<String>;
+    fn required_by(&self) -> io::Result<Option<String>>;
 
     /** Total size including dependencies (`+SIZE_ALL`). */
-    fn size_all(&self) -> Option<String>;
+    fn size_all(&self) -> io::Result<Option<String>>;
 
     /** Package size (`+SIZE_PKG`). */
-    fn size_pkg(&self) -> Option<String>;
+    fn size_pkg(&self) -> io::Result<Option<String>>;
 }
 
 /**

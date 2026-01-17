@@ -107,7 +107,7 @@ use flate2::read::GzDecoder;
 use flate2::write::GzEncoder;
 use tar::{Archive as TarArchive, Builder as TarBuilder, Entries, Header};
 
-use crate::metadata::{Entry, Metadata, MetadataReader};
+use crate::metadata::{Entry, FileRead, Metadata};
 use crate::plist::Plist;
 use crate::summary::Summary;
 
@@ -1418,7 +1418,7 @@ impl Package {
     }
 }
 
-impl MetadataReader for Package {
+impl FileRead for Package {
     fn pkgname(&self) -> &str {
         self.plist.pkgname().unwrap_or("")
     }
@@ -1435,48 +1435,48 @@ impl MetadataReader for Package {
         Ok(self.metadata.desc().to_string())
     }
 
-    fn build_info(&self) -> Option<String> {
-        self.metadata.build_info().map(|v| v.join("\n"))
+    fn build_info(&self) -> std::io::Result<Option<String>> {
+        Ok(self.metadata.build_info().map(|v| v.join("\n")))
     }
 
-    fn build_version(&self) -> Option<String> {
-        self.metadata.build_version().map(|v| v.join("\n"))
+    fn build_version(&self) -> std::io::Result<Option<String>> {
+        Ok(self.metadata.build_version().map(|v| v.join("\n")))
     }
 
-    fn deinstall(&self) -> Option<String> {
-        self.metadata.deinstall().map(|s| s.to_string())
+    fn deinstall(&self) -> std::io::Result<Option<String>> {
+        Ok(self.metadata.deinstall().map(|s| s.to_string()))
     }
 
-    fn display(&self) -> Option<String> {
-        self.metadata.display().map(|s| s.to_string())
+    fn display(&self) -> std::io::Result<Option<String>> {
+        Ok(self.metadata.display().map(|s| s.to_string()))
     }
 
-    fn install(&self) -> Option<String> {
-        self.metadata.install().map(|s| s.to_string())
+    fn install(&self) -> std::io::Result<Option<String>> {
+        Ok(self.metadata.install().map(|s| s.to_string()))
     }
 
-    fn installed_info(&self) -> Option<String> {
-        self.metadata.installed_info().map(|v| v.join("\n"))
+    fn installed_info(&self) -> std::io::Result<Option<String>> {
+        Ok(self.metadata.installed_info().map(|v| v.join("\n")))
     }
 
-    fn mtree_dirs(&self) -> Option<String> {
-        self.metadata.mtree_dirs().map(|v| v.join("\n"))
+    fn mtree_dirs(&self) -> std::io::Result<Option<String>> {
+        Ok(self.metadata.mtree_dirs().map(|v| v.join("\n")))
     }
 
-    fn preserve(&self) -> Option<String> {
-        self.metadata.preserve().map(|v| v.join("\n"))
+    fn preserve(&self) -> std::io::Result<Option<String>> {
+        Ok(self.metadata.preserve().map(|v| v.join("\n")))
     }
 
-    fn required_by(&self) -> Option<String> {
-        self.metadata.required_by().map(|v| v.join("\n"))
+    fn required_by(&self) -> std::io::Result<Option<String>> {
+        Ok(self.metadata.required_by().map(|v| v.join("\n")))
     }
 
-    fn size_all(&self) -> Option<String> {
-        self.metadata.size_all().map(|n| n.to_string())
+    fn size_all(&self) -> std::io::Result<Option<String>> {
+        Ok(self.metadata.size_all().map(|n| n.to_string()))
     }
 
-    fn size_pkg(&self) -> Option<String> {
-        self.metadata.size_pkg().map(|n| n.to_string())
+    fn size_pkg(&self) -> std::io::Result<Option<String>> {
+        Ok(self.metadata.size_pkg().map(|n| n.to_string()))
     }
 }
 

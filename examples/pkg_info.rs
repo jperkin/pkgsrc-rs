@@ -18,7 +18,7 @@
 
 use anyhow::{Result, bail};
 use pkgsrc::archive::{Package, SummaryOptions};
-use pkgsrc::metadata::MetadataReader;
+use pkgsrc::metadata::FileRead;
 use pkgsrc::pkgdb::PkgDB;
 use rayon::prelude::*;
 use regex::Regex;
@@ -53,7 +53,7 @@ pub struct OptArgs {
     packages: Vec<PathBuf>,
 }
 
-fn output_default<P: MetadataReader>(pkg: &P) -> Result<()> {
+fn output_default<P: FileRead>(pkg: &P) -> Result<()> {
     println!("{:<19} {}", pkg.pkgname(), pkg.comment()?);
     Ok(())
 }
@@ -76,7 +76,7 @@ const SUMMARY_BUILD_VARS: &[&str] = &[
     "SUPERSEDES",
 ];
 
-fn output_summary<P: MetadataReader>(pkg: &P) -> Result<()> {
+fn output_summary<P: FileRead>(pkg: &P) -> Result<()> {
     let contents = pkg.contents()?;
     let comment = pkg.comment()?;
     let desc = pkg.desc()?;
@@ -94,12 +94,12 @@ fn output_summary<P: MetadataReader>(pkg: &P) -> Result<()> {
 
     println!("COMMENT={}", comment);
 
-    if let Some(size) = pkg.size_pkg() {
+    if let Some(size) = pkg.size_pkg()? {
         println!("SIZE_PKG={}", size.trim());
     }
 
     // BUILD_INFO variables (filtered, in file order)
-    if let Some(build_info) = pkg.build_info() {
+    if let Some(build_info) = pkg.build_info()? {
         for line in build_info.lines() {
             if let Some(var) = line.split('=').next() {
                 if SUMMARY_BUILD_VARS.contains(&var) {
