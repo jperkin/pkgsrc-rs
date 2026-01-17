@@ -119,7 +119,6 @@ impl PartialEq for DigestError {
     }
 }
 
-
 /**
  * The [`Digest`] enum contains an entry for every supported digest algorithm.
  * All of the algorithms are from the RustCrypto [`hashes`] collection.
