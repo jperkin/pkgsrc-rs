@@ -111,41 +111,12 @@ pub enum EntryType {
 }
 
 impl<P: AsRef<Path>> From<P> for EntryType {
-    /*
-     * Determine whether a supplied path is a distfile or patchfile.  Unless
-     * absolutely sure this is a valid patchfile, default to distfile.
-     */
     fn from(path: P) -> Self {
-        let Some(p) = path.as_ref().file_name() else {
-            return EntryType::Distfile;
-        };
-        let s = p.to_string_lossy();
-        /*
-         * Skip local patches or temporary patch files created by e.g. mkpatches.
-         */
-        if s.starts_with("patch-local-")
-            || s.ends_with(".orig")
-            || s.ends_with(".rej")
-            || s.ends_with("~")
-        {
-            return EntryType::Distfile;
+        if Entry::is_patch_filename(&path) {
+            EntryType::Patchfile
+        } else {
+            EntryType::Distfile
         }
-        /*
-         * Match valid patch filenames.
-         */
-        if s.starts_with("patch-")
-            || (s.starts_with("emul-") && s.contains("-patch-"))
-        {
-            /*
-             * This is really janky, but we need to skip distfiles for devel/patch
-             * itself, e.g. "patch-2.7.6.tar.xz".
-             */
-            if !s.contains(".tar.") {
-                return EntryType::Patchfile;
-            }
-        }
-
-        EntryType::Distfile
     }
 }
 
@@ -186,6 +157,34 @@ pub struct Entry {
 }
 
 impl Entry {
+    /**
+     * Returns true if the path is a valid patch filename for inclusion in a
+     * distinfo.  Returns false for backup/temporary files (.orig, .rej, ~),
+     * local patches (patch-local-*), and files that don't match the patch
+     * naming pattern.
+     *
+     * Must handle quirks such as "patch-2.7.6.tar.xz" which is a distfile not
+     * a patch.  This is obviously not exhaustive.
+     */
+    pub fn is_patch_filename<P: AsRef<Path>>(path: P) -> bool {
+        let Some(p) = path.as_ref().file_name() else {
+            return false;
+        };
+        let s = p.to_string_lossy();
+        if s.starts_with("patch-local-")
+            || s.ends_with(".orig")
+            || s.ends_with(".rej")
+            || s.ends_with("~")
+        {
+            return false;
+        }
+        if s.contains(".tar.") {
+            return false;
+        }
+        s.starts_with("patch-")
+            || (s.starts_with("emul-") && s.contains("-patch-"))
+    }
+
     /**
      * Create a new [`Entry`].
      */
@@ -966,5 +965,24 @@ mod tests {
 
         assert_eq!(di.patchfiles().len(), 1);
         assert_eq!(di.patchfiles()[0].filetype, EntryType::Patchfile);
+    }
+
+    #[test]
+    fn test_is_patch_filename() {
+        /* Valid patch filenames */
+        assert!(Entry::is_patch_filename("patch-Makefile"));
+        assert!(Entry::is_patch_filename("patch-configure.ac"));
+        assert!(Entry::is_patch_filename("emul-linux-x86-patch-foo"));
+
+        /* Junk files */
+        assert!(!Entry::is_patch_filename("patch-local-foo"));
+        assert!(!Entry::is_patch_filename("patch-Makefile.orig"));
+        assert!(!Entry::is_patch_filename("patch-Makefile.rej"));
+        assert!(!Entry::is_patch_filename("patch-Makefile~"));
+
+        /* Distfiles (don't match patch pattern) */
+        assert!(!Entry::is_patch_filename("foo-1.0.tar.gz"));
+        assert!(!Entry::is_patch_filename("patch-2.7.6.tar.xz"));
+        assert!(!Entry::is_patch_filename("emul-foo.tar.gz"));
     }
 }
