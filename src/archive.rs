@@ -1112,7 +1112,7 @@ impl BinaryPackage {
 
     /// Get a specific build info value (first value if multiple exist).
     #[must_use]
-    pub fn get_build_info(&self, key: &str) -> Option<&str> {
+    pub fn build_info_value(&self, key: &str) -> Option<&str> {
         self.build_info
             .get(key)
             .and_then(|v| v.first())
@@ -1121,7 +1121,7 @@ impl BinaryPackage {
 
     /// Get all values for a build info key.
     #[must_use]
-    pub fn get_build_info_all(&self, key: &str) -> Option<&[String]> {
+    pub fn build_info_values(&self, key: &str) -> Option<&[String]> {
         self.build_info.get(key).map(|v| v.as_slice())
     }
 
@@ -1420,32 +1420,32 @@ impl BinaryPackage {
             pkgname,
             self.metadata.comment().to_string(),
             self.metadata.size_pkg().unwrap_or(0),
-            to_string(self.get_build_info("BUILD_DATE").unwrap_or("")),
-            self.get_build_info("CATEGORIES")
+            to_string(self.build_info_value("BUILD_DATE").unwrap_or("")),
+            self.build_info_value("CATEGORIES")
                 .unwrap_or("")
                 .split_whitespace()
                 .map(String::from)
                 .collect(),
-            to_string(self.get_build_info("MACHINE_ARCH").unwrap_or("")),
-            to_string(self.get_build_info("OPSYS").unwrap_or("")),
-            to_string(self.get_build_info("OS_VERSION").unwrap_or("")),
-            to_string(self.get_build_info("PKGPATH").unwrap_or("")),
-            to_string(self.get_build_info("PKGTOOLS_VERSION").unwrap_or("")),
+            to_string(self.build_info_value("MACHINE_ARCH").unwrap_or("")),
+            to_string(self.build_info_value("OPSYS").unwrap_or("")),
+            to_string(self.build_info_value("OS_VERSION").unwrap_or("")),
+            to_string(self.build_info_value("PKGPATH").unwrap_or("")),
+            to_string(self.build_info_value("PKGTOOLS_VERSION").unwrap_or("")),
             self.metadata.desc().lines().map(String::from).collect(),
             // Optional fields - avoid Vec<String> allocation when empty
             to_opt_vec(self.plist.conflicts()),
             to_opt_vec(self.plist.depends()),
-            self.get_build_info("HOMEPAGE")
+            self.build_info_value("HOMEPAGE")
                 .filter(non_empty)
                 .map(to_string),
-            self.get_build_info("LICENSE").map(to_string),
-            self.get_build_info("PKG_OPTIONS").map(to_string),
-            self.get_build_info("PREV_PKGPATH")
+            self.build_info_value("LICENSE").map(to_string),
+            self.build_info_value("PKG_OPTIONS").map(to_string),
+            self.build_info_value("PREV_PKGPATH")
                 .filter(non_empty)
                 .map(to_string),
-            self.get_build_info_all("PROVIDES").map(|v| v.to_vec()),
-            self.get_build_info_all("REQUIRES").map(|v| v.to_vec()),
-            self.get_build_info_all("SUPERSEDES").map(|v| v.to_vec()),
+            self.build_info_values("PROVIDES").map(|v| v.to_vec()),
+            self.build_info_values("REQUIRES").map(|v| v.to_vec()),
+            self.build_info_values("SUPERSEDES").map(|v| v.to_vec()),
             self.path
                 .file_name()
                 .map(|f| f.to_string_lossy().into_owned()),

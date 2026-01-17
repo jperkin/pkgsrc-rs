@@ -439,14 +439,14 @@ impl Distinfo {
     /**
      * Return a matching distfile [`Entry`] if found, otherwise [`None`].
      */
-    pub fn get_distfile<P: AsRef<Path>>(&self, path: P) -> Option<&Entry> {
+    pub fn distfile<P: AsRef<Path>>(&self, path: P) -> Option<&Entry> {
         self.distfiles.get(path.as_ref())
     }
 
     /**
      * Return a matching patchfile [`Entry`] if found, otherwise [`None`].
      */
-    pub fn get_patchfile<P: AsRef<Path>>(&self, path: P) -> Option<&Entry> {
+    pub fn patchfile<P: AsRef<Path>>(&self, path: P) -> Option<&Entry> {
         self.patchfiles.get(path.as_ref())
     }
 
@@ -524,12 +524,12 @@ impl Distinfo {
             }
             match filetype {
                 EntryType::Distfile => {
-                    if let Some(entry) = self.get_distfile(&file) {
+                    if let Some(entry) = self.distfile(&file) {
                         return Ok(entry);
                     }
                 }
                 EntryType::Patchfile => {
-                    if let Some(entry) = self.get_patchfile(&file) {
+                    if let Some(entry) = self.patchfile(&file) {
                         return Ok(entry);
                     }
                 }
@@ -925,12 +925,12 @@ mod tests {
                 "$NetBSD: distinfo,v 1.80 2024/05/27 23:27:10 riastradh Exp $"
             ))
         );
-        let f = di.get_distfile("pkgin-23.8.1.tar.gz");
+        let f = di.distfile("pkgin-23.8.1.tar.gz");
         assert!(f.is_some());
-        let p = di.get_patchfile("patch-configure.ac");
+        let p = di.patchfile("patch-configure.ac");
         assert!(p.is_some());
-        assert_eq!(None, di.get_distfile("foo-23.8.1.tar.gz"));
-        assert_eq!(None, di.get_patchfile("patch-Makefile"));
+        assert_eq!(None, di.distfile("foo-23.8.1.tar.gz"));
+        assert_eq!(None, di.patchfile("patch-Makefile"));
     }
 
     #[test]
