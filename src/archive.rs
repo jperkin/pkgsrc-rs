@@ -125,6 +125,12 @@ pub const DEFAULT_BLOCK_SIZE: usize = 65536;
 /// Current pkgsrc signature version.
 pub const PKGSRC_SIGNATURE_VERSION: u32 = 1;
 
+/// Magic bytes identifying gzip compressed data.
+const GZIP_MAGIC: [u8; 2] = [0x1f, 0x8b];
+
+/// Magic bytes identifying zstd compressed data.
+const ZSTD_MAGIC: [u8; 4] = [0x28, 0xb5, 0x2f, 0xfd];
+
 /// Result type for archive operations.
 pub type Result<T> = std::result::Result<T, Error>;
 
@@ -149,15 +155,15 @@ impl Compression {
     /// Detect compression format from magic bytes.
     #[must_use]
     pub fn from_magic(bytes: &[u8]) -> Option<Self> {
-        if bytes.len() < 4 {
+        if bytes.len() < ZSTD_MAGIC.len() {
             return None;
         }
-        match bytes {
-            // Gzip: 1f 8b
-            [0x1f, 0x8b, ..] => Some(Self::Gzip),
-            // Zstd: 28 b5 2f fd
-            [0x28, 0xb5, 0x2f, 0xfd, ..] => Some(Self::Zstd),
-            _ => None,
+        if bytes.starts_with(&GZIP_MAGIC) {
+            Some(Self::Gzip)
+        } else if bytes.starts_with(&ZSTD_MAGIC) {
+            Some(Self::Zstd)
+        } else {
+            None
         }
     }
 
