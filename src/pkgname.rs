@@ -267,14 +267,15 @@ mod tests {
     }
 
     #[test]
-    fn pkgname_from_str() {
+    fn pkgname_from_str() -> Result<(), std::convert::Infallible> {
         use std::str::FromStr;
 
-        let pkg = PkgName::from_str("mktool-1.3.2nb2").unwrap();
+        let pkg = PkgName::from_str("mktool-1.3.2nb2")?;
         assert_eq!(pkg.pkgname(), "mktool-1.3.2nb2");
 
-        let pkg: PkgName = "foo-2.0".parse().unwrap();
+        let pkg: PkgName = "foo-2.0".parse()?;
         assert_eq!(pkg.pkgbase(), "foo");
+        Ok(())
     }
 
     #[test]
@@ -314,15 +315,16 @@ mod tests {
 
     #[test]
     #[cfg(feature = "serde")]
-    fn pkgname_serde() {
+    fn pkgname_serde() -> Result<(), serde_json::Error> {
         let pkg = PkgName::new("mktool-1.3.2nb2");
-        let se = serde_json::to_string(&pkg).unwrap();
-        let de: PkgName = serde_json::from_str(&se).unwrap();
+        let se = serde_json::to_string(&pkg)?;
+        let de: PkgName = serde_json::from_str(&se)?;
         assert_eq!(se, "\"mktool-1.3.2nb2\"");
         assert_eq!(pkg, de);
         assert_eq!(de.pkgname(), "mktool-1.3.2nb2");
         assert_eq!(de.pkgbase(), "mktool");
         assert_eq!(de.pkgversion(), "1.3.2nb2");
         assert_eq!(de.pkgrevision(), Some(2));
+        Ok(())
     }
 }

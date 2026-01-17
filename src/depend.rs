@@ -73,17 +73,18 @@ impl Depend {
      * # Examples
      *
      * ```
-     * use pkgsrc::{Depend, Pattern, PkgPath};
+     * use pkgsrc::{Depend, DependError, Pattern, PkgPath};
      *
-     * let dep = Depend::new("mktool-[0-9]*:../../pkgtools/mktool").unwrap();
-     * assert_eq!(dep.pattern(), &Pattern::new("mktool-[0-9]*").unwrap());
-     * assert_eq!(dep.pkgpath(), &PkgPath::new("pkgtools/mktool").unwrap());
+     * let dep = Depend::new("mktool-[0-9]*:../../pkgtools/mktool")?;
+     * assert_eq!(dep.pattern(), &Pattern::new("mktool-[0-9]*")?);
+     * assert_eq!(dep.pkgpath(), &PkgPath::new("pkgtools/mktool")?);
      *
      * // Invalid, too many ":".
      * assert!(Depend::new("pkg>0::../../cat/pkg").is_err());
      *
      * // Invalid, incorrect Dewey specification.
      * assert!(Depend::new("pkg>0>2:../../cat/pkg").is_err());
+     * # Ok::<(), DependError>(())
      * ```
      */
     pub fn new(s: &str) -> Result<Self, DependError> {
@@ -211,8 +212,8 @@ mod tests {
 
     #[test]
     fn test_good() -> Result<(), DependError> {
-        let pkgmatch = Pattern::new("mktools-[0-9]").unwrap();
-        let pkgpath = PkgPath::new("../../pkgtools/mktools").unwrap();
+        let pkgmatch = Pattern::new("mktools-[0-9]")?;
+        let pkgpath = PkgPath::new("../../pkgtools/mktools")?;
         let dep = Depend::new("mktools-[0-9]:../../pkgtools/mktools")?;
         assert_eq!(dep.pattern(), &pkgmatch);
         assert_eq!(dep.pkgpath(), &pkgpath);
@@ -242,20 +243,21 @@ mod tests {
     }
 
     #[test]
-    fn test_display() {
-        let dep = Depend::new("mktool-[0-9]*:../../pkgtools/mktool").unwrap();
+    fn test_display() -> Result<(), DependError> {
+        let dep = Depend::new("mktool-[0-9]*:../../pkgtools/mktool")?;
         assert_eq!(dep.to_string(), "mktool-[0-9]*:../../pkgtools/mktool");
+        Ok(())
     }
 
     #[test]
-    fn test_from_str() {
+    fn test_from_str() -> Result<(), DependError> {
         use std::str::FromStr;
 
-        let dep =
-            Depend::from_str("mktool-[0-9]*:../../pkgtools/mktool").unwrap();
-        assert_eq!(dep.pattern(), &Pattern::new("mktool-[0-9]*").unwrap());
+        let dep = Depend::from_str("mktool-[0-9]*:../../pkgtools/mktool")?;
+        assert_eq!(dep.pattern(), &Pattern::new("mktool-[0-9]*")?);
 
-        let dep: Depend = "pkg>=1.0:cat/pkg".parse().unwrap();
-        assert_eq!(dep.pkgpath(), &PkgPath::new("cat/pkg").unwrap());
+        let dep: Depend = "pkg>=1.0:cat/pkg".parse()?;
+        assert_eq!(dep.pkgpath(), &PkgPath::new("cat/pkg")?);
+        Ok(())
     }
 }

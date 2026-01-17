@@ -47,12 +47,13 @@
  * ```no_run
  * use pkgsrc::archive::BinaryPackage;
  *
- * let pkg = BinaryPackage::open("package-1.0.tgz").unwrap();
+ * let pkg = BinaryPackage::open("package-1.0.tgz")?;
  * println!("Package: {}", pkg.pkgname().unwrap_or("unknown"));
  * println!("Comment: {}", pkg.metadata().comment());
  *
  * // Convert to summary for repository management
- * let summary = pkg.to_summary().unwrap();
+ * let summary = pkg.to_summary()?;
+ * # Ok::<(), pkgsrc::archive::Error>(())
  * ```
  *
  * ## Installing a package (iterating entries)
@@ -60,7 +61,7 @@
  * ```no_run
  * use pkgsrc::archive::BinaryPackage;
  *
- * let pkg = BinaryPackage::open("package-1.0.tgz").unwrap();
+ * let pkg = BinaryPackage::open("package-1.0.tgz")?;
  *
  * // Check dependencies first (fast, uses cached metadata)
  * for dep in pkg.plist().depends() {
@@ -68,7 +69,8 @@
  * }
  *
  * // Extract files (re-reads archive)
- * pkg.extract_to("/usr/pkg").unwrap();
+ * pkg.extract_to("/usr/pkg")?;
+ * # Ok::<(), pkgsrc::archive::Error>(())
  * ```
  *
  * ## Building a new package
@@ -77,10 +79,11 @@
  * use pkgsrc::archive::Builder;
  *
  * // Auto-detect compression from filename
- * let mut builder = Builder::create("package-1.0.tgz").unwrap();
- * builder.append_metadata_file("+COMMENT", b"A test package").unwrap();
- * builder.append_file("bin/hello", b"#!/bin/sh\necho hello", 0o755).unwrap();
- * builder.finish().unwrap();
+ * let mut builder = Builder::create("package-1.0.tgz")?;
+ * builder.append_metadata_file("+COMMENT", b"A test package")?;
+ * builder.append_file("bin/hello", b"#!/bin/sh\necho hello", 0o755)?;
+ * builder.finish()?;
+ * # Ok::<(), pkgsrc::archive::Error>(())
  * ```
  *
  * ## Signing an existing package
@@ -88,9 +91,10 @@
  * ```no_run
  * use pkgsrc::archive::BinaryPackage;
  *
- * let pkg = BinaryPackage::open("package-1.0.tgz").unwrap();
+ * let pkg = BinaryPackage::open("package-1.0.tgz")?;
  * let signature = b"GPG SIGNATURE DATA";
- * pkg.sign(signature).unwrap().write_to("package-1.0-signed.tgz").unwrap();
+ * pkg.sign(signature)?.write_to("package-1.0-signed.tgz")?;
+ * # Ok::<(), pkgsrc::archive::Error>(())
  * ```
  */
 
@@ -696,11 +700,12 @@ impl<R: Read> Read for Decoder<R> {
 /// use pkgsrc::archive::{Archive, Compression};
 /// use std::io::Read;
 ///
-/// let mut archive = Archive::open("package-1.0.tgz").unwrap();
-/// for entry in archive.entries().unwrap() {
-///     let entry = entry.unwrap();
-///     println!("{}", entry.path().unwrap().display());
+/// let mut archive = Archive::open("package-1.0.tgz")?;
+/// for entry in archive.entries()? {
+///     let entry = entry?;
+///     println!("{}", entry.path()?.display());
 /// }
+/// # Ok::<(), pkgsrc::archive::Error>(())
 /// ```
 pub struct Archive<R: Read> {
     inner: TarArchive<Decoder<R>>,
@@ -800,15 +805,16 @@ pub struct SummaryOptions {
 /// use pkgsrc::archive::BinaryPackage;
 ///
 /// // Fast metadata access
-/// let pkg = BinaryPackage::open("package-1.0.tgz").unwrap();
+/// let pkg = BinaryPackage::open("package-1.0.tgz")?;
 /// println!("Name: {}", pkg.pkgname().unwrap_or("unknown"));
 /// println!("Comment: {}", pkg.metadata().comment());
 ///
 /// // Generate summary for repository
-/// let summary = pkg.to_summary().unwrap();
+/// let summary = pkg.to_summary()?;
 ///
 /// // Extract files (re-reads archive)
-/// pkg.extract_to("/usr/pkg").unwrap();
+/// pkg.extract_to("/usr/pkg")?;
+/// # Ok::<(), pkgsrc::archive::Error>(())
 /// ```
 #[derive(Debug)]
 pub struct BinaryPackage {
@@ -1179,12 +1185,13 @@ impl BinaryPackage {
     /// ```no_run
     /// use pkgsrc::archive::{BinaryPackage, ExtractOptions};
     ///
-    /// let pkg = BinaryPackage::open("package-1.0.tgz").unwrap();
+    /// let pkg = BinaryPackage::open("package-1.0.tgz")?;
     /// let options = ExtractOptions::new().with_mode();
-    /// let extracted = pkg.extract_with_plist("/usr/pkg", options).unwrap();
+    /// let extracted = pkg.extract_with_plist("/usr/pkg", options)?;
     /// for file in &extracted {
     ///     println!("Extracted: {}", file.path.display());
     /// }
+    /// # Ok::<(), pkgsrc::archive::Error>(())
     /// ```
     #[cfg(unix)]
     pub fn extract_with_plist(
@@ -1369,9 +1376,10 @@ impl BinaryPackage {
     /// ```no_run
     /// use pkgsrc::archive::{BinaryPackage, SummaryOptions};
     ///
-    /// let pkg = BinaryPackage::open("package-1.0.tgz").unwrap();
+    /// let pkg = BinaryPackage::open("package-1.0.tgz")?;
     /// let opts = SummaryOptions { compute_file_cksum: true };
-    /// let summary = pkg.to_summary_with_opts(&opts).unwrap();
+    /// let summary = pkg.to_summary_with_opts(&opts)?;
+    /// # Ok::<(), pkgsrc::archive::Error>(())
     /// ```
     pub fn to_summary_with_opts(
         &self,
@@ -1575,17 +1583,18 @@ impl<W: Write> Encoder<W> {
 /// use pkgsrc::archive::Builder;
 ///
 /// // Create a package with auto-detected compression from filename
-/// let mut builder = Builder::create("package-1.0.tgz").unwrap();
+/// let mut builder = Builder::create("package-1.0.tgz")?;
 ///
 /// // Add metadata files first
-/// builder.append_metadata_file("+CONTENTS", b"@name package-1.0\n").unwrap();
-/// builder.append_metadata_file("+COMMENT", b"A test package").unwrap();
-/// builder.append_metadata_file("+DESC", b"Description here").unwrap();
+/// builder.append_metadata_file("+CONTENTS", b"@name package-1.0\n")?;
+/// builder.append_metadata_file("+COMMENT", b"A test package")?;
+/// builder.append_metadata_file("+DESC", b"Description here")?;
 ///
 /// // Add package files
-/// builder.append_file("bin/hello", b"#!/bin/sh\necho hello", 0o755).unwrap();
+/// builder.append_file("bin/hello", b"#!/bin/sh\necho hello", 0o755)?;
 ///
-/// builder.finish().unwrap();
+/// builder.finish()?;
+/// # Ok::<(), pkgsrc::archive::Error>(())
 /// ```
 pub struct Builder<W: Write> {
     inner: TarBuilder<Encoder<W>>,
@@ -1866,7 +1875,7 @@ mod tests {
     }
 
     #[test]
-    fn test_pkg_hash_parse() {
+    fn test_pkg_hash_parse() -> Result<()> {
         let content = "\
 pkgsrc signature
 version: 1
@@ -1877,7 +1886,7 @@ file size: 12345
 abc123
 def456
 ";
-        let pkg_hash = PkgHash::parse(content).unwrap();
+        let pkg_hash = PkgHash::parse(content)?;
 
         assert_eq!(pkg_hash.version(), 1);
         assert_eq!(pkg_hash.pkgname(), "test-1.0");
@@ -1885,56 +1894,56 @@ def456
         assert_eq!(pkg_hash.block_size(), 65536);
         assert_eq!(pkg_hash.file_size(), 12345);
         assert_eq!(pkg_hash.hashes(), &["abc123", "def456"]);
+        Ok(())
     }
 
     #[test]
-    fn test_pkg_hash_generate() {
+    fn test_pkg_hash_generate() -> Result<()> {
         let data = b"Hello, World!";
         let pkg_hash = PkgHash::from_tarball(
             "test-1.0",
             Cursor::new(data),
             PkgHashAlgorithm::Sha512,
             1024,
-        )
-        .unwrap();
+        )?;
 
         assert_eq!(pkg_hash.pkgname(), "test-1.0");
         assert_eq!(pkg_hash.algorithm(), PkgHashAlgorithm::Sha512);
         assert_eq!(pkg_hash.block_size(), 1024);
         assert_eq!(pkg_hash.file_size(), 13);
         assert_eq!(pkg_hash.hashes().len(), 1);
+        Ok(())
     }
 
     #[test]
-    fn test_pkg_hash_verify() {
+    fn test_pkg_hash_verify() -> Result<()> {
         let data = b"Hello, World!";
         let pkg_hash = PkgHash::from_tarball(
             "test-1.0",
             Cursor::new(data),
             PkgHashAlgorithm::Sha512,
             1024,
-        )
-        .unwrap();
+        )?;
 
-        assert!(pkg_hash.verify(Cursor::new(data)).unwrap());
+        assert!(pkg_hash.verify(Cursor::new(data))?);
 
         let bad_data = b"Goodbye, World!";
         assert!(pkg_hash.verify(Cursor::new(bad_data)).is_err());
+        Ok(())
     }
 
     #[test]
-    fn test_pkg_hash_roundtrip() {
+    fn test_pkg_hash_roundtrip() -> Result<()> {
         let data = vec![0u8; 200_000];
         let pkg_hash = PkgHash::from_tarball(
             "test-1.0",
             Cursor::new(&data),
             PkgHashAlgorithm::Sha512,
             65536,
-        )
-        .unwrap();
+        )?;
 
         let serialized = pkg_hash.to_string();
-        let parsed = PkgHash::parse(&serialized).unwrap();
+        let parsed = PkgHash::parse(&serialized)?;
 
         assert_eq!(pkg_hash.version(), parsed.version());
         assert_eq!(pkg_hash.pkgname(), parsed.pkgname());
@@ -1943,102 +1952,86 @@ def456
         assert_eq!(pkg_hash.file_size(), parsed.file_size());
         assert_eq!(pkg_hash.hashes(), parsed.hashes());
 
-        assert!(parsed.verify(Cursor::new(&data)).unwrap());
+        assert!(parsed.verify(Cursor::new(&data))?);
+        Ok(())
     }
 
     #[test]
-    fn test_build_package_gzip() {
+    fn test_build_package_gzip() -> Result<()> {
         // Use new() which defaults to gzip
-        let mut builder = Builder::new(Vec::new()).unwrap();
+        let mut builder = Builder::new(Vec::new())?;
 
         let plist = "@name testpkg-1.0\n@cwd /opt/test\nbin/test\n";
-        builder
-            .append_metadata_file("+CONTENTS", plist.as_bytes())
-            .unwrap();
-        builder
-            .append_metadata_file("+COMMENT", b"A test package")
-            .unwrap();
-        builder
-            .append_metadata_file("+DESC", b"This is a test.\nMultiple lines.")
-            .unwrap();
-        builder
-            .append_metadata_file(
-                "+BUILD_INFO",
-                b"OPSYS=NetBSD\nMACHINE_ARCH=x86_64\n",
-            )
-            .unwrap();
-        builder
-            .append_file("bin/test", b"#!/bin/sh\necho test", 0o755)
-            .unwrap();
-        let output = builder.finish().unwrap();
+        builder.append_metadata_file("+CONTENTS", plist.as_bytes())?;
+        builder.append_metadata_file("+COMMENT", b"A test package")?;
+        builder.append_metadata_file(
+            "+DESC",
+            b"This is a test.\nMultiple lines.",
+        )?;
+        builder.append_metadata_file(
+            "+BUILD_INFO",
+            b"OPSYS=NetBSD\nMACHINE_ARCH=x86_64\n",
+        )?;
+        builder.append_file("bin/test", b"#!/bin/sh\necho test", 0o755)?;
+        let output = builder.finish()?;
 
         assert!(!output.is_empty());
 
         // Verify we can read it back using low-level Archive (default gzip)
-        let mut archive = Archive::new(Cursor::new(&output)).unwrap();
+        let mut archive = Archive::new(Cursor::new(&output))?;
         let mut found_contents = false;
-        for entry in archive.entries().unwrap() {
-            let entry = entry.unwrap();
-            if entry.path().unwrap().to_str() == Some("+CONTENTS") {
+        for entry in archive.entries()? {
+            let entry = entry?;
+            if entry.path()?.to_str() == Some("+CONTENTS") {
                 found_contents = true;
                 break;
             }
         }
         assert!(found_contents);
+        Ok(())
     }
 
     #[test]
-    fn test_build_package_zstd() {
+    fn test_build_package_zstd() -> Result<()> {
         // Use with_compression for explicit zstd
         let mut builder =
-            Builder::with_compression(Vec::new(), Compression::Zstd).unwrap();
+            Builder::with_compression(Vec::new(), Compression::Zstd)?;
 
         let plist = "@name testpkg-1.0\n@cwd /opt/test\nbin/test\n";
-        builder
-            .append_metadata_file("+CONTENTS", plist.as_bytes())
-            .unwrap();
-        builder
-            .append_metadata_file("+COMMENT", b"A test package")
-            .unwrap();
-        builder
-            .append_metadata_file("+DESC", b"This is a test.\nMultiple lines.")
-            .unwrap();
-        builder
-            .append_file("bin/test", b"#!/bin/sh\necho test", 0o755)
-            .unwrap();
-        let output = builder.finish().unwrap();
+        builder.append_metadata_file("+CONTENTS", plist.as_bytes())?;
+        builder.append_metadata_file("+COMMENT", b"A test package")?;
+        builder.append_metadata_file(
+            "+DESC",
+            b"This is a test.\nMultiple lines.",
+        )?;
+        builder.append_file("bin/test", b"#!/bin/sh\necho test", 0o755)?;
+        let output = builder.finish()?;
 
         assert!(!output.is_empty());
 
         // Verify we can read it back using low-level Archive
         let mut archive =
-            Archive::with_compression(Cursor::new(&output), Compression::Zstd)
-                .unwrap();
+            Archive::with_compression(Cursor::new(&output), Compression::Zstd)?;
         let mut found_contents = false;
-        for entry in archive.entries().unwrap() {
-            let entry = entry.unwrap();
-            if entry.path().unwrap().to_str() == Some("+CONTENTS") {
+        for entry in archive.entries()? {
+            let entry = entry?;
+            if entry.path()?.to_str() == Some("+CONTENTS") {
                 found_contents = true;
                 break;
             }
         }
         assert!(found_contents);
+        Ok(())
     }
 
     #[test]
-    fn test_signed_archive_from_unsigned() {
+    fn test_signed_archive_from_unsigned() -> Result<()> {
         // Build an unsigned package (default gzip)
-        let mut builder = Builder::new(Vec::new()).unwrap();
-        builder
-            .append_metadata_file("+CONTENTS", b"@name testpkg-1.0\n")
-            .unwrap();
-        builder
-            .append_metadata_file("+COMMENT", b"A test package")
-            .unwrap();
-        builder
-            .append_metadata_file("+DESC", b"Test description")
-            .unwrap();
-        let output = builder.finish().unwrap();
+        let mut builder = Builder::new(Vec::new())?;
+        builder.append_metadata_file("+CONTENTS", b"@name testpkg-1.0\n")?;
+        builder.append_metadata_file("+COMMENT", b"A test package")?;
+        builder.append_metadata_file("+DESC", b"Test description")?;
+        let output = builder.finish()?;
 
         let fake_signature = b"FAKE GPG SIGNATURE";
         let signed = SignedArchive::from_unsigned(
@@ -2046,8 +2039,7 @@ def456
             "testpkg-1.0",
             fake_signature,
             Compression::Gzip,
-        )
-        .unwrap();
+        )?;
 
         assert_eq!(signed.pkgname(), "testpkg-1.0");
         assert_eq!(signed.pkg_hash().algorithm(), PkgHashAlgorithm::Sha512);
@@ -2055,25 +2047,20 @@ def456
 
         // Write to buffer and verify it's an ar archive
         let mut signed_output = Vec::new();
-        signed.write(&mut signed_output).unwrap();
+        signed.write(&mut signed_output)?;
         assert!(&signed_output[..7] == b"!<arch>");
+        Ok(())
     }
 
     #[test]
-    fn test_signed_archive_zstd() {
+    fn test_signed_archive_zstd() -> Result<()> {
         // Build an unsigned zstd package
         let mut builder =
-            Builder::with_compression(Vec::new(), Compression::Zstd).unwrap();
-        builder
-            .append_metadata_file("+CONTENTS", b"@name testpkg-1.0\n")
-            .unwrap();
-        builder
-            .append_metadata_file("+COMMENT", b"A test package")
-            .unwrap();
-        builder
-            .append_metadata_file("+DESC", b"Test description")
-            .unwrap();
-        let output = builder.finish().unwrap();
+            Builder::with_compression(Vec::new(), Compression::Zstd)?;
+        builder.append_metadata_file("+CONTENTS", b"@name testpkg-1.0\n")?;
+        builder.append_metadata_file("+COMMENT", b"A test package")?;
+        builder.append_metadata_file("+DESC", b"Test description")?;
+        let output = builder.finish()?;
 
         let fake_signature = b"FAKE GPG SIGNATURE";
         let signed = SignedArchive::from_unsigned(
@@ -2081,16 +2068,16 @@ def456
             "testpkg-1.0",
             fake_signature,
             Compression::Zstd,
-        )
-        .unwrap();
+        )?;
 
         assert_eq!(signed.pkgname(), "testpkg-1.0");
         assert_eq!(signed.compression(), Compression::Zstd);
 
         // Write to buffer and verify it's an ar archive
         let mut signed_output = Vec::new();
-        signed.write(&mut signed_output).unwrap();
+        signed.write(&mut signed_output)?;
         assert!(&signed_output[..7] == b"!<arch>");
+        Ok(())
     }
 
     #[test]

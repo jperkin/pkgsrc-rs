@@ -38,10 +38,11 @@
  *
  *     for file in archive.entries()? {
  *         let mut file = file?;
- *         let fname = String::from(file.header().path()?.to_str().unwrap());
+ *         let path = file.header().path()?;
+ *         let Some(fname) = path.to_str() else { continue };
  *         let mut s = String::new();
  *
- *         if let Some(entry) = Entry::from_filename(fname.as_str()) {
+ *         if let Some(entry) = Entry::from_filename(fname) {
  *             file.read_to_string(&mut s)?;
  *             metadata.read_metadata(entry, &s)?;
  *         }
@@ -200,13 +201,14 @@ pub struct Metadata {
  * # Example
  *
  * ```
- * use pkgsrc::metadata::Entry;
+ * use pkgsrc::metadata::{Entry, Error};
  * use std::str::FromStr;
  *
  * let e = Entry::Desc;
  * assert_eq!(e.to_filename(), "+DESC");
- * assert_eq!(Entry::from_str("+DESC").unwrap(), e);
+ * assert_eq!(Entry::from_str("+DESC")?, e);
  * assert!(Entry::from_str("+BADFILE").is_err());
+ * # Ok::<(), Error>(())
  * ```
  */
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
@@ -555,6 +557,8 @@ impl Entry {
 mod tests {
     use super::*;
 
+    type Result<T> = std::result::Result<T, Error>;
+
     #[test]
     fn test_metadata_new() {
         let m = Metadata::new();
@@ -566,46 +570,50 @@ mod tests {
     }
 
     #[test]
-    fn test_read_metadata_comment() {
+    fn test_read_metadata_comment() -> Result<()> {
         let mut m = Metadata::new();
-        m.read_metadata(Entry::Comment, "  Test comment  ").unwrap();
+        m.read_metadata(Entry::Comment, "  Test comment  ")?;
         assert_eq!(m.comment(), "Test comment");
+        Ok(())
     }
 
     #[test]
-    fn test_read_metadata_contents() {
+    fn test_read_metadata_contents() -> Result<()> {
         let mut m = Metadata::new();
-        m.read_metadata(Entry::Contents, "bin/foo\nbin/bar\n")
-            .unwrap();
+        m.read_metadata(Entry::Contents, "bin/foo\nbin/bar\n")?;
         assert_eq!(m.contents(), "bin/foo\nbin/bar");
+        Ok(())
     }
 
     #[test]
-    fn test_read_metadata_desc() {
+    fn test_read_metadata_desc() -> Result<()> {
         let mut m = Metadata::new();
-        m.read_metadata(Entry::Desc, "  Line 1\n  Line 2\n\n")
-            .unwrap();
+        m.read_metadata(Entry::Desc, "  Line 1\n  Line 2\n\n")?;
         assert_eq!(m.desc(), "  Line 1\n  Line 2");
+        Ok(())
     }
 
     #[test]
-    fn test_read_metadata_build_info() {
+    fn test_read_metadata_build_info() -> Result<()> {
         let mut m = Metadata::new();
-        m.read_metadata(Entry::BuildInfo, "KEY1=val1\nKEY2=val2\n")
-            .unwrap();
-        let info = m.build_info().unwrap();
+        m.read_metadata(Entry::BuildInfo, "KEY1=val1\nKEY2=val2\n")?;
+        let info = m
+            .build_info()
+            .ok_or(Error::MissingRequired("+BUILD_INFO"))?;
         assert_eq!(info.len(), 2);
         assert_eq!(info[0], "KEY1=val1");
         assert_eq!(info[1], "KEY2=val2");
+        Ok(())
     }
 
     #[test]
-    fn test_read_metadata_size() {
+    fn test_read_metadata_size() -> Result<()> {
         let mut m = Metadata::new();
-        m.read_metadata(Entry::SizeAll, "  12345  ").unwrap();
-        m.read_metadata(Entry::SizePkg, "67890").unwrap();
+        m.read_metadata(Entry::SizeAll, "  12345  ")?;
+        m.read_metadata(Entry::SizePkg, "67890")?;
         assert_eq!(m.size_all(), Some(12345));
         assert_eq!(m.size_pkg(), Some(67890));
+        Ok(())
     }
 
     #[test]
@@ -623,22 +631,25 @@ mod tests {
     }
 
     #[test]
-    fn test_read_metadata_optional_fields() {
+    fn test_read_metadata_optional_fields() -> Result<()> {
         let mut m = Metadata::new();
-        m.read_metadata(Entry::DeInstall, "#!/bin/sh\nexit 0")
-            .unwrap();
-        m.read_metadata(Entry::Install, "#!/bin/sh\nexit 0")
-            .unwrap();
-        m.read_metadata(Entry::Display, "Important message")
-            .unwrap();
-        m.read_metadata(Entry::Preserve, "yes").unwrap();
-        m.read_metadata(Entry::RequiredBy, "pkg1\npkg2").unwrap();
+        m.read_metadata(Entry::DeInstall, "#!/bin/sh\nexit 0")?;
+        m.read_metadata(Entry::Install, "#!/bin/sh\nexit 0")?;
+        m.read_metadata(Entry::Display, "Important message")?;
+        m.read_metadata(Entry::Preserve, "yes")?;
+        m.read_metadata(Entry::RequiredBy, "pkg1\npkg2")?;
 
         assert_eq!(m.deinstall(), Some("#!/bin/sh\nexit 0"));
         assert_eq!(m.install(), Some("#!/bin/sh\nexit 0"));
         assert_eq!(m.display(), Some("Important message"));
-        assert_eq!(m.preserve().unwrap(), &["yes"]);
-        assert_eq!(m.required_by().unwrap(), &["pkg1", "pkg2"]);
+        let preserve =
+            m.preserve().ok_or(Error::MissingRequired("+PRESERVE"))?;
+        assert_eq!(preserve, &["yes"]);
+        let required_by = m
+            .required_by()
+            .ok_or(Error::MissingRequired("+REQUIRED_BY"))?;
+        assert_eq!(required_by, &["pkg1", "pkg2"]);
+        Ok(())
     }
 
     #[test]
@@ -651,43 +662,47 @@ mod tests {
     }
 
     #[test]
-    fn test_validate_missing_contents() {
+    fn test_validate_missing_contents() -> Result<()> {
         let mut m = Metadata::new();
-        m.read_metadata(Entry::Comment, "Test").unwrap();
+        m.read_metadata(Entry::Comment, "Test")?;
         assert!(matches!(
             m.validate(),
             Err(Error::MissingRequired("+CONTENTS"))
         ));
+        Ok(())
     }
 
     #[test]
-    fn test_validate_missing_desc() {
+    fn test_validate_missing_desc() -> Result<()> {
         let mut m = Metadata::new();
-        m.read_metadata(Entry::Comment, "Test").unwrap();
-        m.read_metadata(Entry::Contents, "bin/foo").unwrap();
+        m.read_metadata(Entry::Comment, "Test")?;
+        m.read_metadata(Entry::Contents, "bin/foo")?;
         assert!(matches!(m.validate(), Err(Error::MissingRequired("+DESC"))));
+        Ok(())
     }
 
     #[test]
-    fn test_validate_success() {
+    fn test_validate_success() -> Result<()> {
         let mut m = Metadata::new();
-        m.read_metadata(Entry::Comment, "Test").unwrap();
-        m.read_metadata(Entry::Contents, "bin/foo").unwrap();
-        m.read_metadata(Entry::Desc, "Description").unwrap();
+        m.read_metadata(Entry::Comment, "Test")?;
+        m.read_metadata(Entry::Contents, "bin/foo")?;
+        m.read_metadata(Entry::Desc, "Description")?;
         assert!(m.validate().is_ok());
         assert!(m.is_valid());
+        Ok(())
     }
 
     #[test]
-    fn test_is_valid() {
+    fn test_is_valid() -> Result<()> {
         let mut m = Metadata::new();
         assert!(!m.is_valid());
-        m.read_metadata(Entry::Comment, "Test").unwrap();
+        m.read_metadata(Entry::Comment, "Test")?;
         assert!(!m.is_valid());
-        m.read_metadata(Entry::Contents, "bin/foo").unwrap();
+        m.read_metadata(Entry::Contents, "bin/foo")?;
         assert!(!m.is_valid());
-        m.read_metadata(Entry::Desc, "Description").unwrap();
+        m.read_metadata(Entry::Desc, "Description")?;
         assert!(m.is_valid());
+        Ok(())
     }
 
     #[test]
@@ -698,13 +713,14 @@ mod tests {
     }
 
     #[test]
-    fn test_entry_from_str() {
-        assert_eq!("+BUILD_INFO".parse::<Entry>().unwrap(), Entry::BuildInfo);
-        assert_eq!("+COMMENT".parse::<Entry>().unwrap(), Entry::Comment);
-        assert_eq!("+SIZE_PKG".parse::<Entry>().unwrap(), Entry::SizePkg);
+    fn test_entry_from_str() -> Result<()> {
+        assert_eq!("+BUILD_INFO".parse::<Entry>()?, Entry::BuildInfo);
+        assert_eq!("+COMMENT".parse::<Entry>()?, Entry::Comment);
+        assert_eq!("+SIZE_PKG".parse::<Entry>()?, Entry::SizePkg);
 
         let result = "+INVALID".parse::<Entry>();
         assert!(matches!(result, Err(Error::UnknownEntry(_))));
+        Ok(())
     }
 
     #[test]
@@ -734,7 +750,7 @@ mod tests {
     }
 
     #[test]
-    fn test_entry_roundtrip() {
+    fn test_entry_roundtrip() -> Result<()> {
         let entries = [
             Entry::BuildInfo,
             Entry::BuildVersion,
@@ -753,9 +769,11 @@ mod tests {
         ];
         for entry in entries {
             let filename = entry.to_filename();
-            let parsed = Entry::from_filename(filename).unwrap();
+            let parsed = Entry::from_filename(filename)
+                .ok_or(Error::UnknownEntry(filename.to_string()))?;
             assert_eq!(entry, parsed);
         }
+        Ok(())
     }
 
     #[test]
@@ -768,7 +786,7 @@ mod tests {
     }
 
     #[test]
-    fn test_all_optional_getters() {
+    fn test_all_optional_getters() -> Result<()> {
         let mut m = Metadata::new();
 
         assert!(m.build_info().is_none());
@@ -783,28 +801,54 @@ mod tests {
         assert!(m.size_all().is_none());
         assert!(m.size_pkg().is_none());
 
-        m.read_metadata(Entry::BuildInfo, "a").unwrap();
-        m.read_metadata(Entry::BuildVersion, "b").unwrap();
-        m.read_metadata(Entry::DeInstall, "c").unwrap();
-        m.read_metadata(Entry::Display, "d").unwrap();
-        m.read_metadata(Entry::Install, "e").unwrap();
-        m.read_metadata(Entry::InstalledInfo, "f").unwrap();
-        m.read_metadata(Entry::MtreeDirs, "g").unwrap();
-        m.read_metadata(Entry::Preserve, "h").unwrap();
-        m.read_metadata(Entry::RequiredBy, "i").unwrap();
-        m.read_metadata(Entry::SizeAll, "100").unwrap();
-        m.read_metadata(Entry::SizePkg, "200").unwrap();
+        m.read_metadata(Entry::BuildInfo, "a")?;
+        m.read_metadata(Entry::BuildVersion, "b")?;
+        m.read_metadata(Entry::DeInstall, "c")?;
+        m.read_metadata(Entry::Display, "d")?;
+        m.read_metadata(Entry::Install, "e")?;
+        m.read_metadata(Entry::InstalledInfo, "f")?;
+        m.read_metadata(Entry::MtreeDirs, "g")?;
+        m.read_metadata(Entry::Preserve, "h")?;
+        m.read_metadata(Entry::RequiredBy, "i")?;
+        m.read_metadata(Entry::SizeAll, "100")?;
+        m.read_metadata(Entry::SizePkg, "200")?;
 
-        assert_eq!(m.build_info().unwrap(), &["a"]);
-        assert_eq!(m.build_version().unwrap(), &["b"]);
-        assert_eq!(m.deinstall().unwrap(), "c");
-        assert_eq!(m.display().unwrap(), "d");
-        assert_eq!(m.install().unwrap(), "e");
-        assert_eq!(m.installed_info().unwrap(), &["f"]);
-        assert_eq!(m.mtree_dirs().unwrap(), &["g"]);
-        assert_eq!(m.preserve().unwrap(), &["h"]);
-        assert_eq!(m.required_by().unwrap(), &["i"]);
-        assert_eq!(m.size_all().unwrap(), 100);
-        assert_eq!(m.size_pkg().unwrap(), 200);
+        let build_info = m
+            .build_info()
+            .ok_or(Error::MissingRequired("+BUILD_INFO"))?;
+        assert_eq!(build_info, &["a"]);
+        let build_version = m
+            .build_version()
+            .ok_or(Error::MissingRequired("+BUILD_VERSION"))?;
+        assert_eq!(build_version, &["b"]);
+        let deinstall =
+            m.deinstall().ok_or(Error::MissingRequired("+DEINSTALL"))?;
+        assert_eq!(deinstall, "c");
+        let display = m.display().ok_or(Error::MissingRequired("+DISPLAY"))?;
+        assert_eq!(display, "d");
+        let install = m.install().ok_or(Error::MissingRequired("+INSTALL"))?;
+        assert_eq!(install, "e");
+        let installed_info = m
+            .installed_info()
+            .ok_or(Error::MissingRequired("+INSTALLED_INFO"))?;
+        assert_eq!(installed_info, &["f"]);
+        let mtree_dirs = m
+            .mtree_dirs()
+            .ok_or(Error::MissingRequired("+MTREE_DIRS"))?;
+        assert_eq!(mtree_dirs, &["g"]);
+        let preserve =
+            m.preserve().ok_or(Error::MissingRequired("+PRESERVE"))?;
+        assert_eq!(preserve, &["h"]);
+        let required_by = m
+            .required_by()
+            .ok_or(Error::MissingRequired("+REQUIRED_BY"))?;
+        assert_eq!(required_by, &["i"]);
+        let size_all =
+            m.size_all().ok_or(Error::MissingRequired("+SIZE_ALL"))?;
+        assert_eq!(size_all, 100);
+        let size_pkg =
+            m.size_pkg().ok_or(Error::MissingRequired("+SIZE_PKG"))?;
+        assert_eq!(size_pkg, 200);
+        Ok(())
     }
 }

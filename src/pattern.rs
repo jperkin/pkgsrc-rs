@@ -69,10 +69,11 @@ pub enum PatternError {
  * ```
  * use pkgsrc::Pattern;
  *
- * let m = Pattern::new("mutt-[0-9]*").unwrap();
+ * let m = Pattern::new("mutt-[0-9]*")?;
  * assert_eq!(m.matches("mutt-2.2.13"), true);
  * assert_eq!(m.matches("mutt-vid-1.1"), false);
  * assert_eq!(m.matches("pine-1.0"), false);
+ * # Ok::<(), pkgsrc::PatternError>(())
  * ```
  *
  * Next most popular are so-called "dewey" matches.  These are used to test
@@ -81,11 +82,12 @@ pub enum PatternError {
  * ```
  * use pkgsrc::Pattern;
  *
- * let m = Pattern::new("librsvg>=2.12<2.41").unwrap();
+ * let m = Pattern::new("librsvg>=2.12<2.41")?;
  * assert_eq!(m.matches("librsvg-2.11"), false);
  * assert_eq!(m.matches("librsvg-2.12alpha"), false);
  * assert_eq!(m.matches("librsvg-2.13"), true);
  * assert_eq!(m.matches("librsvg-2.41"), false);
+ * # Ok::<(), pkgsrc::PatternError>(())
  * ```
  *
  * Alternate matches are csh-style `{foo,bar}` either/or matches, matching any
@@ -94,10 +96,11 @@ pub enum PatternError {
  * ```
  * use pkgsrc::Pattern;
  *
- * let m = Pattern::new("{mysql,mariadb,percona}-[0-9]*").unwrap();
+ * let m = Pattern::new("{mysql,mariadb,percona}-[0-9]*")?;
  * assert_eq!(m.matches("mysql-8.0.36"), true);
  * assert_eq!(m.matches("mariadb-11.4.3"), true);
  * assert_eq!(m.matches("postgresql-16.4"), false);
+ * # Ok::<(), pkgsrc::PatternError>(())
  * ```
  *
  * Finally plain, exact string matches can be used, though these are very
@@ -106,9 +109,10 @@ pub enum PatternError {
  * ```
  * use pkgsrc::Pattern;
  *
- * let m = Pattern::new("foobar-1.0").unwrap();
+ * let m = Pattern::new("foobar-1.0")?;
  * assert_eq!(m.matches("foobar-1.0"), true);
  * assert_eq!(m.matches("foobar-1.1"), false);
+ * # Ok::<(), pkgsrc::PatternError>(())
  * ```
  *
  * If the pattern is invalid, [`Pattern::new`] will return a [`PatternError`].
@@ -256,11 +260,12 @@ impl Pattern {
      * ```
      * use pkgsrc::Pattern;
      *
-     * let pkgmatch = Pattern::new("librsvg>=2.12<2.41").unwrap();
+     * let pkgmatch = Pattern::new("librsvg>=2.12<2.41")?;
      * assert_eq!(pkgmatch.matches("librsvg"), false);
      * assert_eq!(pkgmatch.matches("librsvg-2.11"), false);
      * assert_eq!(pkgmatch.matches("librsvg-2.13"), true);
      * assert_eq!(pkgmatch.matches("librsvg-2.41"), false);
+     * # Ok::<(), pkgsrc::PatternError>(())
      * ```
      */
     #[must_use]
@@ -451,18 +456,17 @@ impl Pattern {
     fn quick_pkg_match(pattern: &str, pkg: &str) -> bool {
         let mut p1 = pattern.chars();
         let mut p2 = pkg.chars();
-        let mut p;
 
-        p = p1.next();
-        if p.is_none() || !Self::is_simple_char(p.unwrap()) {
+        let p = p1.next();
+        if !p.is_some_and(Self::is_simple_char) {
             return true;
         }
         if p != p2.next() {
             return false;
         }
 
-        p = p1.next();
-        if p.is_none() || !Self::is_simple_char(p.unwrap()) {
+        let p = p1.next();
+        if !p.is_some_and(Self::is_simple_char) {
             return true;
         }
         if p != p2.next() {
@@ -482,7 +486,7 @@ mod tests {
 
     macro_rules! assert_pattern {
         ($pattern:expr, $pkg:expr, $variant:pat, $result:expr) => {
-            let p = Pattern::new($pattern).unwrap();
+            let p = Pattern::new($pattern)?;
             assert!(matches!(&p.matchtype, $variant));
             assert_eq!(p.matches($pkg), $result);
         };
@@ -508,7 +512,7 @@ mod tests {
      * csh-style alternate matches, i.e. "{this,that}".
      */
     #[test]
-    fn alternate_match_ok() {
+    fn alternate_match_ok() -> Result<(), PatternError> {
         use super::PatternType::Alternate;
         assert_pattern_eq!("a-{b,c}-{d{e,f},g}-h>=1", "a-b-de-h-2", Alternate);
         assert_pattern_eq!("a-{b,c}-{d{e,f},g}-h>=1", "a-b-de-h-2", Alternate);
@@ -517,12 +521,14 @@ mod tests {
         assert_pattern_eq!("a-{b,c}-{d{e,f},g}-h>=1", "a-c-de-h-2", Alternate);
         assert_pattern_eq!("a-{b,c}-{d{e,f},g}-h>=1", "a-c-df-h-2", Alternate);
         assert_pattern_eq!("a-{b,c}-{d{e,f},g}-h>=1", "a-c-g-h-2", Alternate);
+        Ok(())
     }
     #[test]
-    fn alternate_match_notok() {
+    fn alternate_match_notok() -> Result<(), PatternError> {
         use super::PatternType::Alternate;
         assert_pattern_ne!("a-{b,c}-{d{e,f},g}-h>=1", "a-a-g-h-2", Alternate);
         assert_pattern_ne!("a-{b,c}-{d{e,f},g}-h>=1", "a-b-d-h-2", Alternate);
+        Ok(())
     }
     #[test]
     fn alternate_match_err() {
@@ -538,7 +544,7 @@ mod tests {
      * means a range match.
      */
     #[test]
-    fn dewey_match_ok() {
+    fn dewey_match_ok() -> Result<(), PatternError> {
         use super::PatternType::Dewey;
         assert_pattern_eq!("foo>1", "foo-1.1", Dewey);
         assert_pattern_eq!("foo>1", "foo-1.0pl1", Dewey);
@@ -562,9 +568,10 @@ mod tests {
         assert_pattern_eq!("pkg>=0", "pkg-", Dewey);
         assert_pattern_eq!("foo>1.1", "foo-1.1blah2", Dewey);
         assert_pattern_eq!("foo>1.1a2", "foo-1.1blah2", Dewey);
+        Ok(())
     }
     #[test]
-    fn dewey_match_notok() {
+    fn dewey_match_notok() -> Result<(), PatternError> {
         use super::PatternType::Dewey;
         assert_pattern_ne!("foo>1alpha<2beta", "foo-2.5", Dewey);
         assert_pattern_ne!("foo>1", "foo-0.5", Dewey);
@@ -580,9 +587,10 @@ mod tests {
         // XXX: this currently passes, pkg_match does not
         //assert_pattern_eq!("pkg>=0", "pkg", Dewey);
         assert_pattern_ne!("foo>1.1c2", "foo-1.1blah2", Dewey);
+        Ok(())
     }
     #[test]
-    fn dewey_match_err() {
+    fn dewey_match_err() -> std::result::Result<(), &'static str> {
         use super::PatternError::Dewey;
         /* Must be no more than 1 of each direction operator. */
         assert_pattern_err!("foo>1<2<3", Dewey(_));
@@ -595,35 +603,34 @@ mod tests {
          * the original intent may not be obvious and the first operator may
          * be correct.
          */
-        if let Err(Dewey(e)) = Pattern::new("<>") {
-            assert_eq!(e.pos, 0);
-        } else {
-            panic!();
-        }
-        if let Err(Dewey(e)) = Pattern::new("foo>=1>2") {
-            assert_eq!(e.pos, 3);
-        } else {
-            panic!();
-        }
-        if let Err(Dewey(e)) = Pattern::new("pkg>=1<2<4") {
-            assert_eq!(e.pos, 8);
-        } else {
-            panic!();
-        }
+        let Err(Dewey(e)) = Pattern::new("<>") else {
+            return Err("expected Dewey error");
+        };
+        assert_eq!(e.pos, 0);
+
+        let Err(Dewey(e)) = Pattern::new("foo>=1>2") else {
+            return Err("expected Dewey error");
+        };
+        assert_eq!(e.pos, 3);
+
+        let Err(Dewey(e)) = Pattern::new("pkg>=1<2<4") else {
+            return Err("expected Dewey error");
+        };
+        assert_eq!(e.pos, 8);
 
         /* Version component overflow (exceeds i64::MAX). */
-        if let Err(Dewey(e)) = Pattern::new("pkg>=20251208143052123456") {
-            assert_eq!(e.msg, "Version component overflow");
-        } else {
-            panic!();
-        }
+        let Err(Dewey(e)) = Pattern::new("pkg>=20251208143052123456") else {
+            return Err("expected Dewey error");
+        };
+        assert_eq!(e.msg, "Version component overflow");
+        Ok(())
     }
 
     /*
      * Glob tests.  These are delegated to the glob crate.
      */
     #[test]
-    fn glob_match_ok() {
+    fn glob_match_ok() -> Result<(), PatternError> {
         use super::PatternType::Glob;
         assert_pattern_eq!("foo-[0-9]*", "foo-1.0", Glob);
         assert_pattern_eq!("fo?-[0-9]*", "foo-1.0", Glob);
@@ -631,10 +638,11 @@ mod tests {
         assert_pattern_eq!("?oo-[0-9]*", "foo-1.0", Glob);
         assert_pattern_eq!("*oo-[0-9]*", "foo-1.0", Glob);
         assert_pattern_eq!("foo-[0-9]", "foo-1", Glob);
+        Ok(())
     }
 
     #[test]
-    fn glob_match_notok() {
+    fn glob_match_notok() -> Result<(), PatternError> {
         use super::PatternType::Glob;
         assert_pattern_ne!("boo-[0-9]*", "foo-1.0", Glob);
         assert_pattern_ne!("bo?-[0-9]*", "foo-1.0", Glob);
@@ -642,6 +650,7 @@ mod tests {
         assert_pattern_ne!("foo-[2-9]*", "foo-1.0", Glob);
         assert_pattern_ne!("fo-[0-9]*", "foo-1.0", Glob);
         assert_pattern_ne!("bar-[0-9]*", "foo-1.0", Glob);
+        Ok(())
     }
     #[test]
     fn glob_match_err() {
@@ -656,11 +665,12 @@ mod tests {
      * not.
      */
     #[test]
-    fn simple_match() {
+    fn simple_match() -> Result<(), PatternError> {
         use super::PatternType::Simple;
         assert_pattern_eq!("foo-1.0", "foo-1.0", Simple);
         assert_pattern_ne!("foo-1.1", "foo-1.0", Simple);
         assert_pattern_ne!("bar-1.0", "foo-1.0", Simple);
+        Ok(())
     }
 
     #[test]
@@ -728,61 +738,65 @@ mod tests {
     }
 
     #[test]
-    fn display() {
-        let p = Pattern::new("foo-[0-9]*").unwrap();
+    fn display() -> Result<(), PatternError> {
+        let p = Pattern::new("foo-[0-9]*")?;
         assert_eq!(p.to_string(), "foo-[0-9]*");
 
-        let p = Pattern::new("pkg>=1.0<2.0").unwrap();
+        let p = Pattern::new("pkg>=1.0<2.0")?;
         assert_eq!(format!("{p}"), "pkg>=1.0<2.0");
+        Ok(())
     }
 
     #[test]
-    fn from_str() {
+    fn from_str() -> Result<(), PatternError> {
         use std::str::FromStr;
 
-        let p = Pattern::from_str("foo-[0-9]*").unwrap();
+        let p = Pattern::from_str("foo-[0-9]*")?;
         assert!(p.matches("foo-1.0"));
 
-        let p: Pattern = "pkg>=1.0".parse().unwrap();
+        let p: Pattern = "pkg>=1.0".parse()?;
         assert!(p.matches("pkg-1.5"));
 
         assert!(Pattern::from_str("{unbalanced").is_err());
+        Ok(())
     }
 
     #[test]
-    fn pattern_accessor() {
-        let p = Pattern::new("foo-[0-9]*").unwrap();
+    fn pattern_accessor() -> Result<(), PatternError> {
+        let p = Pattern::new("foo-[0-9]*")?;
         assert_eq!(p.pattern(), "foo-[0-9]*");
 
-        let p = Pattern::new("{mysql,mariadb}-[0-9]*").unwrap();
+        let p = Pattern::new("{mysql,mariadb}-[0-9]*")?;
         assert_eq!(p.pattern(), "{mysql,mariadb}-[0-9]*");
+        Ok(())
     }
 
     #[test]
-    fn quick_pkg_match_edge_cases() {
+    fn quick_pkg_match_edge_cases() -> Result<(), PatternError> {
         // Pattern starting with glob char - quick_pkg_match returns true early
-        let p = Pattern::new("*-1.0").unwrap();
+        let p = Pattern::new("*-1.0")?;
         assert!(p.matches("foo-1.0"));
 
         // Pattern starting with ? - quick_pkg_match returns true early
-        let p = Pattern::new("?oo-[0-9]*").unwrap();
+        let p = Pattern::new("?oo-[0-9]*")?;
         assert!(p.matches("foo-1.0"));
 
         // Single char pattern
-        let p = Pattern::new("f*").unwrap();
+        let p = Pattern::new("f*")?;
         assert!(p.matches("foo"));
 
         // First char mismatch - quick_pkg_match returns false at first char
-        let p = Pattern::new("bar-[0-9]*").unwrap();
+        let p = Pattern::new("bar-[0-9]*")?;
         assert!(!p.matches("foo-1.0"));
 
         // Second char mismatch - quick_pkg_match returns false at second char
-        let p = Pattern::new("fa-[0-9]*").unwrap();
+        let p = Pattern::new("fa-[0-9]*")?;
         assert!(!p.matches("fo-1.0"));
 
         // Both chars match but glob fails
-        let p = Pattern::new("fo-[0-9]*").unwrap();
+        let p = Pattern::new("fo-[0-9]*")?;
         assert!(!p.matches("foo-1.0"));
+        Ok(())
     }
 
     #[test]

@@ -82,9 +82,10 @@ impl DeweyVersion {
                 break;
             }
 
-            /* idx should always be incremented by the correct char length. */
             let slice = &s[idx..];
-            let c = slice.chars().next().unwrap();
+            let Some(c) = slice.chars().next() else {
+                break;
+            };
 
             /*
              * Handle the most common cases first - digits and separators.
@@ -345,11 +346,12 @@ impl Dewey {
      * ```
      * use pkgsrc::Dewey;
      *
-     * let m = Dewey::new("pkg>=1.0<2").unwrap();
+     * let m = Dewey::new("pkg>=1.0<2")?;
      * assert_eq!(m.matches("pkg-1.0rc1"), false);
      * assert_eq!(m.matches("pkg-1.0"), true);
      * assert_eq!(m.matches("pkg-2.0rc1"), true);
      * assert_eq!(m.matches("pkg-2.0"), false);
+     * # Ok::<(), pkgsrc::DeweyError>(())
      * ```
      */
     #[must_use]

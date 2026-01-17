@@ -118,10 +118,7 @@ fn output_summary<P: FileRead>(pkg: &P) -> Result<()> {
 }
 
 /// Extract summary from a binary package.
-fn extract_summary(
-    path: &Path,
-    opts: &SummaryOptions,
-) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
+fn extract_summary(path: &Path, opts: &SummaryOptions) -> Result<String> {
     let pkg = BinaryPackage::open(path)?;
     let summary = pkg.to_summary_with_opts(opts)?;
     Ok(summary.to_string())

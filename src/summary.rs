@@ -50,11 +50,11 @@
  *
  * ```
  * use flate2::read::GzDecoder;
- * use pkgsrc::summary::Summary;
+ * use pkgsrc::summary::{Error, Summary};
  * use std::fs::File;
  * use std::io::BufReader;
  *
- * # fn main() -> Result<(), Box<dyn std::error::Error>> {
+ * # fn main() -> Result<(), Error> {
  * let path = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/data/summary/pkg_summary.gz");
  * let file = File::open(path).expect("failed to open pkg_summary.gz");
  * let reader = BufReader::new(GzDecoder::new(file));
@@ -594,7 +594,7 @@ impl Summary {
      * use std::fs::File;
      * use std::io::BufReader;
      *
-     * let file = File::open("pkg_summary.txt").unwrap();
+     * let file = File::open("pkg_summary.txt")?;
      * let reader = BufReader::new(file);
      *
      * for result in Summary::from_reader(reader) {
@@ -603,6 +603,7 @@ impl Summary {
      *         Err(e) => eprintln!("Error: {}", e),
      *     }
      * }
+     * # Ok::<(), std::io::Error>(())
      * ```
      */
     pub fn from_reader<R: BufRead>(reader: R) -> SummaryIter<R> {
@@ -1287,12 +1288,12 @@ impl Summary {
      *     .collect();
      *
      * // Find the mktool package
-     * let mktool = pkgs.iter().find(|p| p.pkgname() == "mktool-1.4.2");
-     * assert!(mktool.is_some());
+     * let mktool = pkgs.iter().find(|p| p.pkgname() == "mktool-1.4.2")
+     *     .ok_or_else(|| std::io::Error::other("mktool not found"))?;
      *
      * // Using the PkgName API we can also access just the base or version
-     * assert_eq!(mktool.unwrap().pkgname().pkgbase(), "mktool");
-     * assert_eq!(mktool.unwrap().pkgname().pkgversion(), "1.4.2");
+     * assert_eq!(mktool.pkgname().pkgbase(), "mktool");
+     * assert_eq!(mktool.pkgname().pkgversion(), "1.4.2");
      *
      * # Ok(())
      * # }
@@ -2316,11 +2317,15 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_err() {
-        let err = Summary::from_str("BUILD_DATE").unwrap_err();
+    fn test_err() -> std::result::Result<(), &'static str> {
+        let err = Summary::from_str("BUILD_DATE")
+            .err()
+            .ok_or("expected error")?;
         assert!(matches!(err, Error::ParseLine { .. }));
 
-        let err = Summary::from_str("BILD_DATE=").unwrap_err();
+        let err = Summary::from_str("BILD_DATE=")
+            .err()
+            .ok_or("expected error")?;
         assert!(matches!(err, Error::UnknownVariable { .. }));
 
         // FILE_SIZE=NaN with all required fields should error on parse
@@ -2338,26 +2343,32 @@ mod tests {
             SIZE_PKG=1234
             FILE_SIZE=NaN
         "};
-        let err = Summary::from_str(input).unwrap_err();
+        let err = Summary::from_str(input).err().ok_or("expected error")?;
         assert!(matches!(err, Error::ParseInt { .. }));
 
-        let err = Summary::from_str("FILE_SIZE=1234").unwrap_err();
+        let err = Summary::from_str("FILE_SIZE=1234")
+            .err()
+            .ok_or("expected error")?;
         assert!(matches!(err, Error::Incomplete { .. }));
+        Ok(())
     }
 
     #[test]
-    fn test_error_context() {
+    fn test_error_context() -> std::result::Result<(), &'static str> {
         // Test that errors include span context
-        let err =
-            Summary::from_str("BUILD_DATE=2019-08-12\nBAD LINE\n").unwrap_err();
+        let err = Summary::from_str("BUILD_DATE=2019-08-12\nBAD LINE\n")
+            .err()
+            .ok_or("expected error")?;
         assert!(matches!(err, Error::ParseLine { .. }));
-        let span = err.span().expect("should have span");
+        let span = err.span().ok_or("should have span")?;
         assert_eq!(span.offset, 22); // byte offset to "BAD LINE" (0-based)
         assert_eq!(span.len, 8); // length of "BAD LINE"
         assert!(err.entry().is_none()); // No entry context when parsing directly
 
         // Test error includes key name for UnknownVariable errors
-        let err = Summary::from_str("INVALID_KEY=value\n").unwrap_err();
+        let err = Summary::from_str("INVALID_KEY=value\n")
+            .err()
+            .ok_or("expected error")?;
         assert!(
             matches!(err, Error::UnknownVariable { variable, .. } if variable == "INVALID_KEY")
         );
@@ -2385,14 +2396,15 @@ mod tests {
         let mut iter = Summary::from_reader(input.trim().as_bytes());
 
         // First entry should parse successfully
-        let first = iter.next().unwrap();
+        let first = iter.next().ok_or("expected first entry")?;
         assert!(first.is_ok());
 
         // Second entry should fail with context
-        let second = iter.next().unwrap();
+        let second = iter.next().ok_or("expected second entry")?;
         assert!(second.is_err());
-        let err = second.unwrap_err();
+        let err = second.err().ok_or("expected error")?;
         assert_eq!(err.entry(), Some(1)); // 0-based entry index
+        Ok(())
     }
 
     #[test]
@@ -2413,7 +2425,11 @@ mod tests {
         "};
         let trimmed = input.trim();
 
-        let err = Summary::from_str(trimmed).unwrap_err();
+        let err =
+            Summary::from_str(trimmed).err().ok_or(Error::Incomplete {
+                field: "expected error".to_string(),
+                context: ErrorContext::default(),
+            })?;
         assert!(
             matches!(err, Error::UnknownVariable { variable, .. } if variable == "UNKNOWN_FIELD")
         );
@@ -2449,15 +2465,21 @@ mod tests {
 
         // Without allow_unknown should fail
         let mut iter = Summary::from_reader(input.trim().as_bytes());
-        let result = iter.next().unwrap();
+        let result = iter.next().ok_or(Error::Incomplete {
+            field: "expected entry".to_string(),
+            context: ErrorContext::default(),
+        })?;
         assert!(result.is_err());
 
         // With allow_unknown should succeed
         let mut iter =
             Summary::from_reader(input.trim().as_bytes()).allow_unknown(true);
-        let result = iter.next().unwrap();
-        assert!(result.is_ok());
-        assert_eq!(result.unwrap().pkgname().pkgname(), "iterpkg-1.0");
+        let result = iter.next().ok_or(Error::Incomplete {
+            field: "expected entry".to_string(),
+            context: ErrorContext::default(),
+        })?;
+        let pkg = result?;
+        assert_eq!(pkg.pkgname().pkgname(), "iterpkg-1.0");
 
         Ok(())
     }
@@ -2472,15 +2494,20 @@ mod tests {
 
         // Without allow_incomplete should fail
         let mut iter = Summary::from_reader(input.trim().as_bytes());
-        let result = iter.next().unwrap();
+        let result = iter.next().ok_or(Error::Incomplete {
+            field: "expected entry".to_string(),
+            context: ErrorContext::default(),
+        })?;
         assert!(result.is_err());
 
         // With allow_incomplete should succeed
         let mut iter = Summary::from_reader(input.trim().as_bytes())
             .allow_incomplete(true);
-        let result = iter.next().unwrap();
-        assert!(result.is_ok());
-        let pkg = result.unwrap();
+        let result = iter.next().ok_or(Error::Incomplete {
+            field: "expected entry".to_string(),
+            context: ErrorContext::default(),
+        })?;
+        let pkg = result?;
         assert_eq!(pkg.pkgname().pkgname(), "incomplete-1.0");
         assert_eq!(pkg.comment(), "Incomplete test");
         // Missing fields should have defaults

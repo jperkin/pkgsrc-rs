@@ -42,21 +42,21 @@ use std::str::FromStr;
  * use std::io::BufReader;
  * use std::process::{Command, Stdio};
  *
- * let cmd = Command::new("make")
+ * let mut cmd = Command::new("make")
  *     .current_dir("/usr/pkgsrc/databases/php-mysql")
  *     .arg("pbulk-index")
  *     .stdout(Stdio::piped())
  *     .spawn()
  *     .expect("Unable to execute make");
- * let stdout = cmd.stdout.unwrap();
+ * let stdout = cmd.stdout.take().expect("no stdout");
  * let reader = BufReader::new(stdout);
  * let index: Vec<_> = ScanIndex::from_reader(reader)
- *     .collect::<Result<_, _>>()
- *     .unwrap();
+ *     .collect::<std::result::Result<_, _>>()?;
  *
  * // Should return 5 results due to MULTI_VERSION
  * assert_eq!(index.len(), 5);
  * assert_eq!(index[0].pkgname, PkgName::new("php56-mysql-5.6.40nb1"));
+ * # Ok::<(), std::io::Error>(())
  * ```
  */
 #[derive(Clone, Debug, PartialEq, Eq, Kv)]
@@ -230,6 +230,8 @@ fn parse_record(s: &str) -> io::Result<ScanIndex> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::kv::Error;
+    use anyhow::Context;
     use std::fs::File;
     use std::io::BufReader;
     use std::path::PathBuf;
@@ -240,50 +242,62 @@ mod tests {
      * a total of 40 packages built from a single PKGPATH.
      */
     #[test]
-    fn multi_input() {
+    fn multi_input() -> anyhow::Result<()> {
         let mut scanfile = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
         scanfile.push("tests/data/scanindex/pbulk-index.txt");
-        let file = File::open(&scanfile).unwrap();
+        let file = File::open(&scanfile)?;
         let reader = BufReader::new(file);
-        let index: Vec<_> = ScanIndex::from_reader(reader)
-            .collect::<Result<_, _>>()
-            .unwrap();
+        let index: Vec<_> =
+            ScanIndex::from_reader(reader).collect::<Result<_, _>>()?;
         assert_eq!(index.len(), 40);
-        assert_eq!(index[0].all_depends.as_ref().unwrap().len(), 11);
-        assert_eq!(index[0].scan_depends.as_ref().unwrap().len(), 155);
-        assert_eq!(index[0].multi_version.as_ref().unwrap().len(), 2);
+        let all_depends = index[0]
+            .all_depends
+            .as_ref()
+            .context("missing all_depends")?;
+        assert_eq!(all_depends.len(), 11);
+        let scan_depends = index[0]
+            .scan_depends
+            .as_ref()
+            .context("missing scan_depends")?;
+        assert_eq!(scan_depends.len(), 155);
+        let multi_version = index[0]
+            .multi_version
+            .as_ref()
+            .context("missing multi_version")?;
+        assert_eq!(multi_version.len(), 2);
+        Ok(())
     }
 
     #[test]
-    fn duplicate_pkgname() {
+    fn duplicate_pkgname() -> Result<(), io::Error> {
         // We do not check for unique PKGNAME, two entries will be created.
         let input = "PKGNAME=foo\nPKGNAME=foo\n";
         let index: Vec<_> = ScanIndex::from_reader(input.as_bytes())
-            .collect::<Result<_, _>>()
-            .unwrap();
+            .collect::<Result<_, _>>()?;
         assert_eq!(index.len(), 2);
+        Ok(())
     }
 
     #[test]
-    fn no_input() {
+    fn no_input() -> Result<(), io::Error> {
         // No valid input should just result in an empty index.
         let input = "";
         let index: Vec<_> = ScanIndex::from_reader(input.as_bytes())
-            .collect::<Result<_, _>>()
-            .unwrap();
+            .collect::<Result<_, _>>()?;
         assert_eq!(index.len(), 0);
+        Ok(())
     }
 
     #[test]
-    fn empty_input() {
+    fn empty_input() -> Result<(), io::Error> {
         // A single PKGNAME, even if invalid, will create an index
         // entry but it should be empty.
         let input = "PKGNAME=";
         let index: Vec<_> = ScanIndex::from_reader(input.as_bytes())
-            .collect::<Result<_, _>>()
-            .unwrap();
+            .collect::<Result<_, _>>()?;
         assert_eq!(index.len(), 1);
         assert_eq!(index[0].pkgname.pkgname(), "");
+        Ok(())
     }
 
     #[test]
@@ -304,24 +318,26 @@ mod tests {
     }
 
     #[test]
-    fn from_str() {
+    fn from_str() -> Result<(), Error> {
         use std::str::FromStr;
 
         let input = "PKGNAME=test-1.0\nMAINTAINER=test@example.com\n";
-        let index = ScanIndex::from_str(input).unwrap();
+        let index = ScanIndex::from_str(input)?;
         assert_eq!(index.pkgname.pkgname(), "test-1.0");
         assert_eq!(index.maintainer.as_deref(), Some("test@example.com"));
+        Ok(())
     }
 
     #[test]
-    fn error_unknown_variable() {
-        use crate::kv;
+    fn error_unknown_variable() -> Result<(), Error> {
         use std::str::FromStr;
 
         let input = "PKGNAME=test-1.0\nUNKNOWN=value\n";
-        let err = ScanIndex::from_str(input).unwrap_err();
+        let err = ScanIndex::from_str(input)
+            .err()
+            .ok_or(Error::Incomplete("expected error".to_string()))?;
         match err {
-            kv::Error::UnknownVariable { variable, span } => {
+            Error::UnknownVariable { variable, span } => {
                 assert_eq!(variable, "UNKNOWN");
                 assert_eq!(span.offset, 17);
                 assert_eq!(span.len, 7);
@@ -332,18 +348,20 @@ mod tests {
             }
             _ => panic!("expected UnknownVariable error, got {err:?}"),
         }
+        Ok(())
     }
 
     #[test]
-    fn error_invalid_depend() {
-        use crate::kv;
+    fn error_invalid_depend() -> Result<(), Error> {
         use std::str::FromStr;
 
         // "invalid" is not a valid Depend (missing ":" separator)
         let input = "PKGNAME=test-1.0\nALL_DEPENDS=invalid\n";
-        let err = ScanIndex::from_str(input).unwrap_err();
+        let err = ScanIndex::from_str(input)
+            .err()
+            .ok_or(Error::Incomplete("expected error".to_string()))?;
         match err {
-            kv::Error::Parse { message, span } => {
+            Error::Parse { message, span } => {
                 assert!(message.contains("Invalid DEPENDS"));
                 assert_eq!(span.offset, 29);
                 assert_eq!(span.len, 7);
@@ -354,18 +372,20 @@ mod tests {
             }
             _ => panic!("expected Parse error, got {err:?}"),
         }
+        Ok(())
     }
 
     #[test]
-    fn error_invalid_pkgpath() {
-        use crate::kv;
+    fn error_invalid_pkgpath() -> Result<(), Error> {
         use std::str::FromStr;
 
         // "bad" is not a valid PkgPath (missing category/package structure)
         let input = "PKGNAME=test-1.0\nPKG_LOCATION=bad\n";
-        let err = ScanIndex::from_str(input).unwrap_err();
+        let err = ScanIndex::from_str(input)
+            .err()
+            .ok_or(Error::Incomplete("expected error".to_string()))?;
         match err {
-            kv::Error::Parse { message, span } => {
+            Error::Parse { message, span } => {
                 assert!(message.contains("Invalid path"));
                 assert_eq!(span.offset, 30);
                 assert_eq!(span.len, 3);
@@ -373,32 +393,36 @@ mod tests {
             }
             _ => panic!("expected Parse error, got {err:?}"),
         }
+        Ok(())
     }
 
     #[test]
-    fn error_missing_pkgname() {
-        use crate::kv;
+    fn error_missing_pkgname() -> Result<(), Error> {
         use std::str::FromStr;
 
         let input = "MAINTAINER=test@example.com\n";
-        let err = ScanIndex::from_str(input).unwrap_err();
+        let err = ScanIndex::from_str(input)
+            .err()
+            .ok_or(Error::Incomplete("expected error".to_string()))?;
         match err {
-            kv::Error::Incomplete(field) => {
+            Error::Incomplete(field) => {
                 assert_eq!(field, "PKGNAME");
             }
             _ => panic!("expected Incomplete error, got {err:?}"),
         }
+        Ok(())
     }
 
     #[test]
-    fn error_bad_line_format() {
-        use crate::kv;
+    fn error_bad_line_format() -> Result<(), Error> {
         use std::str::FromStr;
 
         let input = "PKGNAME=test-1.0\nbadline\n";
-        let err = ScanIndex::from_str(input).unwrap_err();
+        let err = ScanIndex::from_str(input)
+            .err()
+            .ok_or(Error::Incomplete("expected error".to_string()))?;
         match err {
-            kv::Error::ParseLine(span) => {
+            Error::ParseLine(span) => {
                 assert_eq!(span.offset, 17);
                 assert_eq!(span.len, 7);
                 assert_eq!(
@@ -408,33 +432,38 @@ mod tests {
             }
             _ => panic!("expected ParseLine error, got {err:?}"),
         }
+        Ok(())
     }
 
     #[test]
-    fn error_span_accessor() {
+    fn error_span_accessor() -> Result<(), Error> {
         use std::str::FromStr;
 
         let input = "PKGNAME=test-1.0\nUNKNOWN=value\n";
-        let err = ScanIndex::from_str(input).unwrap_err();
-        let span = err.span().expect("should have span");
+        let err = ScanIndex::from_str(input)
+            .err()
+            .ok_or(Error::Incomplete("expected error".to_string()))?;
+        let span = err
+            .span()
+            .ok_or(Error::Incomplete("expected span".to_string()))?;
         assert_eq!(&input[span.offset..span.offset + span.len], "UNKNOWN");
+        Ok(())
     }
 
     #[test]
-    fn display_roundtrip() {
+    fn display_roundtrip() -> anyhow::Result<()> {
         let mut scanfile = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
         scanfile.push("tests/data/scanindex/pbulk-index.txt");
-        let file = File::open(&scanfile).unwrap();
+        let file = File::open(&scanfile)?;
         let reader = BufReader::new(file);
-        let original: Vec<_> = ScanIndex::from_reader(reader)
-            .collect::<Result<_, _>>()
-            .unwrap();
+        let original: Vec<_> =
+            ScanIndex::from_reader(reader).collect::<Result<_, _>>()?;
 
         let output: String = original.iter().map(|s| s.to_string()).collect();
         let reparsed: Vec<_> = ScanIndex::from_reader(output.as_bytes())
-            .collect::<Result<_, _>>()
-            .unwrap();
+            .collect::<Result<_, _>>()?;
 
         assert_eq!(original, reparsed);
+        Ok(())
     }
 }

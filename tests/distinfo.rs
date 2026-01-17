@@ -1,3 +1,4 @@
+use anyhow::Result;
 use pkgsrc::digest::Digest;
 use pkgsrc::distinfo::*;
 use std::ffi::OsString;
@@ -8,10 +9,10 @@ use std::path::PathBuf;
  * Perform size and checksum tests against a distfile entry.
  */
 #[test]
-fn test_distinfo_distfile_checks() -> Result<(), DistinfoError> {
+fn test_distinfo_distfile_checks() -> Result<()> {
     let mut distinfo = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     distinfo.push("tests/data/distinfo");
-    let di = Distinfo::from_bytes(&fs::read(&distinfo).unwrap());
+    let di = Distinfo::from_bytes(&fs::read(&distinfo)?);
 
     let mut file = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     file.push("tests/data/digest.txt");
@@ -34,10 +35,10 @@ fn test_distinfo_distfile_checks() -> Result<(), DistinfoError> {
  * Perform checksum tests against a patchfile entry.
  */
 #[test]
-fn test_distinfo_patchfile_checks() -> Result<(), DistinfoError> {
+fn test_distinfo_patchfile_checks() -> Result<()> {
     let mut distinfo = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     distinfo.push("tests/data/distinfo");
-    let di = Distinfo::from_bytes(&fs::read(&distinfo).unwrap());
+    let di = Distinfo::from_bytes(&fs::read(&distinfo)?);
 
     let mut file = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     file.push("tests/data/patch-Makefile");
@@ -62,10 +63,10 @@ fn test_distinfo_patchfile_checks() -> Result<(), DistinfoError> {
  * Check errors from a bad distfile file.
  */
 #[test]
-fn test_distinfo_bad_distinfo() -> Result<(), DistinfoError> {
+fn test_distinfo_bad_distinfo() -> Result<()> {
     let mut distinfo = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     distinfo.push("tests/data/distinfo.bad");
-    let di = Distinfo::from_bytes(&fs::read(&distinfo).unwrap());
+    let di = Distinfo::from_bytes(&fs::read(&distinfo)?);
 
     let mut file = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     file.push("tests/data/digest.txt");
@@ -95,10 +96,10 @@ fn test_distinfo_bad_distinfo() -> Result<(), DistinfoError> {
  * a NotFound error, by trying to pass the distinfo file itself as input.
  */
 #[test]
-fn test_distinfo_notfound() -> Result<(), DistinfoError> {
+fn test_distinfo_notfound() -> Result<()> {
     let mut distinfo = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     distinfo.push("tests/data/distinfo");
-    let di = Distinfo::from_bytes(&fs::read(&distinfo).unwrap());
+    let di = Distinfo::from_bytes(&fs::read(&distinfo)?);
 
     assert!(matches!(
         di.verify_size(&distinfo),
@@ -117,10 +118,10 @@ fn test_distinfo_notfound() -> Result<(), DistinfoError> {
 }
 
 #[test]
-fn test_distinfo_contents() -> Result<(), DistinfoError> {
+fn test_distinfo_contents() -> Result<()> {
     let mut distinfo = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     distinfo.push("tests/data/distinfo");
-    let di = Distinfo::from_bytes(&fs::read(&distinfo).unwrap());
+    let di = Distinfo::from_bytes(&fs::read(&distinfo)?);
 
     assert_eq!(
         di.rcsid(),
@@ -160,15 +161,15 @@ fn test_distinfo_contents() -> Result<(), DistinfoError> {
  * handled correctly.
  */
 #[test]
-fn test_distinfo_subdir() -> Result<(), DistinfoError> {
+fn test_distinfo_subdir() -> Result<()> {
     let mut distinfo = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     distinfo.push("tests/data/distinfo.subdir");
-    let di = Distinfo::from_bytes(&fs::read(&distinfo).unwrap());
+    let di = Distinfo::from_bytes(&fs::read(&distinfo)?);
 
     let mut file = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     file.push("tests/data/subdir/subfile.txt");
 
-    assert_eq!(di.verify_size(&file).unwrap(), 158);
+    assert_eq!(di.verify_size(&file)?, 158);
 
     let results = di.verify_checksums(&file);
     assert_eq!(results.len(), 2);

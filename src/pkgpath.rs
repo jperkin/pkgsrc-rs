@@ -62,11 +62,11 @@ pub enum PkgPathError {
  * use pkgsrc::PkgPath;
  * use std::ffi::OsStr;
  *
- * let p = PkgPath::new("pkgtools/pkg_install").unwrap();
+ * let p = PkgPath::new("pkgtools/pkg_install")?;
  * assert_eq!(p.as_path(), OsStr::new("pkgtools/pkg_install"));
  * assert_eq!(p.as_full_path(), OsStr::new("../../pkgtools/pkg_install"));
  *
- * let p = PkgPath::new("../../pkgtools/pkg_install").unwrap();
+ * let p = PkgPath::new("../../pkgtools/pkg_install")?;
  * assert_eq!(p.as_path(), OsStr::new("pkgtools/pkg_install"));
  * assert_eq!(p.as_full_path(), OsStr::new("../../pkgtools/pkg_install"));
  *
@@ -78,6 +78,7 @@ pub enum PkgPathError {
  *
  * // Not fully formed.
  * assert!(PkgPath::new("/pkgtools/pkg_install").is_err());;
+ * # Ok::<(), pkgsrc::PkgPathError>(())
  * ```
  *
  * [`as_full_path`]: PkgPath::as_full_path
@@ -200,20 +201,22 @@ mod tests {
     use super::*;
     use std::ffi::OsStr;
 
-    fn assert_valid_foobar(s: &str) {
-        let p = PkgPath::new(s).unwrap();
+    fn assert_valid_foobar(s: &str) -> Result<(), PkgPathError> {
+        let p = PkgPath::new(s)?;
         assert_eq!(p.as_path(), OsStr::new("foo/bar"));
         assert_eq!(p.as_full_path(), OsStr::new("../../foo/bar"));
+        Ok(())
     }
 
     #[test]
-    fn pkgpath_test_good_input() {
-        assert_valid_foobar("foo/bar");
-        assert_valid_foobar("foo//bar");
-        assert_valid_foobar("foo//bar//");
-        assert_valid_foobar("../../foo/bar");
-        assert_valid_foobar("../../foo/bar/");
-        assert_valid_foobar("..//..//foo//bar//");
+    fn pkgpath_test_good_input() -> Result<(), PkgPathError> {
+        assert_valid_foobar("foo/bar")?;
+        assert_valid_foobar("foo//bar")?;
+        assert_valid_foobar("foo//bar//")?;
+        assert_valid_foobar("../../foo/bar")?;
+        assert_valid_foobar("../../foo/bar/")?;
+        assert_valid_foobar("..//..//foo//bar//")?;
+        Ok(())
     }
 
     #[test]
@@ -242,8 +245,8 @@ mod tests {
     }
 
     #[test]
-    fn pkgpath_as_ref() {
-        let p = PkgPath::new("pkgtools/pkg_install").unwrap();
+    fn pkgpath_as_ref() -> Result<(), PkgPathError> {
+        let p = PkgPath::new("pkgtools/pkg_install")?;
 
         // AsRef<Path> returns the short path
         let path: &Path = p.as_ref();
@@ -254,5 +257,6 @@ mod tests {
             p.as_ref().starts_with("pkgtools")
         }
         assert!(takes_asref(&p));
+        Ok(())
     }
 }

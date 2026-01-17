@@ -14,39 +14,41 @@
  * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
  */
 
+use anyhow::Result;
 use pkgsrc::Pattern;
 use std::env;
 use std::fs;
 use std::io::BufRead;
 
-fn main() {
-    if env::args().len() != 3 {
+fn main() -> Result<()> {
+    let args: Vec<String> = env::args().collect();
+    if args.len() != 3 {
         eprintln!("usage: test-pkgmatch <pkgdeps.txt> <pkgnames.txt>");
         std::process::exit(1);
     }
 
-    let pkgdeps = fs::read(env::args().nth(1).unwrap()).unwrap();
-    let pkgnames = fs::read(env::args().nth(2).unwrap()).unwrap();
+    let pkgdeps = fs::read(&args[1])?;
+    let pkgnames = fs::read(&args[2])?;
 
     let mut deps = vec![];
     let mut pkgs = vec![];
 
     for dep in pkgdeps.lines() {
-        let dep = dep.unwrap();
-        deps.push(dep);
+        deps.push(dep?);
     }
 
     for pkg in pkgnames.lines() {
-        let pkg = pkg.unwrap();
-        pkgs.push(pkg);
+        pkgs.push(pkg?);
     }
 
     for dep in &deps {
-        let m = Pattern::new(dep).unwrap();
+        let m = Pattern::new(dep)?;
         for pkg in &pkgs {
             if m.matches(pkg) {
                 println!("{dep} {pkg}");
             }
         }
     }
+
+    Ok(())
 }

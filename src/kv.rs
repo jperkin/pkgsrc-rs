@@ -293,35 +293,39 @@ mod tests {
     }
 
     #[test]
-    fn fromkv_string() {
+    fn fromkv_string() -> Result<()> {
         let span = Span::default();
-        assert_eq!(String::from_kv("hello", span).unwrap(), "hello");
+        assert_eq!(String::from_kv("hello", span)?, "hello");
+        Ok(())
     }
 
     #[test]
-    fn fromkv_u64() {
+    fn fromkv_u64() -> Result<()> {
         let span = Span::default();
-        assert_eq!(u64::from_kv("6999600", span).unwrap(), 6999600);
+        assert_eq!(u64::from_kv("6999600", span)?, 6999600);
         assert!(u64::from_kv("not_a_number", span).is_err());
+        Ok(())
     }
 
     #[test]
-    fn fromkv_bool() {
+    fn fromkv_bool() -> Result<()> {
         let span = Span::default();
-        assert!(bool::from_kv("true", span).unwrap());
-        assert!(bool::from_kv("yes", span).unwrap());
-        assert!(bool::from_kv("1", span).unwrap());
-        assert!(!bool::from_kv("false", span).unwrap());
-        assert!(!bool::from_kv("no", span).unwrap());
-        assert!(!bool::from_kv("0", span).unwrap());
+        assert!(bool::from_kv("true", span)?);
+        assert!(bool::from_kv("yes", span)?);
+        assert!(bool::from_kv("1", span)?);
+        assert!(!bool::from_kv("false", span)?);
+        assert!(!bool::from_kv("no", span)?);
+        assert!(!bool::from_kv("0", span)?);
         assert!(bool::from_kv("maybe", span).is_err());
+        Ok(())
     }
 
     #[test]
-    fn fromkv_pathbuf() {
+    fn fromkv_pathbuf() -> Result<()> {
         let span = Span::default();
-        let path = PathBuf::from_kv("/usr/bin", span).unwrap();
+        let path = PathBuf::from_kv("/usr/bin", span)?;
         assert_eq!(path, PathBuf::from("/usr/bin"));
+        Ok(())
     }
 
     #[derive(Kv, Debug, PartialEq)]
@@ -334,48 +338,52 @@ mod tests {
     }
 
     #[test]
-    fn derive_simple() {
-        let pkg = SimplePackage::parse(MKTOOL_INPUT).unwrap();
+    fn derive_simple() -> Result<()> {
+        let pkg = SimplePackage::parse(MKTOOL_INPUT)?;
         assert_eq!(pkg.pkgname, "mktool-1.4.2");
         assert_eq!(pkg.size, 6999600);
         assert_eq!(
             pkg.comment,
             Some("High performance alternatives for pkgsrc/mk".to_string())
         );
+        Ok(())
     }
 
     #[test]
-    fn derive_with_optional() {
+    fn derive_with_optional() -> Result<()> {
         let input = indoc! {"
             PKGNAME=mktool-1.4.2
             SIZE_PKG=6999600
             COMMENT=High performance alternatives for pkgsrc/mk
         "};
-        let pkg = SimplePackage::parse(input).unwrap();
+        let pkg = SimplePackage::parse(input)?;
         assert_eq!(pkg.pkgname, "mktool-1.4.2");
         assert_eq!(pkg.size, 6999600);
         assert_eq!(
             pkg.comment,
             Some("High performance alternatives for pkgsrc/mk".to_string())
         );
+        Ok(())
     }
 
     #[test]
-    fn derive_optional_missing() {
+    fn derive_optional_missing() -> Result<()> {
         let input = indoc! {"
             PKGNAME=mktool-1.4.2
             SIZE_PKG=6999600
         "};
-        let pkg = SimplePackage::parse(input).unwrap();
+        let pkg = SimplePackage::parse(input)?;
         assert_eq!(pkg.pkgname, "mktool-1.4.2");
         assert_eq!(pkg.size, 6999600);
         assert_eq!(pkg.comment, None);
+        Ok(())
     }
 
     #[test]
-    fn derive_unknown_ignored() {
-        let pkg = SimplePackage::parse(MKTOOL_INPUT).unwrap();
+    fn derive_unknown_ignored() -> Result<()> {
+        let pkg = SimplePackage::parse(MKTOOL_INPUT)?;
         assert_eq!(pkg.pkgname, "mktool-1.4.2");
+        Ok(())
     }
 
     #[test]
@@ -392,14 +400,15 @@ mod tests {
     }
 
     #[test]
-    fn derive_vec_whitespace_separated() {
+    fn derive_vec_whitespace_separated() -> Result<()> {
         let input = indoc! {"
             PKGNAME=mktool-1.4.2
             CATEGORIES=pkgtools devel
         "};
-        let pkg = VecPackage::parse(input).unwrap();
+        let pkg = VecPackage::parse(input)?;
         assert_eq!(pkg.pkgname, "mktool-1.4.2");
         assert_eq!(pkg.categories, vec!["pkgtools", "devel"]);
+        Ok(())
     }
 
     #[derive(Kv, Debug, PartialEq)]
@@ -410,13 +419,13 @@ mod tests {
     }
 
     #[test]
-    fn derive_multiline() {
+    fn derive_multiline() -> Result<()> {
         let input = indoc! {"
             PKGNAME=mktool-1.4.2
             DESCRIPTION=This is a highly-performant collection of utilities.
             DESCRIPTION=Many targets under pkgsrc/mk are implemented using shell.
         "};
-        let pkg = MultiLinePackage::parse(input).unwrap();
+        let pkg = MultiLinePackage::parse(input)?;
         assert_eq!(pkg.pkgname, "mktool-1.4.2");
         assert_eq!(pkg.description.len(), 2);
         assert_eq!(
@@ -427,6 +436,7 @@ mod tests {
             pkg.description[1],
             "Many targets under pkgsrc/mk are implemented using shell."
         );
+        Ok(())
     }
 
     #[test]
@@ -458,22 +468,28 @@ mod tests {
     }
 
     #[test]
-    fn derive_pkgname() {
+    fn derive_pkgname() -> Result<()> {
         let input = "PKGNAME=mktool-1.4.2\n";
-        let pkg = ScanIndexTest::parse(input).unwrap();
+        let pkg = ScanIndexTest::parse(input)?;
         assert_eq!(pkg.pkgname.pkgbase(), "mktool");
         assert_eq!(pkg.pkgname.pkgversion(), "1.4.2");
         assert_eq!(pkg.all_depends, None);
+        Ok(())
     }
 
     #[test]
-    fn derive_depend_vec() {
+    fn derive_depend_vec() -> Result<()> {
         let input = indoc! {"
             PKGNAME=mktool-1.4.2
             ALL_DEPENDS=rust-[0-9]*:../../lang/rust curl>=7.0:../../www/curl
         "};
-        let pkg = ScanIndexTest::parse(input).unwrap();
-        assert_eq!(pkg.all_depends.as_ref().unwrap().len(), 2);
+        let pkg = ScanIndexTest::parse(input)?;
+        let all_depends = pkg
+            .all_depends
+            .as_ref()
+            .ok_or(Error::Incomplete("all_depends".to_string()))?;
+        assert_eq!(all_depends.len(), 2);
+        Ok(())
     }
 
     #[test]
@@ -494,8 +510,8 @@ mod tests {
     }
 
     #[test]
-    fn derive_extras() {
-        let pkg = WithExtras::parse(MKTOOL_INPUT).unwrap();
+    fn derive_extras() -> Result<()> {
+        let pkg = WithExtras::parse(MKTOOL_INPUT)?;
         assert_eq!(pkg.pkgname, "mktool-1.4.2");
         assert_eq!(
             pkg.extra.get("COMMENT"),
@@ -508,13 +524,15 @@ mod tests {
             Some(&"https://github.com/jperkin/mktool/".to_string())
         );
         assert_eq!(pkg.extra.len(), 4);
+        Ok(())
     }
 
     #[test]
-    fn derive_extras_empty() {
+    fn derive_extras_empty() -> Result<()> {
         let input = "PKGNAME=mktool-1.4.2\n";
-        let pkg = WithExtras::parse(input).unwrap();
+        let pkg = WithExtras::parse(input)?;
         assert_eq!(pkg.pkgname, "mktool-1.4.2");
         assert!(pkg.extra.is_empty());
+        Ok(())
     }
 }

@@ -66,20 +66,20 @@
  * Extract files from a binary package:
  *
  * ```no_run
- * use pkgsrc::Archive;
+ * use pkgsrc::archive::{Archive, Error};
  *
  * let mut archive = Archive::open("/path/to/package.tgz")?;
  * for entry in archive.entries()? {
  *     let entry = entry?;
  *     println!("{}", entry.path()?.display());
  * }
- * # Ok::<(), Box<dyn std::error::Error>>(())
+ * # Ok::<(), Error>(())
  * ```
  *
  * Parse a pkg_summary file to enumerate available packages:
  *
  * ```no_run
- * use pkgsrc::summary::Summary;
+ * use pkgsrc::summary::{Error, Summary};
  * use std::fs::File;
  * use std::io::BufReader;
  *
@@ -89,7 +89,7 @@
  *     let pkg = entry?;
  *     println!("{}: {}", pkg.pkgname(), pkg.comment());
  * }
- * # Ok::<(), Box<dyn std::error::Error>>(())
+ * # Ok::<(), Error>(())
  * ```
  *
  * Match packages using patterns:
