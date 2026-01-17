@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2024 Jonathan Perkin <jonathan@perkin.org.uk>
+ * Copyright (c) 2026 Jonathan Perkin <jonathan@perkin.org.uk>
  *
  * Permission to use, copy, modify, and distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -80,6 +80,7 @@
 use std::fmt;
 use std::io::{BufRead, BufReader, Read};
 use std::str::FromStr;
+use thiserror::Error;
 
 /**
  * A type alias for the result from the creation of a [`Digest`], with
@@ -90,15 +91,17 @@ pub type DigestResult<T> = std::result::Result<T, DigestError>;
 /**
  * The [`DigestError`] enum contains all of the possible [`Digest`] errors.
  */
-#[derive(Debug)]
+#[derive(Debug, Error)]
 pub enum DigestError {
     /**
      * An I/O error when reading a file for hashing.
      */
-    Io(std::io::Error),
+    #[error("I/O error: {0}")]
+    Io(#[from] std::io::Error),
     /**
      * An unknown digest type.
      */
+    #[error("unsupported digest: {0}")]
     Unsupported(String),
 }
 
@@ -116,31 +119,6 @@ impl PartialEq for DigestError {
     }
 }
 
-impl From<std::io::Error> for DigestError {
-    fn from(err: std::io::Error) -> Self {
-        DigestError::Io(err)
-    }
-}
-
-impl fmt::Display for DigestError {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match self {
-            DigestError::Io(s) => write!(f, "I/O error: {s}"),
-            DigestError::Unsupported(s) => {
-                write!(f, "Unsupported digest: {s}")
-            }
-        }
-    }
-}
-
-impl std::error::Error for DigestError {
-    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
-        match self {
-            DigestError::Io(err) => Some(err),
-            DigestError::Unsupported(_) => None,
-        }
-    }
-}
 
 /**
  * The [`Digest`] enum contains an entry for every supported digest algorithm.
