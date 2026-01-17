@@ -17,8 +17,92 @@
 /*!
  * # pkgsrc
  *
- * Rust interface to the pkg_install database and the pkgsrc mk
- * infrastructure.
+ * [pkgsrc](https://www.pkgsrc.org/) is a cross-platform package management
+ * system originally developed for NetBSD, now available on many Unix-like
+ * operating systems.  This crate provides types and utilities for working
+ * with pkgsrc packages, the package database, and pkgsrc infrastructure.
+ *
+ * ## Modules
+ *
+ * The crate is organised into modules that handle different aspects of pkgsrc:
+ *
+ * | Module | Purpose |
+ * |--------|---------|
+ * | [`archive`] | Read and create binary package archives |
+ * | [`depend`] | Parse and match package dependencies |
+ * | [`dewey`] | Dewey decimal version comparisons |
+ * | [`digest`] | Cryptographic hash functions for file verification |
+ * | [`distinfo`] | Parse and verify distinfo files |
+ * | [`kv`] | Parse KEY=VALUE formatted data |
+ * | [`metadata`] | Read package metadata from +* files |
+ * | [`pattern`] | Match packages against glob, dewey, and alternate patterns |
+ * | [`pkgdb`] | Access the installed package database |
+ * | [`pkgname`] | Parse package names into name and version components |
+ * | [`pkgpath`] | Parse pkgsrc package paths (category/package) |
+ * | [`plist`] | Parse packing list (PLIST) files |
+ * | [`scanindex`] | Parse pbulk-index scan output |
+ * | [`summary`] | Parse pkg_summary(5) files |
+ *
+ * ## Examples
+ *
+ * Read an installed package's metadata from the package database:
+ *
+ * ```no_run
+ * use pkgsrc::metadata::FileRead;
+ * use pkgsrc::PkgDB;
+ *
+ * let db = PkgDB::open("/var/db/pkg")?;
+ * for entry in db {
+ *     let pkg = entry?;
+ *     println!("{}: {}", pkg.pkgname(), pkg.comment()?);
+ * }
+ * # Ok::<(), std::io::Error>(())
+ * ```
+ *
+ * Extract files from a binary package:
+ *
+ * ```no_run
+ * use pkgsrc::Archive;
+ *
+ * let mut archive = Archive::open("/path/to/package.tgz")?;
+ * for entry in archive.entries()? {
+ *     let entry = entry?;
+ *     println!("{}", entry.path()?.display());
+ * }
+ * # Ok::<(), Box<dyn std::error::Error>>(())
+ * ```
+ *
+ * Parse a pkg_summary file to enumerate available packages:
+ *
+ * ```no_run
+ * use pkgsrc::summary::Summary;
+ * use std::fs::File;
+ * use std::io::BufReader;
+ *
+ * let file = File::open("pkg_summary")?;
+ * let reader = BufReader::new(file);
+ * for entry in Summary::from_reader(reader) {
+ *     let pkg = entry?;
+ *     println!("{}: {}", pkg.pkgname(), pkg.comment());
+ * }
+ * # Ok::<(), Box<dyn std::error::Error>>(())
+ * ```
+ *
+ * Match packages using patterns:
+ *
+ * ```
+ * use pkgsrc::Pattern;
+ *
+ * let pattern = Pattern::new("perl>=5.30")?;
+ * assert!(pattern.matches("perl-5.38.0"));
+ * assert!(!pattern.matches("perl-5.28.0"));
+ * # Ok::<(), pkgsrc::PatternError>(())
+ * ```
+ *
+ * ## Feature Flags
+ *
+ * - `serde`: Enable serialization and deserialization support via
+ *   [serde](https://serde.rs/) for various types.
  */
 
 #![deny(missing_docs)]
