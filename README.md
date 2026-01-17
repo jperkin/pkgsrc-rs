@@ -28,12 +28,11 @@ comment.
 
 ```rust
 use anyhow::Result;
-use pkgsrc::metadata::MetadataReader;
+use pkgsrc::metadata::FileRead;
 use pkgsrc::pkgdb::PkgDB;
-use std::path::Path;
 
 fn main() -> Result<()> {
-    let pkgdb = PkgDB::open(Path::new("/var/db/pkg"))?;
+    let pkgdb = PkgDB::open("/var/db/pkg")?;
 
     for pkg in pkgdb {
         let pkg = pkg?;
