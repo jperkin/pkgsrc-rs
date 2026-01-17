@@ -117,8 +117,8 @@ use proc_macro::TokenStream;
 use proc_macro2::TokenStream as TokenStream2;
 use quote::quote;
 use syn::{
-    parse_macro_input, Attribute, Data, DeriveInput, Field, Fields,
-    GenericArgument, Ident, PathArguments, Type,
+    Attribute, Data, DeriveInput, Field, Fields, GenericArgument, Ident,
+    PathArguments, Type, parse_macro_input,
 };
 
 /// Derive macro for parsing `KEY=VALUE` formatted input.
@@ -683,11 +683,7 @@ fn validate_collect_type(ty: &Type, field: &Field) -> syn::Result<()> {
             None
         ) if k.path.is_ident("String") && v.path.is_ident("String")
     );
-    if is_valid {
-        Ok(())
-    } else {
-        Err(err())
-    }
+    if is_valid { Ok(()) } else { Err(err()) }
 }
 
 /// Analyzes a type to determine its field kind and inner type.
