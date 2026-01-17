@@ -141,6 +141,7 @@ impl PkgDB {
     /**
      * Return the path to this package database.
      */
+    #[must_use]
     pub fn path(&self) -> &Path {
         &self.path
     }
@@ -148,6 +149,7 @@ impl PkgDB {
     /**
      * Return the type of this package database.
      */
+    #[must_use]
     pub fn dbtype(&self) -> DBType {
         self.dbtype
     }
@@ -172,6 +174,7 @@ impl InstalledPackage {
     /**
      * Return a new empty `InstalledPackage` container.
      */
+    #[must_use]
     pub fn new() -> InstalledPackage {
         InstalledPackage {
             path: PathBuf::new(),
@@ -184,6 +187,7 @@ impl InstalledPackage {
     /**
      * Package basename (no version information).
      */
+    #[must_use]
     pub fn pkgbase(&self) -> &str {
         &self.pkgbase
     }
@@ -191,6 +195,7 @@ impl InstalledPackage {
     /**
      * Full package name including version.
      */
+    #[must_use]
     pub fn pkgname(&self) -> &str {
         &self.pkgname
     }
@@ -198,6 +203,7 @@ impl InstalledPackage {
     /**
      * Package version.
      */
+    #[must_use]
     pub fn pkgversion(&self) -> &str {
         &self.pkgversion
     }
@@ -205,6 +211,7 @@ impl InstalledPackage {
     /**
      * Return the file system path to this package's metadata directory.
      */
+    #[must_use]
     pub fn path(&self) -> &Path {
         &self.path
     }

@@ -147,6 +147,7 @@ pub enum Compression {
 
 impl Compression {
     /// Detect compression format from magic bytes.
+    #[must_use]
     pub fn from_magic(bytes: &[u8]) -> Option<Self> {
         if bytes.len() < 4 {
             return None;
@@ -161,6 +162,7 @@ impl Compression {
     }
 
     /// Detect compression format from file extension.
+    #[must_use]
     pub fn from_extension(path: &Path) -> Option<Self> {
         let name = path.file_name()?.to_str()?;
         let lower = name.to_lowercase();
@@ -177,6 +179,7 @@ impl Compression {
     }
 
     /// Return the canonical file extension for this compression type.
+    #[must_use]
     pub fn extension(&self) -> &'static str {
         match self {
             Self::None => "tar",
@@ -213,6 +216,7 @@ pub enum PkgHashAlgorithm {
 
 impl PkgHashAlgorithm {
     /// Return the string representation as used in +PKG_HASH.
+    #[must_use]
     pub fn as_str(&self) -> &'static str {
         match self {
             Self::Sha512 => "SHA512",
@@ -221,6 +225,7 @@ impl PkgHashAlgorithm {
     }
 
     /// Return the hash output size in bytes.
+    #[must_use]
     pub fn hash_size(&self) -> usize {
         match self {
             Self::Sha512 => 64,
@@ -229,6 +234,7 @@ impl PkgHashAlgorithm {
     }
 
     /// Compute hash of data.
+    #[must_use]
     pub fn hash(&self, data: &[u8]) -> Vec<u8> {
         use sha2::{Digest, Sha256, Sha512};
         match self {
@@ -238,6 +244,7 @@ impl PkgHashAlgorithm {
     }
 
     /// Format hash as lowercase hex string.
+    #[must_use]
     pub fn hash_hex(&self, data: &[u8]) -> String {
         self.hash(data)
             .iter()
@@ -335,23 +342,27 @@ pub struct ExtractOptions {
 
 impl ExtractOptions {
     /// Create new extract options with all options disabled.
+    #[must_use]
     pub fn new() -> Self {
         Self::default()
     }
 
     /// Enable applying file modes from plist.
+    #[must_use]
     pub fn with_mode(mut self) -> Self {
         self.apply_mode = true;
         self
     }
 
     /// Enable applying file ownership from plist.
+    #[must_use]
     pub fn with_ownership(mut self) -> Self {
         self.apply_ownership = true;
         self
     }
 
     /// Enable preserving original timestamps.
+    #[must_use]
     pub fn with_mtime(mut self) -> Self {
         self.preserve_mtime = true;
         self
@@ -408,6 +419,7 @@ pub struct PkgHash {
 
 impl PkgHash {
     /// Create a new `PkgHash` with default settings.
+    #[must_use]
     pub fn new(pkgname: impl Into<String>) -> Self {
         Self {
             version: PKGSRC_SIGNATURE_VERSION,
@@ -528,31 +540,37 @@ impl PkgHash {
     }
 
     /// Return the pkgsrc signature version.
+    #[must_use]
     pub fn version(&self) -> u32 {
         self.version
     }
 
     /// Return the package name.
+    #[must_use]
     pub fn pkgname(&self) -> &str {
         &self.pkgname
     }
 
     /// Return the hash algorithm.
+    #[must_use]
     pub fn algorithm(&self) -> PkgHashAlgorithm {
         self.algorithm
     }
 
     /// Return the block size.
+    #[must_use]
     pub fn block_size(&self) -> usize {
         self.block_size
     }
 
     /// Return the original file size.
+    #[must_use]
     pub fn file_size(&self) -> u64 {
         self.file_size
     }
 
     /// Return the block hashes.
+    #[must_use]
     pub fn hashes(&self) -> &[String] {
         &self.hashes
     }
@@ -711,11 +729,13 @@ impl<R: Read> Archive<R> {
     /// Defaults to gzip compression. Use [`Archive::with_compression`] to
     /// specify a different format, or [`Archive::open`] to auto-detect from
     /// a file path.
+    #[must_use = "creating an archive has no effect if not used"]
     pub fn new(reader: R) -> Result<Self> {
         Self::with_compression(reader, Compression::Gzip)
     }
 
     /// Create a new archive from a reader with explicit compression.
+    #[must_use = "creating an archive has no effect if not used"]
     pub fn with_compression(
         reader: R,
         compression: Compression,
@@ -735,11 +755,13 @@ impl<R: Read> Archive<R> {
     }
 
     /// Return the compression format.
+    #[must_use]
     pub fn compression(&self) -> Compression {
         self.compression
     }
 
     /// Return an iterator over the entries in this archive.
+    #[must_use = "entries iterator must be used to iterate"]
     pub fn entries(&mut self) -> Result<Entries<'_, Decoder<R>>> {
         Ok(self.inner.entries()?)
     }
@@ -1035,46 +1057,55 @@ impl BinaryPackage {
     }
 
     /// Return the path to the package file.
+    #[must_use]
     pub fn path(&self) -> &Path {
         &self.path
     }
 
     /// Return the compression format.
+    #[must_use]
     pub fn compression(&self) -> Compression {
         self.compression
     }
 
     /// Return the archive type (signed or unsigned).
+    #[must_use]
     pub fn archive_type(&self) -> ArchiveType {
         self.archive_type
     }
 
     /// Return whether this package is signed.
+    #[must_use]
     pub fn is_signed(&self) -> bool {
         self.archive_type == ArchiveType::Signed
     }
 
     /// Return the package metadata.
+    #[must_use]
     pub fn metadata(&self) -> &Metadata {
         &self.metadata
     }
 
     /// Return the packing list.
+    #[must_use]
     pub fn plist(&self) -> &Plist {
         &self.plist
     }
 
     /// Return the package name from the plist.
+    #[must_use]
     pub fn pkgname(&self) -> Option<&str> {
         self.plist.pkgname()
     }
 
     /// Return the build info key-value pairs.
+    #[must_use]
     pub fn build_info(&self) -> &HashMap<String, Vec<String>> {
         &self.build_info
     }
 
     /// Get a specific build info value (first value if multiple exist).
+    #[must_use]
     pub fn get_build_info(&self, key: &str) -> Option<&str> {
         self.build_info
             .get(key)
@@ -1083,21 +1114,25 @@ impl BinaryPackage {
     }
 
     /// Get all values for a build info key.
+    #[must_use]
     pub fn get_build_info_all(&self, key: &str) -> Option<&[String]> {
         self.build_info.get(key).map(|v| v.as_slice())
     }
 
     /// Return the package hash (for signed packages).
+    #[must_use]
     pub fn pkg_hash(&self) -> Option<&PkgHash> {
         self.pkg_hash.as_ref()
     }
 
     /// Return the GPG signature (for signed packages).
+    #[must_use]
     pub fn gpg_signature(&self) -> Option<&[u8]> {
         self.gpg_signature.as_deref()
     }
 
     /// Return the file size of the package.
+    #[must_use]
     pub fn file_size(&self) -> u64 {
         self.file_size
     }
@@ -1605,6 +1640,7 @@ impl<W: Write> Builder<W> {
     }
 
     /// Return the compression format.
+    #[must_use]
     pub fn compression(&self) -> Compression {
         self.compression
     }
@@ -1701,16 +1737,19 @@ impl SignedArchive {
     }
 
     /// Return the package name.
+    #[must_use]
     pub fn pkgname(&self) -> &str {
         &self.pkgname
     }
 
     /// Return the compression format of the inner tarball.
+    #[must_use]
     pub fn compression(&self) -> Compression {
         self.compression
     }
 
     /// Return the package hash.
+    #[must_use]
     pub fn pkg_hash(&self) -> &PkgHash {
         &self.pkg_hash
     }

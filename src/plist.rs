@@ -575,6 +575,7 @@ impl Plist {
     /**
      * Return an empty new [`Plist`].
      */
+    #[must_use]
     pub fn new() -> Plist {
         let plist: Plist = Default::default();
         plist
@@ -648,6 +649,7 @@ impl Plist {
      * while indicated as mandatory in the manual page it is often left out,
      * deferring to deriving the package name from the file name instead.
      */
+    #[must_use]
     pub fn pkgname(&self) -> Option<&str> {
         plist_find_first_str!(self, PlistEntry::Name)
     }
@@ -657,6 +659,7 @@ impl Plist {
      * with `@display`.  If multiple entries are found only the first is
      * returned.
      */
+    #[must_use]
     pub fn display(&self) -> Option<&OsStr> {
         plist_find_first_osstr!(self, PlistEntry::Display)
     }
@@ -664,6 +667,7 @@ impl Plist {
     /**
      * Return a vector containing `@pkgdep` entries as string slices.
      */
+    #[must_use]
     pub fn depends(&self) -> Vec<&str> {
         plist_match_filter_str!(self, PlistEntry::PkgDep)
     }
@@ -671,6 +675,7 @@ impl Plist {
     /**
      * Return a vector containing `@blddep` entries as string slices.
      */
+    #[must_use]
     pub fn build_depends(&self) -> Vec<&str> {
         plist_match_filter_str!(self, PlistEntry::BldDep)
     }
@@ -678,6 +683,7 @@ impl Plist {
     /**
      * Return a vector containing `@pkgcfl` entries as string slices.
      */
+    #[must_use]
     pub fn conflicts(&self) -> Vec<&str> {
         plist_match_filter_str!(self, PlistEntry::PkgCfl)
     }
@@ -685,6 +691,7 @@ impl Plist {
     /**
      * Return a vector containing `@pkgdir` entries as string slices.
      */
+    #[must_use]
     pub fn pkgdirs(&self) -> Vec<&OsStr> {
         plist_match_filter_osstr!(self, PlistEntry::PkgDir)
     }
@@ -692,6 +699,7 @@ impl Plist {
     /**
      * Return a vector containing `@dirrm` entries as string slices.
      */
+    #[must_use]
     pub fn pkgrmdirs(&self) -> Vec<&OsStr> {
         plist_match_filter_osstr!(self, PlistEntry::DirRm)
     }
@@ -700,6 +708,7 @@ impl Plist {
      * Return a vector containing a list of file entries as string slices.  Any
      * files that come after an "@ignore" command are not listed.
      */
+    #[must_use]
     pub fn files(&self) -> Vec<&OsStr> {
         let mut ignore = false;
         self.entries
@@ -727,6 +736,7 @@ impl Plist {
      * (as set by `@cwd`) as OsStrings.  Any files that come after an "@ignore"
      * command are not listed.
      */
+    #[must_use]
     pub fn files_prefixed(&self) -> Vec<OsString> {
         let mut ignore = false;
         let mut prefix: Option<OsString> = None;
@@ -773,6 +783,7 @@ impl Plist {
      *
      * Files marked with `@ignore` are not included.
      */
+    #[must_use]
     pub fn files_with_info(&self) -> Vec<FileInfo> {
         let mut result = Vec::new();
         let mut ignore = false;
@@ -832,6 +843,7 @@ impl Plist {
      * during an install procedure.  It is up to the caller to keep track of
      * file metadata.
      */
+    #[must_use]
     pub fn install_cmds(&self) -> Vec<&PlistEntry> {
         let mut ignore = false;
         self.entries
@@ -868,6 +880,7 @@ impl Plist {
      * during an uninstall procedure.  It is up to the caller to keep track of
      * file metadata.
      */
+    #[must_use]
     pub fn uninstall_cmds(&self) -> Vec<&PlistEntry> {
         let mut ignore = false;
         self.entries
@@ -903,6 +916,7 @@ impl Plist {
     /**
      * Return bool indicating whether `@option preserve` has been set or not.
      */
+    #[must_use]
     pub fn is_preserve(&self) -> bool {
         self.entries
             .iter()
