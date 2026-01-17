@@ -1514,7 +1514,8 @@ mod tests {
 
     #[test]
     fn test_into_iterator() -> Result<()> {
-        let plist = plist!("@name pkg-1.0\nbin/foo\n@pkgdep dep-[0-9]*\nbin/bar")?;
+        let plist =
+            plist!("@name pkg-1.0\nbin/foo\n@pkgdep dep-[0-9]*\nbin/bar")?;
 
         let entries: Vec<_> = plist.into_iter().collect();
         assert_eq!(entries.len(), 4);
