@@ -118,11 +118,10 @@
  * }
  * ```
  */
-use std::error::Error;
 use std::ffi::{OsStr, OsString};
-use std::fmt;
 use std::os::unix::ffi::OsStrExt;
 use std::string::FromUtf8Error;
+use thiserror::Error;
 
 #[cfg(test)]
 use indoc::indoc;
@@ -136,48 +135,25 @@ pub type Result<T> = std::result::Result<T, PlistError>;
 /**
  * Error type containing possible parse failures.
  */
-#[derive(Debug)]
+#[derive(Debug, Error)]
 pub enum PlistError {
     /**
      * An unsupported `@command` string, or an unsupported argument to a command
      * that requires specific values (for example `@option preserve`).
      */
+    #[error("unsupported plist command: {cmd}", cmd = .0.to_string_lossy())]
     UnsupportedCommand(OsString),
     /**
      * Incorrect number of arguments, or incorrect argument passed to a command
      * that requires a specific format.
      */
+    #[error("incorrect command arguments: {args}", args = .0.to_string_lossy())]
     IncorrectArguments(OsString),
     /**
      * Wrapped [`FromUtf8Error`] error when failing to parse valid UTF-8.
      */
-    Utf8(FromUtf8Error),
-}
-
-impl fmt::Display for PlistError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            PlistError::UnsupportedCommand(s) => {
-                write!(f, "unsupported plist command: {}", s.to_string_lossy())
-            }
-            PlistError::IncorrectArguments(s) => write!(
-                f,
-                "incorrect command arguments: {}",
-                s.to_string_lossy()
-            ),
-            PlistError::Utf8(s) => {
-                write!(f, "invalid UTF-8 sequence: {}", s.utf8_error())
-            }
-        }
-    }
-}
-
-impl Error for PlistError {}
-
-impl From<FromUtf8Error> for PlistError {
-    fn from(err: FromUtf8Error) -> Self {
-        PlistError::Utf8(err)
-    }
+    #[error("invalid UTF-8 sequence: {}", .0.utf8_error())]
+    Utf8(#[from] FromUtf8Error),
 }
 
 /**
