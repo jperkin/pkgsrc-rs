@@ -4,7 +4,7 @@ members = [".", "kv-derive"]
 [package]
 name = "pkgsrc"
 description = "Rust interface to pkgsrc packages and infrastructure"
-version = "0.7.0"
+version = "0.8.0"
 authors = ["Jonathan Perkin <jonathan@perkin.org.uk>"]
 readme = "README.md"
 keywords = ["pkgsrc"]
