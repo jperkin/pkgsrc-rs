@@ -143,6 +143,20 @@ pub struct ScanIndex {
     /// List of variables to be set when building this specific `PKGNAME` from
     /// a common `PKGPATH`.
     pub multi_version: Option<Vec<String>>,
+    /// Resolved dependencies as concrete package names.
+    ///
+    /// This field is not part of the `bmake pbulk-index` output. It is
+    /// populated by dependency resolvers (such as pbulk or bob) that take
+    /// the patterns in [`all_depends`] and resolve them to specific package
+    /// names based on what is available in the package set.
+    ///
+    /// When parsing presolve files (scan output augmented with resolution
+    /// results), this field will contain the resolved dependencies. When
+    /// parsing raw scan output, this field will be `None`.
+    ///
+    /// [`all_depends`]: ScanIndex::all_depends
+    #[kv(variable = "DEPENDS")]
+    pub resolved_depends: Option<Vec<PkgName>>,
 }
 
 impl FromStr for ScanIndex {
@@ -196,6 +210,18 @@ impl fmt::Display for ScanIndex {
                 write!(f, "MULTI_VERSION=")?;
                 for v in vars {
                     write!(f, " {v}")?;
+                }
+                writeln!(f)?;
+            }
+        }
+        if let Some(ref deps) = self.resolved_depends {
+            if !deps.is_empty() {
+                write!(f, "DEPENDS=")?;
+                for (i, d) in deps.iter().enumerate() {
+                    if i > 0 {
+                        write!(f, " ")?;
+                    }
+                    write!(f, "{d}")?;
                 }
                 writeln!(f)?;
             }
@@ -511,6 +537,46 @@ mod tests {
             .collect::<Result<_, _>>()?;
 
         assert_eq!(original, reparsed);
+        Ok(())
+    }
+
+    #[test]
+    fn resolved_depends_none() -> Result<(), KvError> {
+        use std::str::FromStr;
+
+        let input = "PKGNAME=test-1.0\n";
+        let index = ScanIndex::from_str(input)?;
+        assert!(index.resolved_depends.is_none());
+        assert!(!index.to_string().contains("\nDEPENDS="));
+        Ok(())
+    }
+
+    #[test]
+    fn resolved_depends_some() -> Result<(), KvError> {
+        use std::str::FromStr;
+
+        let input = "PKGNAME=test-1.0\nDEPENDS=foo-1.0 bar-2.0\n";
+        let index = ScanIndex::from_str(input)?;
+        let deps = index
+            .resolved_depends
+            .as_ref()
+            .ok_or(KvError::Incomplete("resolved_depends".to_string()))?;
+        assert_eq!(deps.len(), 2);
+        assert_eq!(deps[0].pkgname(), "foo-1.0");
+        assert_eq!(deps[1].pkgname(), "bar-2.0");
+        assert!(index.to_string().contains("DEPENDS=foo-1.0 bar-2.0"));
+        Ok(())
+    }
+
+    #[test]
+    fn resolved_depends_roundtrip() -> Result<(), KvError> {
+        use std::str::FromStr;
+
+        let input = "PKGNAME=test-1.0\nDEPENDS=foo-1.0 bar-2.0\n";
+        let index = ScanIndex::from_str(input)?;
+        let output = index.to_string();
+        let reparsed = ScanIndex::from_str(&output)?;
+        assert_eq!(index.resolved_depends, reparsed.resolved_depends);
         Ok(())
     }
 }
