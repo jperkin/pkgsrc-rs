@@ -162,7 +162,7 @@ impl PkgPath {
             2 => match (c[0], c[1]) {
                 (Component::Normal(_), Component::Normal(_)) => {
                     let mut f = PathBuf::from("../../");
-                    f.push(p.clone());
+                    f.push(&p);
                     Ok(PkgPath { short: p, full: f })
                 }
                 _ => Err(PkgPathError::InvalidPath),
@@ -312,6 +312,15 @@ mod tests {
             p.as_ref().starts_with("pkgtools")
         }
         assert!(takes_asref(&p));
+
+        // Borrow<Path> returns the short path
+        use std::borrow::Borrow;
+        let path: &Path = p.borrow();
+        assert_eq!(path, Path::new("pkgtools/pkg_install"));
+
+        // TryFrom<&str>
+        let p: PkgPath = "devel/gmake".try_into()?;
+        assert_eq!(p.as_path(), OsStr::new("devel/gmake"));
         Ok(())
     }
 }
