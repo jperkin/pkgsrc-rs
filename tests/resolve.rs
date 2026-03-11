@@ -62,27 +62,21 @@ fn resolve_full_scan() {
                 None => &pkgnames,
             };
 
-            let mut best: Option<&PkgName> = None;
+            let mut best: Option<&str> = None;
             for candidate in candidates {
                 if pattern.matches(candidate.pkgname()) {
                     total_matches += 1;
-                    best = match best {
-                        None => Some(candidate),
-                        Some(current) => pattern
-                            .best_match_pbulk(
-                                current.pkgname(),
-                                candidate.pkgname(),
-                            )
-                            .ok()
-                            .flatten()
-                            .map(|s| {
-                                if s == current.pkgname() {
-                                    current
-                                } else {
-                                    candidate
-                                }
-                            }),
-                    };
+                    best = Some(match best {
+                        None => candidate.pkgname(),
+                        Some(current) => {
+                            match pattern
+                                .best_match_pbulk(current, candidate.pkgname())
+                            {
+                                Ok(Some(best)) => best,
+                                _ => current,
+                            }
+                        }
+                    });
                 }
             }
 
