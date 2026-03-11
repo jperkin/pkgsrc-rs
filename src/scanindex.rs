@@ -137,6 +137,9 @@ pub struct ScanIndex {
     pub usergroup_phase: Option<String>,
     /// List of files read during the dependency scanning step.
     pub scan_depends: Option<Vec<PathBuf>>,
+    /// Whether this package supports parallel builds (`make -j`). Packages
+    /// that do not support parallel builds set `MAKE_JOBS_SAFE=no`.
+    pub make_jobs_safe: Option<String>,
     /// Numeric build priority of the package. If not set, a value of 100 is
     /// assumed.
     pub pbulk_weight: Option<String>,
@@ -202,6 +205,9 @@ impl fmt::Display for ScanIndex {
             }
         }
         writeln!(f)?;
+        if let Some(ref v) = self.make_jobs_safe {
+            writeln!(f, "MAKE_JOBS_SAFE={v}")?;
+        }
         if let Some(ref v) = self.pbulk_weight {
             writeln!(f, "PBULK_WEIGHT={v}")?;
         }
