@@ -112,12 +112,11 @@ use thiserror::Error;
 #[cfg(feature = "serde")]
 use serde_with::{DeserializeFromStr, SerializeDisplay};
 
-#[derive(Clone, Debug, Default, Eq, Hash, PartialEq)]
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
 enum PatternType {
     Alternate,
-    Dewey,
-    Glob,
-    #[default]
+    Dewey(Dewey),
+    Glob(glob::Pattern),
     Simple,
 }
 
@@ -225,15 +224,12 @@ pub enum PatternError {
  *
  * [`glob`]: https://docs.rs/glob/latest/glob/
  */
-#[derive(Clone, Debug, Default, Eq, Hash, PartialEq)]
-#[allow(clippy::struct_field_names)]
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
 #[cfg_attr(feature = "serde", derive(SerializeDisplay, DeserializeFromStr))]
 pub struct Pattern {
     matchtype: PatternType,
     pattern: String,
     likely: bool,
-    dewey: Option<Dewey>,
-    glob: Option<glob::Pattern>,
 }
 
 impl fmt::Display for Pattern {
@@ -286,7 +282,6 @@ impl Pattern {
      */
     pub fn new(pattern: &str) -> Result<Self, PatternError> {
         if pattern.contains('{') || pattern.contains('}') {
-            let matchtype = PatternType::Alternate;
             /*
              * Verify that braces are correctly balanced.
              */
@@ -302,19 +297,16 @@ impl Pattern {
                 return Err(PatternError::Alternate);
             }
             return Ok(Self {
-                matchtype,
+                matchtype: PatternType::Alternate,
                 pattern: pattern.to_string(),
-                ..Default::default()
+                likely: false,
             });
         }
         if pattern.contains('>') || pattern.contains('<') {
-            let matchtype = PatternType::Dewey;
-            let dewey = Some(Dewey::new(pattern)?);
             return Ok(Self {
-                matchtype,
+                matchtype: PatternType::Dewey(Dewey::new(pattern)?),
                 pattern: pattern.to_string(),
-                dewey,
-                ..Default::default()
+                likely: false,
             });
         }
         if pattern.contains('*')
@@ -322,19 +314,16 @@ impl Pattern {
             || pattern.contains('[')
             || pattern.contains(']')
         {
-            let matchtype = PatternType::Glob;
-            let glob = Some(glob::Pattern::new(pattern)?);
             return Ok(Self {
-                matchtype,
+                matchtype: PatternType::Glob(glob::Pattern::new(pattern)?),
                 pattern: pattern.to_string(),
-                glob,
-                ..Default::default()
+                likely: false,
             });
         }
         Ok(Self {
             matchtype: PatternType::Simple,
             pattern: pattern.to_string(),
-            ..Default::default()
+            likely: false,
         })
     }
 
@@ -373,18 +362,8 @@ impl Pattern {
          */
         match self.matchtype {
             PatternType::Alternate => Self::alternate_match(&self.pattern, pkg),
-            PatternType::Dewey => {
-                let Some(dewey) = &self.dewey else {
-                    return false;
-                };
-                dewey.matches(pkg)
-            }
-            PatternType::Glob => {
-                let Some(glob) = &self.glob else {
-                    return false;
-                };
-                glob.matches(pkg)
-            }
+            PatternType::Dewey(ref dewey) => dewey.matches(pkg),
+            PatternType::Glob(ref glob) => glob.matches(pkg),
             PatternType::Simple => self.pattern == pkg,
         }
     }
@@ -488,11 +467,11 @@ impl Pattern {
     #[must_use]
     pub fn pkgbase(&self) -> Option<&str> {
         match self.matchtype {
-            PatternType::Dewey => self.dewey.as_ref().map(|d| d.pkgbase()),
+            PatternType::Dewey(ref dewey) => Some(dewey.pkgbase()),
             PatternType::Simple => {
                 self.pattern.rsplit_once('-').map(|(b, _)| b)
             }
-            PatternType::Glob => {
+            PatternType::Glob(_) => {
                 let end = self
                     .pattern
                     .find(['*', '?', '['])
@@ -507,28 +486,26 @@ impl Pattern {
      * Implement csh-style alternate matches.  [`Pattern::new`] has already
      * verified that the pattern is valid and braces are correctly balanced.
      *
-     * The algorithm starts at the right-most opening brace and iteratively works
-     * backwards, expanding each alternate match and recursively calling Pattern
-     * to verify that there is a match.
+     * Find the right-most opening brace, expand each alternative, and
+     * recursively call Pattern to verify that there is a match.  Recursion
+     * handles any remaining braces in the expanded patterns.
      */
     fn alternate_match(pattern: &str, pkg: &str) -> bool {
-        for (i, _) in
-            pattern.match_indices('{').collect::<Vec<_>>().iter().rev()
-        {
-            let (first, rest) = pattern.split_at(*i);
-            /* This shouldn't fail as new() already verified, but... */
-            let Some(n) = rest.find('}') else {
-                return false;
-            };
-            let (matches, last) = rest.split_at(n + 1);
-            let matches = &matches[1..matches.len() - 1];
+        let Some(i) = pattern.rfind('{') else {
+            return false;
+        };
+        let (first, rest) = pattern.split_at(i);
+        let Some(n) = rest.find('}') else {
+            return false;
+        };
+        let (matches, last) = rest.split_at(n + 1);
+        let matches = &matches[1..matches.len() - 1];
 
-            for m in matches.split(',') {
-                let fmt = format!("{first}{m}{last}");
-                if let Ok(pat) = Self::new(&fmt) {
-                    if pat.matches(pkg) {
-                        return true;
-                    }
+        for m in matches.split(',') {
+            let fmt = format!("{first}{m}{last}");
+            if let Ok(pat) = Self::new(&fmt) {
+                if pat.matches(pkg) {
+                    return true;
                 }
             }
         }
@@ -633,47 +610,47 @@ mod tests {
     #[test]
     fn dewey_match_ok() -> Result<(), PatternError> {
         use super::PatternType::Dewey;
-        assert_pattern_eq!("foo>1", "foo-1.1", Dewey);
-        assert_pattern_eq!("foo>1", "foo-1.0pl1", Dewey);
-        assert_pattern_eq!("foo<1", "foo-1.0alpha1", Dewey);
-        assert_pattern_eq!("foo>=1", "foo-1.0", Dewey);
-        assert_pattern_eq!("foo<2", "foo-1.0", Dewey);
-        assert_pattern_eq!("foo>=1", "foo-1.0", Dewey);
-        assert_pattern_eq!("foo>=1<2", "foo-1.0", Dewey);
-        assert_pattern_eq!("foo>1<2", "foo-1.0nb2", Dewey);
-        assert_pattern_eq!("foo>1.1.1<2", "foo-1.22b2", Dewey);
+        assert_pattern_eq!("foo>1", "foo-1.1", Dewey(_));
+        assert_pattern_eq!("foo>1", "foo-1.0pl1", Dewey(_));
+        assert_pattern_eq!("foo<1", "foo-1.0alpha1", Dewey(_));
+        assert_pattern_eq!("foo>=1", "foo-1.0", Dewey(_));
+        assert_pattern_eq!("foo<2", "foo-1.0", Dewey(_));
+        assert_pattern_eq!("foo>=1", "foo-1.0", Dewey(_));
+        assert_pattern_eq!("foo>=1<2", "foo-1.0", Dewey(_));
+        assert_pattern_eq!("foo>1<2", "foo-1.0nb2", Dewey(_));
+        assert_pattern_eq!("foo>1.1.1<2", "foo-1.22b2", Dewey(_));
         //
-        assert_pattern_eq!("librsvg>=2.12", "librsvg-2.13", Dewey);
-        assert_pattern_eq!("librsvg<2.39", "librsvg-2.13", Dewey);
-        assert_pattern_eq!("librsvg<2.40", "librsvg-2.13", Dewey);
-        assert_pattern_eq!("librsvg<2.43", "librsvg-2.13", Dewey);
-        assert_pattern_eq!("librsvg<2.41", "librsvg-2.13", Dewey);
-        assert_pattern_eq!("librsvg>=2.12<2.41", "librsvg-2.13", Dewey);
+        assert_pattern_eq!("librsvg>=2.12", "librsvg-2.13", Dewey(_));
+        assert_pattern_eq!("librsvg<2.39", "librsvg-2.13", Dewey(_));
+        assert_pattern_eq!("librsvg<2.40", "librsvg-2.13", Dewey(_));
+        assert_pattern_eq!("librsvg<2.43", "librsvg-2.13", Dewey(_));
+        assert_pattern_eq!("librsvg<2.41", "librsvg-2.13", Dewey(_));
+        assert_pattern_eq!("librsvg>=2.12<2.41", "librsvg-2.13", Dewey(_));
         /*
          * pkg_install quirks.
          */
-        assert_pattern_eq!("pkg>=0", "pkg-", Dewey);
-        assert_pattern_eq!("foo>1.1", "foo-1.1blah2", Dewey);
-        assert_pattern_eq!("foo>1.1a2", "foo-1.1blah2", Dewey);
+        assert_pattern_eq!("pkg>=0", "pkg-", Dewey(_));
+        assert_pattern_eq!("foo>1.1", "foo-1.1blah2", Dewey(_));
+        assert_pattern_eq!("foo>1.1a2", "foo-1.1blah2", Dewey(_));
         Ok(())
     }
     #[test]
     fn dewey_match_notok() -> Result<(), PatternError> {
         use super::PatternType::Dewey;
-        assert_pattern_ne!("foo>1alpha<2beta", "foo-2.5", Dewey);
-        assert_pattern_ne!("foo>1", "foo-0.5", Dewey);
-        assert_pattern_ne!("foo>1", "foo-1.0", Dewey);
-        assert_pattern_ne!("foo>1", "foo-1.0alpha1", Dewey);
-        assert_pattern_ne!("foo>1nb3", "foo-1.0nb2", Dewey);
-        assert_pattern_ne!("foo>1<2", "foo-0.5", Dewey);
-        assert_pattern_ne!("bar>=1", "foo-1.0", Dewey);
-        assert_pattern_ne!("foo>=1", "foo", Dewey);
+        assert_pattern_ne!("foo>1alpha<2beta", "foo-2.5", Dewey(_));
+        assert_pattern_ne!("foo>1", "foo-0.5", Dewey(_));
+        assert_pattern_ne!("foo>1", "foo-1.0", Dewey(_));
+        assert_pattern_ne!("foo>1", "foo-1.0alpha1", Dewey(_));
+        assert_pattern_ne!("foo>1nb3", "foo-1.0nb2", Dewey(_));
+        assert_pattern_ne!("foo>1<2", "foo-0.5", Dewey(_));
+        assert_pattern_ne!("bar>=1", "foo-1.0", Dewey(_));
+        assert_pattern_ne!("foo>=1", "foo", Dewey(_));
         /*
          * pkg_install quirks.
          */
         // XXX: this currently passes, pkg_match does not
-        //assert_pattern_eq!("pkg>=0", "pkg", Dewey);
-        assert_pattern_ne!("foo>1.1c2", "foo-1.1blah2", Dewey);
+        //assert_pattern_eq!("pkg>=0", "pkg", Dewey(_));
+        assert_pattern_ne!("foo>1.1c2", "foo-1.1blah2", Dewey(_));
         Ok(())
     }
     #[test]
@@ -719,24 +696,24 @@ mod tests {
     #[test]
     fn glob_match_ok() -> Result<(), PatternError> {
         use super::PatternType::Glob;
-        assert_pattern_eq!("foo-[0-9]*", "foo-1.0", Glob);
-        assert_pattern_eq!("fo?-[0-9]*", "foo-1.0", Glob);
-        assert_pattern_eq!("fo*-[0-9]*", "foo-1.0", Glob);
-        assert_pattern_eq!("?oo-[0-9]*", "foo-1.0", Glob);
-        assert_pattern_eq!("*oo-[0-9]*", "foo-1.0", Glob);
-        assert_pattern_eq!("foo-[0-9]", "foo-1", Glob);
+        assert_pattern_eq!("foo-[0-9]*", "foo-1.0", Glob(_));
+        assert_pattern_eq!("fo?-[0-9]*", "foo-1.0", Glob(_));
+        assert_pattern_eq!("fo*-[0-9]*", "foo-1.0", Glob(_));
+        assert_pattern_eq!("?oo-[0-9]*", "foo-1.0", Glob(_));
+        assert_pattern_eq!("*oo-[0-9]*", "foo-1.0", Glob(_));
+        assert_pattern_eq!("foo-[0-9]", "foo-1", Glob(_));
         Ok(())
     }
 
     #[test]
     fn glob_match_notok() -> Result<(), PatternError> {
         use super::PatternType::Glob;
-        assert_pattern_ne!("boo-[0-9]*", "foo-1.0", Glob);
-        assert_pattern_ne!("bo?-[0-9]*", "foo-1.0", Glob);
-        assert_pattern_ne!("bo*-[0-9]*", "foo-1.0", Glob);
-        assert_pattern_ne!("foo-[2-9]*", "foo-1.0", Glob);
-        assert_pattern_ne!("fo-[0-9]*", "foo-1.0", Glob);
-        assert_pattern_ne!("bar-[0-9]*", "foo-1.0", Glob);
+        assert_pattern_ne!("boo-[0-9]*", "foo-1.0", Glob(_));
+        assert_pattern_ne!("bo?-[0-9]*", "foo-1.0", Glob(_));
+        assert_pattern_ne!("bo*-[0-9]*", "foo-1.0", Glob(_));
+        assert_pattern_ne!("foo-[2-9]*", "foo-1.0", Glob(_));
+        assert_pattern_ne!("fo-[0-9]*", "foo-1.0", Glob(_));
+        assert_pattern_ne!("bar-[0-9]*", "foo-1.0", Glob(_));
         Ok(())
     }
     #[test]
@@ -845,6 +822,9 @@ mod tests {
         assert!(p.matches("pkg-1.5"));
 
         assert!(Pattern::from_str("{unbalanced").is_err());
+
+        let p: Pattern = "foo-[0-9]*".try_into()?;
+        assert!(p.matches("foo-1.0"));
         Ok(())
     }
 
