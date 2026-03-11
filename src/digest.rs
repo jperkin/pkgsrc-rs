@@ -171,22 +171,24 @@ pub enum Digest {
     SHA512,
 }
 
-fn hash_file_internal<R: Read, D: digest::Digest + std::io::Write>(
+fn hex_encode(bytes: &[u8]) -> String {
+    use std::fmt::Write;
+    let mut s = String::with_capacity(bytes.len() * 2);
+    for b in bytes {
+        let _ = write!(s, "{b:02x}");
+    }
+    s
+}
+
+fn file_hash<R: Read, D: digest::Digest + std::io::Write>(
     reader: &mut R,
 ) -> DigestResult<String> {
     let mut hasher = D::new();
     std::io::copy(reader, &mut hasher)?;
-    let hash = hasher
-        .finalize()
-        .iter()
-        .fold(String::new(), |mut output, b| {
-            output.push_str(&format!("{b:02x}"));
-            output
-        });
-    Ok(hash)
+    Ok(hex_encode(&hasher.finalize()))
 }
 
-fn hash_patch_internal<R: Read, D: digest::Digest + std::io::Write>(
+fn patch_hash<R: Read, D: digest::Digest + std::io::Write>(
     reader: &mut R,
 ) -> DigestResult<String> {
     let mut hasher = D::new();
@@ -201,29 +203,15 @@ fn hash_patch_internal<R: Read, D: digest::Digest + std::io::Write>(
         hasher.update(b"\n");
     }
 
-    let hash = hasher
-        .finalize()
-        .iter()
-        .fold(String::new(), |mut output, b| {
-            output.push_str(&format!("{b:02x}"));
-            output
-        });
-    Ok(hash)
+    Ok(hex_encode(&hasher.finalize()))
 }
 
-fn hash_str_internal<D: digest::Digest + std::io::Write>(
+fn str_hash<D: digest::Digest + std::io::Write>(
     s: &str,
 ) -> DigestResult<String> {
     let mut hasher = D::new();
     hasher.update(s);
-    let hash = hasher
-        .finalize()
-        .iter()
-        .fold(String::new(), |mut output, b| {
-            output.push_str(&format!("{b:02x}"));
-            output
-        });
-    Ok(hash)
+    Ok(hex_encode(&hasher.finalize()))
 }
 
 impl Digest {
@@ -233,16 +221,12 @@ impl Digest {
      */
     pub fn hash_file<R: Read>(&self, reader: &mut R) -> DigestResult<String> {
         match self {
-            Digest::BLAKE2s => {
-                hash_file_internal::<_, blake2::Blake2s256>(reader)
-            }
-            Digest::MD5 => hash_file_internal::<_, md5::Md5>(reader),
-            Digest::RMD160 => {
-                hash_file_internal::<_, ripemd::Ripemd160>(reader)
-            }
-            Digest::SHA1 => hash_file_internal::<_, sha1::Sha1>(reader),
-            Digest::SHA256 => hash_file_internal::<_, sha2::Sha256>(reader),
-            Digest::SHA512 => hash_file_internal::<_, sha2::Sha512>(reader),
+            Digest::BLAKE2s => file_hash::<_, blake2::Blake2s256>(reader),
+            Digest::MD5 => file_hash::<_, md5::Md5>(reader),
+            Digest::RMD160 => file_hash::<_, ripemd::Ripemd160>(reader),
+            Digest::SHA1 => file_hash::<_, sha1::Sha1>(reader),
+            Digest::SHA256 => file_hash::<_, sha2::Sha256>(reader),
+            Digest::SHA512 => file_hash::<_, sha2::Sha512>(reader),
         }
     }
 
@@ -252,16 +236,12 @@ impl Digest {
      */
     pub fn hash_patch<R: Read>(&self, reader: &mut R) -> DigestResult<String> {
         match self {
-            Digest::BLAKE2s => {
-                hash_patch_internal::<_, blake2::Blake2s256>(reader)
-            }
-            Digest::MD5 => hash_patch_internal::<_, md5::Md5>(reader),
-            Digest::RMD160 => {
-                hash_patch_internal::<_, ripemd::Ripemd160>(reader)
-            }
-            Digest::SHA1 => hash_patch_internal::<_, sha1::Sha1>(reader),
-            Digest::SHA256 => hash_patch_internal::<_, sha2::Sha256>(reader),
-            Digest::SHA512 => hash_patch_internal::<_, sha2::Sha512>(reader),
+            Digest::BLAKE2s => patch_hash::<_, blake2::Blake2s256>(reader),
+            Digest::MD5 => patch_hash::<_, md5::Md5>(reader),
+            Digest::RMD160 => patch_hash::<_, ripemd::Ripemd160>(reader),
+            Digest::SHA1 => patch_hash::<_, sha1::Sha1>(reader),
+            Digest::SHA256 => patch_hash::<_, sha2::Sha256>(reader),
+            Digest::SHA512 => patch_hash::<_, sha2::Sha512>(reader),
         }
     }
     /**
@@ -269,12 +249,12 @@ impl Digest {
      */
     pub fn hash_str(&self, s: &str) -> DigestResult<String> {
         match self {
-            Digest::BLAKE2s => hash_str_internal::<blake2::Blake2s256>(s),
-            Digest::MD5 => hash_str_internal::<md5::Md5>(s),
-            Digest::RMD160 => hash_str_internal::<ripemd::Ripemd160>(s),
-            Digest::SHA1 => hash_str_internal::<sha1::Sha1>(s),
-            Digest::SHA256 => hash_str_internal::<sha2::Sha256>(s),
-            Digest::SHA512 => hash_str_internal::<sha2::Sha512>(s),
+            Digest::BLAKE2s => str_hash::<blake2::Blake2s256>(s),
+            Digest::MD5 => str_hash::<md5::Md5>(s),
+            Digest::RMD160 => str_hash::<ripemd::Ripemd160>(s),
+            Digest::SHA1 => str_hash::<sha1::Sha1>(s),
+            Digest::SHA256 => str_hash::<sha2::Sha256>(s),
+            Digest::SHA512 => str_hash::<sha2::Sha512>(s),
         }
     }
 }
@@ -334,5 +314,78 @@ mod tests {
         let h = d.hash_str("hello there")?;
         assert_eq!(h, "6e71b3cac15d32fe2d36c270887df9479c25c640");
         Ok(())
+    }
+
+    #[test]
+    fn digest_all_algorithms() -> DigestResult<()> {
+        let input = "pkgsrc";
+        let expected = [
+            (
+                Digest::BLAKE2s,
+                "blake2s",
+                64,
+                "5bf50a94babe8cb54ed81cf3356ea2f4fb252edb820c6601a5999ca726736a29",
+            ),
+            (Digest::MD5, "md5", 32, "f0a983b4f820b134e46ed3ace7e15987"),
+            (
+                Digest::RMD160,
+                "rmd160",
+                40,
+                "5179342a9242a1699b65232f4d1138d90de53dcb",
+            ),
+            (
+                Digest::SHA1,
+                "sha1",
+                40,
+                "87d10de1d38d207c8404ff018e5e7247a4c9d109",
+            ),
+            (
+                Digest::SHA256,
+                "sha256",
+                64,
+                "e04ac068955c93d64bcfe27eaa409d43ff8242e0ae8c4613292cfe282764627f",
+            ),
+            (
+                Digest::SHA512,
+                "sha512",
+                128,
+                "65cc5090b4f5fbe26ea134d12e55bb8db88bc6498e671f9b931fdce02394f9bf\
+              0b792389afcecb4ab6ecb3a5e6457b0ca32d88ab4f23ff905b711f059fcc0ade",
+            ),
+        ];
+        for (digest, name, hex_len, hash) in expected {
+            let d = Digest::from_str(name)?;
+            assert_eq!(d, digest);
+            assert_eq!(d.to_string().to_lowercase(), name);
+            let h = d.hash_str(input)?;
+            assert_eq!(h.len(), hex_len);
+            assert_eq!(h, hash);
+            let mut cursor = std::io::Cursor::new(input);
+            let h2 = d.hash_file(&mut cursor)?;
+            assert_eq!(h2, hash);
+            let mut cursor = std::io::Cursor::new(input);
+            let h3 = d.hash_patch(&mut cursor)?;
+            assert_eq!(h3.len(), hex_len);
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn digest_error_io_eq() {
+        let e1 = DigestError::Io(std::io::Error::new(
+            std::io::ErrorKind::NotFound,
+            "a",
+        ));
+        let e2 = DigestError::Io(std::io::Error::new(
+            std::io::ErrorKind::NotFound,
+            "b",
+        ));
+        let e3 = DigestError::Io(std::io::Error::new(
+            std::io::ErrorKind::Other,
+            "a",
+        ));
+        assert_eq!(e1, e2);
+        assert_ne!(e1, e3);
+        assert_ne!(e1, DigestError::Unsupported("x".to_string()));
     }
 }
