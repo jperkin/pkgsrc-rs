@@ -423,17 +423,14 @@ impl Distinfo {
      * line, or None if one was not found.
      */
     pub fn rcsid(&self) -> Option<&OsString> {
-        match &self.rcsid {
-            Some(s) => Some(s),
-            None => None,
-        }
+        self.rcsid.as_ref()
     }
 
     /**
      * Set the rcsid value.
      */
-    pub fn set_rcsid(&mut self, rcsid: &OsString) {
-        self.rcsid = Some(rcsid.clone());
+    pub fn set_rcsid(&mut self, rcsid: impl Into<OsString>) {
+        self.rcsid = Some(rcsid.into());
     }
     /**
      * Return a matching distfile [`Entry`] if found, otherwise [`None`].
@@ -984,5 +981,129 @@ mod tests {
         assert!(!Entry::is_patch_filename("foo-1.0.tar.gz"));
         assert!(!Entry::is_patch_filename("patch-2.7.6.tar.xz"));
         assert!(!Entry::is_patch_filename("emul-foo.tar.gz"));
+    }
+
+    #[test]
+    fn test_set_rcsid() {
+        let mut di = Distinfo::new();
+        assert_eq!(di.rcsid(), None);
+
+        di.set_rcsid("$NetBSD$");
+        assert_eq!(di.rcsid(), Some(&OsString::from("$NetBSD$")));
+
+        di.set_rcsid(OsString::from("$NetBSD: test $"));
+        assert_eq!(di.rcsid(), Some(&OsString::from("$NetBSD: test $")));
+    }
+
+    #[test]
+    fn test_entry_as_bytes() {
+        let entry = Entry::new(
+            "foo-1.0.tar.gz",
+            "/distfiles/foo-1.0.tar.gz",
+            vec![
+                Checksum::new(Digest::BLAKE2s, "abc123".to_string()),
+                Checksum::new(Digest::SHA512, "def456".to_string()),
+            ],
+            Some(12345),
+        );
+        let bytes = entry.as_bytes();
+        let s = String::from_utf8(bytes).expect("valid utf8");
+        assert!(s.contains("BLAKE2s (foo-1.0.tar.gz) = abc123\n"));
+        assert!(s.contains("SHA512 (foo-1.0.tar.gz) = def456\n"));
+        assert!(s.contains("Size (foo-1.0.tar.gz) = 12345 bytes\n"));
+    }
+
+    #[test]
+    fn test_entry_as_bytes_no_size() {
+        let entry = Entry::new(
+            "patch-Makefile",
+            "patches/patch-Makefile",
+            vec![Checksum::new(Digest::SHA1, "abc123".to_string())],
+            None,
+        );
+        let bytes = entry.as_bytes();
+        let s = String::from_utf8(bytes).expect("valid utf8");
+        assert!(s.contains("SHA1 (patch-Makefile) = abc123\n"));
+        assert!(!s.contains("Size"));
+    }
+
+    #[test]
+    fn test_distinfo_as_bytes() {
+        let input = concat!(
+            "$NetBSD: distinfo,v 1.1 2024/01/01 00:00:00 user Exp $\n",
+            "\n",
+            "BLAKE2s (foo-1.0.tar.gz) = abc123\n",
+            "SHA512 (foo-1.0.tar.gz) = def456\n",
+            "Size (foo-1.0.tar.gz) = 99999 bytes\n",
+            "SHA1 (patch-Makefile) = fedcba\n",
+        );
+        let di = Distinfo::from_bytes(input.as_bytes());
+        let output = di.as_bytes();
+        let s = String::from_utf8(output).expect("valid utf8");
+        assert!(s.starts_with("$NetBSD: distinfo,v 1.1"));
+        assert!(s.contains("BLAKE2s (foo-1.0.tar.gz) = abc123\n"));
+        assert!(s.contains("SHA512 (foo-1.0.tar.gz) = def456\n"));
+        assert!(s.contains("Size (foo-1.0.tar.gz) = 99999 bytes\n"));
+        assert!(s.contains("SHA1 (patch-Makefile) = fedcba\n"));
+    }
+
+    #[test]
+    fn test_line_malformed() {
+        /* Missing parentheses around filename */
+        let o = Line::from_bytes(b"SHA1 foo = abc123");
+        assert_eq!(o, Line::None);
+
+        /* Non-UTF8 action field */
+        let o = Line::from_bytes(b"\xff\xfe (foo) = abc");
+        assert_eq!(o, Line::None);
+
+        /* Non-UTF8 value field */
+        let o = Line::from_bytes(b"SHA1 (foo) = \xff\xfe");
+        assert_eq!(o, Line::None);
+
+        /* Unknown digest type */
+        let o = Line::from_bytes(b"BOGUS (foo) = abc");
+        assert_eq!(o, Line::None);
+    }
+
+    #[test]
+    fn test_calculate_size() -> Result<(), DistinfoError> {
+        let mut file = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        file.push("tests/data/digest.txt");
+        let size = Distinfo::calculate_size(&file)?;
+        assert_eq!(size, 158);
+        Ok(())
+    }
+
+    #[test]
+    fn test_calculate_checksum() -> Result<(), DistinfoError> {
+        let mut file = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        file.push("tests/data/digest.txt");
+        let hash = Distinfo::calculate_checksum(&file, Digest::BLAKE2s)?;
+        assert_eq!(
+            hash,
+            "555e56e8177159b7d7fe96d5068dcf5335b554b917c8daaa4c893ec4f04b5303"
+        );
+
+        let mut patch = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        patch.push("tests/data/patch-Makefile");
+        let hash = Distinfo::calculate_checksum(&patch, Digest::SHA1)?;
+        assert_eq!(hash, "ab5ce8a374d3aca7948eecabc35386d8195e3fbf");
+        Ok(())
+    }
+
+    #[test]
+    fn test_distinfo_as_bytes_no_rcsid() {
+        let mut di = Distinfo::new();
+        di.insert(Entry::new(
+            "foo-1.0.tar.gz",
+            "/distfiles/foo-1.0.tar.gz",
+            vec![Checksum::new(Digest::SHA1, "abc".to_string())],
+            None,
+        ));
+        let output = di.as_bytes();
+        let s = String::from_utf8(output).expect("valid utf8");
+        assert!(s.starts_with("$NetBSD$\n\n"));
+        assert!(s.contains("SHA1 (foo-1.0.tar.gz) = abc\n"));
     }
 }
