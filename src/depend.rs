@@ -134,12 +134,14 @@ impl Depend {
      * ```
      */
     pub fn new(s: &str) -> Result<Self, DependError> {
-        let v: Vec<_> = s.split(':').collect();
-        if v.len() != 2 {
+        let Some((left, right)) = s.split_once(':') else {
+            return Err(DependError::Invalid);
+        };
+        if right.contains(':') {
             return Err(DependError::Invalid);
         }
-        let pattern = Pattern::new(v[0])?;
-        let pkgpath = PkgPath::from_str(v[1])?;
+        let pattern = Pattern::new(left)?;
+        let pkgpath = PkgPath::from_str(right)?;
         Ok(Depend { pattern, pkgpath })
     }
 
@@ -304,6 +306,9 @@ mod tests {
 
         let dep: Depend = "pkg>=1.0:cat/pkg".parse()?;
         assert_eq!(dep.pkgpath(), &PkgPath::new("cat/pkg")?);
+
+        let dep: Depend = "foo-[0-9]*:cat/foo".try_into()?;
+        assert!(dep.pattern().matches("foo-1.0"));
         Ok(())
     }
 }
