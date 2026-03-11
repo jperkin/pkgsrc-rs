@@ -2428,12 +2428,7 @@ mod tests {
         "};
         let trimmed = input.trim();
 
-        let err = Summary::from_str(trimmed).err().ok_or(
-            SummaryError::Incomplete {
-                field: "expected error".to_string(),
-                context: ErrorContext::default(),
-            },
-        )?;
+        let err = Summary::from_str(trimmed).err().expect("expected error");
         assert!(
             matches!(err, SummaryError::UnknownVariable { variable, .. } if variable == "UNKNOWN_FIELD")
         );
@@ -2469,20 +2464,13 @@ mod tests {
 
         // Without allow_unknown should fail
         let mut iter = Summary::from_reader(input.trim().as_bytes());
-        let result = iter.next().ok_or(SummaryError::Incomplete {
-            field: "expected entry".to_string(),
-            context: ErrorContext::default(),
-        })?;
+        let result = iter.next().expect("expected entry");
         assert!(result.is_err());
 
         // With allow_unknown should succeed
         let mut iter =
             Summary::from_reader(input.trim().as_bytes()).allow_unknown(true);
-        let result = iter.next().ok_or(SummaryError::Incomplete {
-            field: "expected entry".to_string(),
-            context: ErrorContext::default(),
-        })?;
-        let pkg = result?;
+        let pkg = iter.next().expect("expected entry")?;
         assert_eq!(pkg.pkgname().pkgname(), "iterpkg-1.0");
 
         Ok(())
@@ -2498,26 +2486,204 @@ mod tests {
 
         // Without allow_incomplete should fail
         let mut iter = Summary::from_reader(input.trim().as_bytes());
-        let result = iter.next().ok_or(SummaryError::Incomplete {
-            field: "expected entry".to_string(),
-            context: ErrorContext::default(),
-        })?;
+        let result = iter.next().expect("expected entry");
         assert!(result.is_err());
 
         // With allow_incomplete should succeed
         let mut iter = Summary::from_reader(input.trim().as_bytes())
             .allow_incomplete(true);
-        let result = iter.next().ok_or(SummaryError::Incomplete {
-            field: "expected entry".to_string(),
-            context: ErrorContext::default(),
-        })?;
-        let pkg = result?;
+        let pkg = iter.next().expect("expected entry")?;
         assert_eq!(pkg.pkgname().pkgname(), "incomplete-1.0");
         assert_eq!(pkg.comment(), "Incomplete test");
         // Missing fields should have defaults
         assert!(pkg.categories().is_empty());
         assert!(pkg.description().is_empty());
 
+        Ok(())
+    }
+
+    #[test]
+    fn test_from_reader_all_fields() -> Result<()> {
+        use flate2::read::GzDecoder;
+        use std::fs::File;
+        use std::io::BufReader;
+
+        let path = concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/tests/data/summary/pkg_summary.gz"
+        );
+        let file = File::open(path)?;
+        let reader = BufReader::new(GzDecoder::new(file));
+
+        let mut blackbox: Option<Summary> = None;
+        let mut mktool: Option<Summary> = None;
+        for pkg in Summary::from_reader(reader) {
+            let pkg = pkg?;
+            match pkg.pkgname().pkgname() {
+                "blackbox-0.77nb4" => blackbox = Some(pkg),
+                "mktool-1.4.2" => mktool = Some(pkg),
+                _ => {}
+            }
+            if blackbox.is_some() && mktool.is_some() {
+                break;
+            }
+        }
+
+        /*
+         * blackbox has most optional fields: CONFLICTS, DEPENDS,
+         * PKG_OPTIONS, PREV_PKGPATH, PROVIDES, REQUIRES, SUPERSEDES.
+         */
+        let bb = blackbox.expect("blackbox not found");
+        assert_eq!(bb.pkgname().pkgname(), "blackbox-0.77nb4");
+        assert_eq!(bb.pkgname().pkgbase(), "blackbox");
+        assert_eq!(bb.comment(), "Small and fast X11 window manager");
+        assert_eq!(bb.size_pkg(), 1464205);
+        assert_eq!(bb.build_date(), "2025-11-17 04:04:52 +0000");
+        assert_eq!(bb.categories(), &["wm", "x11"]);
+        assert_eq!(
+            bb.homepage(),
+            Some("https://github.com/bbidulock/blackboxwm")
+        );
+        assert_eq!(bb.license(), Some("mit"));
+        assert_eq!(bb.machine_arch(), "aarch64");
+        assert_eq!(bb.opsys(), "Darwin");
+        assert_eq!(bb.os_version(), "23.6.0");
+        assert_eq!(bb.pkgpath(), "wm/blackbox");
+        assert_eq!(bb.pkgtools_version(), "20091115");
+        assert_eq!(bb.pkg_options(), Some("nls xft2"));
+        assert_eq!(bb.prev_pkgpath(), Some("wm/blackbox70"));
+        assert_eq!(bb.file_name(), Some("blackbox-0.77nb4.tgz"));
+        assert_eq!(bb.file_size(), Some(477526));
+        assert_eq!(bb.file_cksum(), None);
+        assert!(bb.description().len() > 1);
+        assert!(bb.description()[0].starts_with("Blackbox is yet"));
+
+        let conflicts = bb.conflicts().expect("blackbox CONFLICTS");
+        assert!(conflicts.contains(&"bsetroot-[0-9]*".to_string()));
+        assert!(conflicts.contains(&"blackbox70-[0-9]*".to_string()));
+
+        let depends = bb.depends().expect("blackbox DEPENDS");
+        assert!(depends.contains(&"gettext-lib>=0.22".to_string()));
+
+        let provides = bb.provides().expect("blackbox PROVIDES");
+        assert!(provides.contains(&"/opt/pkg/lib/libbt.0.dylib".to_string()));
+
+        let requires = bb.requires().expect("blackbox REQUIRES");
+        assert!(requires.contains(&"/opt/pkg/lib/libX11.6.dylib".to_string()));
+
+        let supersedes = bb.supersedes().expect("blackbox SUPERSEDES");
+        assert!(supersedes.contains(&"blackbox70-[0-9]*".to_string()));
+
+        let output = bb.to_string();
+        assert!(output.contains("CONFLICTS=bsetroot-[0-9]*"));
+        assert!(output.contains("PREV_PKGPATH=wm/blackbox70"));
+        assert!(output.contains("PKG_OPTIONS=nls xft2"));
+        assert!(output.contains("PROVIDES=/opt/pkg/lib/libbt.0.dylib"));
+        assert!(output.contains("REQUIRES=/opt/pkg/lib/libX11.6.dylib"));
+        assert!(output.contains("SUPERSEDES=blackbox70-[0-9]*"));
+
+        /*
+         * mktool has no optional fields except HOMEPAGE, LICENSE,
+         * FILE_NAME, FILE_SIZE -- confirm others return None.
+         */
+        let mk = mktool.expect("mktool not found");
+        assert_eq!(mk.pkgname().pkgname(), "mktool-1.4.2");
+        assert_eq!(mk.conflicts(), None);
+        assert_eq!(mk.depends(), None);
+        assert_eq!(mk.pkg_options(), None);
+        assert_eq!(mk.prev_pkgpath(), None);
+        assert_eq!(mk.provides(), None);
+        assert_eq!(mk.requires(), None);
+        assert_eq!(mk.supersedes(), None);
+        assert_eq!(mk.file_cksum(), None);
+        assert_eq!(mk.homepage(), Some("https://github.com/jperkin/mktool/"));
+        assert_eq!(mk.license(), Some("isc"));
+        assert_eq!(mk.file_name(), Some("mktool-1.4.2.tgz"));
+        assert_eq!(mk.file_size(), Some(2871260));
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_builder_var() -> Result<()> {
+        let pkg = SummaryBuilder::new()
+            .var("CONFLICTS=old-pkg-[0-9]*")
+            .var("PKGNAME=built-1.0")
+            .var("DEPENDS=dep1>=1.0")
+            .var("DEPENDS=dep2-[0-9]*")
+            .var("COMMENT=Built package")
+            .var("SIZE_PKG=100")
+            .var("BUILD_DATE=2025-01-01")
+            .var("CATEGORIES=test")
+            .var("HOMEPAGE=https://example.com/")
+            .var("LICENSE=isc")
+            .var("MACHINE_ARCH=x86_64")
+            .var("OPSYS=Darwin")
+            .var("OS_VERSION=23.0")
+            .var("PKGPATH=test/built")
+            .var("PKGTOOLS_VERSION=20091115")
+            .var("PKG_OPTIONS=opt1 opt2")
+            .var("PREV_PKGPATH=test/old-built")
+            .var("PROVIDES=/opt/pkg/lib/libfoo.dylib")
+            .var("REQUIRES=/opt/pkg/lib/libbar.dylib")
+            .var("SUPERSEDES=old-pkg-[0-9]*")
+            .var("FILE_NAME=built-1.0.tgz")
+            .var("FILE_SIZE=5000")
+            .var("FILE_CKSUM=SHA256:abc123")
+            .var("DESCRIPTION=Test description")
+            .build()?;
+        assert_eq!(pkg.pkgname().pkgname(), "built-1.0");
+        assert_eq!(pkg.comment(), "Built package");
+        assert_eq!(
+            pkg.conflicts(),
+            Some(["old-pkg-[0-9]*".to_string()].as_slice())
+        );
+        assert_eq!(
+            pkg.depends(),
+            Some(
+                ["dep1>=1.0".to_string(), "dep2-[0-9]*".to_string()].as_slice()
+            )
+        );
+        assert_eq!(pkg.homepage(), Some("https://example.com/"));
+        assert_eq!(pkg.license(), Some("isc"));
+        assert_eq!(pkg.pkg_options(), Some("opt1 opt2"));
+        assert_eq!(pkg.prev_pkgpath(), Some("test/old-built"));
+        assert_eq!(
+            pkg.provides(),
+            Some(["/opt/pkg/lib/libfoo.dylib".to_string()].as_slice())
+        );
+        assert_eq!(
+            pkg.requires(),
+            Some(["/opt/pkg/lib/libbar.dylib".to_string()].as_slice())
+        );
+        assert_eq!(
+            pkg.supersedes(),
+            Some(["old-pkg-[0-9]*".to_string()].as_slice())
+        );
+        assert_eq!(pkg.file_name(), Some("built-1.0.tgz"));
+        assert_eq!(pkg.file_size(), Some(5000));
+        assert_eq!(pkg.file_cksum(), Some("SHA256:abc123"));
+        Ok(())
+    }
+
+    #[test]
+    fn test_display_empty_description() -> Result<()> {
+        let pkg = SummaryBuilder::new()
+            .allow_incomplete(true)
+            .var("PKGNAME=nodesc-1.0")
+            .var("COMMENT=No description")
+            .var("SIZE_PKG=100")
+            .var("BUILD_DATE=2025-01-01")
+            .var("CATEGORIES=test")
+            .var("MACHINE_ARCH=x86_64")
+            .var("OPSYS=Darwin")
+            .var("OS_VERSION=23.0")
+            .var("PKGPATH=test/nodesc")
+            .var("PKGTOOLS_VERSION=20091115")
+            .build()?;
+        let output = pkg.to_string();
+        assert!(output.contains("DESCRIPTION=\n"));
+        assert!(!output.contains("DESCRIPTION=\nDESCRIPTION="));
         Ok(())
     }
 
@@ -2551,6 +2717,82 @@ mod tests {
         assert!(output.contains("DESCRIPTION=Line 2"));
         assert!(output.contains("DEPENDS=dep1-[0-9]*"));
         assert!(output.contains("DEPENDS=dep2>=1.0"));
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_lenient_all_fields() -> Result<()> {
+        let input = indoc! {"
+            BUILD_DATE=2025-01-01
+            CATEGORIES=test
+            COMMENT=Lenient test
+            CONFLICTS=old-pkg-[0-9]*
+            DEPENDS=dep1>=1.0
+            DEPENDS=dep2-[0-9]*
+            DESCRIPTION=Line 1
+            DESCRIPTION=Line 2
+            FILE_CKSUM=SHA256:abc123
+            FILE_NAME=lenient-1.0.tgz
+            FILE_SIZE=5000
+            HOMEPAGE=https://example.com/
+            LICENSE=isc
+            MACHINE_ARCH=x86_64
+            OPSYS=Darwin
+            OS_VERSION=23.0
+            PKGNAME=lenient-1.0
+            PKGPATH=test/lenient
+            PKGTOOLS_VERSION=20091115
+            PKG_OPTIONS=opt1 opt2
+            PREV_PKGPATH=test/old-lenient
+            PROVIDES=/opt/pkg/lib/libfoo.dylib
+            REQUIRES=/opt/pkg/lib/libbar.dylib
+            SIZE_PKG=100
+            SUPERSEDES=old-pkg-[0-9]*
+            UNKNOWN_FIELD=ignored
+        "};
+
+        let pkg = parse_summary(input.trim(), true, false)?;
+        assert_eq!(pkg.pkgname().pkgname(), "lenient-1.0");
+        assert_eq!(pkg.comment(), "Lenient test");
+        assert_eq!(pkg.build_date(), "2025-01-01");
+        assert_eq!(pkg.categories(), &["test"]);
+        assert_eq!(pkg.machine_arch(), "x86_64");
+        assert_eq!(pkg.opsys(), "Darwin");
+        assert_eq!(pkg.os_version(), "23.0");
+        assert_eq!(pkg.pkgpath(), "test/lenient");
+        assert_eq!(pkg.pkgtools_version(), "20091115");
+        assert_eq!(pkg.size_pkg(), 100);
+        assert_eq!(pkg.description(), &["Line 1", "Line 2"]);
+        assert_eq!(pkg.homepage(), Some("https://example.com/"));
+        assert_eq!(pkg.license(), Some("isc"));
+        assert_eq!(pkg.pkg_options(), Some("opt1 opt2"));
+        assert_eq!(pkg.prev_pkgpath(), Some("test/old-lenient"));
+        assert_eq!(pkg.file_name(), Some("lenient-1.0.tgz"));
+        assert_eq!(pkg.file_size(), Some(5000));
+        assert_eq!(pkg.file_cksum(), Some("SHA256:abc123"));
+        assert_eq!(
+            pkg.conflicts(),
+            Some(["old-pkg-[0-9]*".to_string()].as_slice())
+        );
+        assert_eq!(
+            pkg.depends(),
+            Some(
+                ["dep1>=1.0".to_string(), "dep2-[0-9]*".to_string()].as_slice()
+            )
+        );
+        assert_eq!(
+            pkg.provides(),
+            Some(["/opt/pkg/lib/libfoo.dylib".to_string()].as_slice())
+        );
+        assert_eq!(
+            pkg.requires(),
+            Some(["/opt/pkg/lib/libbar.dylib".to_string()].as_slice())
+        );
+        assert_eq!(
+            pkg.supersedes(),
+            Some(["old-pkg-[0-9]*".to_string()].as_slice())
+        );
 
         Ok(())
     }
