@@ -137,8 +137,7 @@ use serde_with::{DeserializeFromStr, SerializeDisplay};
 #[cfg_attr(feature = "serde", derive(SerializeDisplay, DeserializeFromStr))]
 pub struct PkgName {
     pkgname: String,
-    pkgbase: String,
-    pkgversion: String,
+    split: usize,
     pkgrevision: Option<i64>,
 }
 
@@ -148,9 +147,11 @@ impl PkgName {
      */
     #[must_use]
     pub fn new(pkgname: &str) -> Self {
-        let (pkgbase, pkgversion) = match pkgname.rsplit_once('-') {
-            Some((b, v)) => (String::from(b), String::from(v)),
-            None => (String::from(pkgname), String::new()),
+        let split = pkgname.rfind('-').unwrap_or(pkgname.len());
+        let pkgversion = if split < pkgname.len() {
+            &pkgname[split + 1..]
+        } else {
+            ""
         };
         let pkgrevision = match pkgversion.rsplit_once("nb") {
             Some((_, v)) => v.parse::<i64>().ok().or(Some(0)),
@@ -158,8 +159,7 @@ impl PkgName {
         };
         Self {
             pkgname: pkgname.to_string(),
-            pkgbase,
-            pkgversion,
+            split,
             pkgrevision,
         }
     }
@@ -180,7 +180,7 @@ impl PkgName {
      */
     #[must_use]
     pub fn pkgbase(&self) -> &str {
-        &self.pkgbase
+        &self.pkgname[..self.split]
     }
 
     /**
@@ -191,7 +191,11 @@ impl PkgName {
      */
     #[must_use]
     pub fn pkgversion(&self) -> &str {
-        &self.pkgversion
+        if self.split < self.pkgname.len() {
+            &self.pkgname[self.split + 1..]
+        } else {
+            ""
+        }
     }
 
     /**
