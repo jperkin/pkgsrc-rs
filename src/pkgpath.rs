@@ -76,6 +76,8 @@ use std::path::{Component, Path, PathBuf};
 use std::str::FromStr;
 use thiserror::Error;
 
+const PREFIX: &str = "../../";
+
 #[cfg(feature = "serde")]
 use serde_with::{DeserializeFromStr, SerializeDisplay};
 
@@ -101,15 +103,16 @@ pub enum PkgPathError {
  * their relative location, for example `../../pkgtools/pkg_install`.
  *
  * [`PkgPath`] takes either format as input, validates it for correctness,
- * then stores both internally as [`PathBuf`] entries.
+ * and normalises it internally to the full `../../category/package` form.
  *
- * Once stored, [`as_path`] returns the short path as a [`Path`], while
- * [`as_full_path`] returns the full relative path as a [`Path`].
+ * Both short and full forms are available as zero-cost string slices:
+ * [`as_str`] returns `category/package`, while [`as_full_str`] returns
+ * `../../category/package`.  [`as_path`] and [`as_full_path`] return the
+ * same as [`Path`] references.
  *
- * As [`PkgPath`] uses [`PathBuf`] under the hood, there is a small amount of
- * normalisation performed, for example trailing or double slashes, but
- * otherwise input strings are expected to be precisely formatted, and a
- * [`PkgPathError`] is raised otherwise.
+ * A small amount of normalisation is performed on input, for example
+ * trailing or double slashes, but otherwise input strings are expected to
+ * be precisely formatted, and a [`PkgPathError`] is raised otherwise.
  *
  * ## Examples
  *
@@ -137,13 +140,14 @@ pub enum PkgPathError {
  * ```
  *
  * [`as_full_path`]: PkgPath::as_full_path
+ * [`as_full_str`]: PkgPath::as_full_str
  * [`as_path`]: PkgPath::as_path
+ * [`as_str`]: PkgPath::as_str
  */
 #[derive(Clone, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
 #[cfg_attr(feature = "serde", derive(SerializeDisplay, DeserializeFromStr))]
 pub struct PkgPath {
-    short: PathBuf,
-    full: PathBuf,
+    full: String,
 }
 
 impl PkgPath {
@@ -154,41 +158,47 @@ impl PkgPath {
         let p = PathBuf::from(path);
         let c: Vec<_> = p.components().collect();
 
-        match c.len() {
+        let (cat, pkg) = match c.len() {
             //
-            // Handle the "category/package" case, adding "../../" to the full
-            // PathBuf if the rest is valid.
+            // Handle the "category/package" case.
             //
             2 => match (c[0], c[1]) {
-                (Component::Normal(_), Component::Normal(_)) => {
-                    let mut f = PathBuf::from("../../");
-                    f.push(&p);
-                    Ok(PkgPath { short: p, full: f })
-                }
-                _ => Err(PkgPathError::InvalidPath),
+                (Component::Normal(cat), Component::Normal(pkg)) => (cat, pkg),
+                _ => return Err(PkgPathError::InvalidPath),
             },
             //
-            // Handle the "../../category/package" case, removing "../../"
-            // from the short PathBuf if it's valid.
+            // Handle the "../../category/package" case, extracting
+            // just the "category/package" portion.
             //
             4 => match (c[0], c[1], c[2], c[3]) {
                 (
                     Component::ParentDir,
                     Component::ParentDir,
-                    Component::Normal(_),
-                    Component::Normal(_),
-                ) => {
-                    let mut s = PathBuf::from(c[2].as_os_str());
-                    s.push(c[3].as_os_str());
-                    Ok(PkgPath { short: s, full: p })
-                }
-                _ => Err(PkgPathError::InvalidPath),
+                    Component::Normal(cat),
+                    Component::Normal(pkg),
+                ) => (cat, pkg),
+                _ => return Err(PkgPathError::InvalidPath),
             },
             //
             // All other forms of input are invalid.
             //
-            _ => Err(PkgPathError::InvalidPath),
-        }
+            _ => return Err(PkgPathError::InvalidPath),
+        };
+
+        let cat = cat.to_str().ok_or(PkgPathError::InvalidPath)?;
+        let pkg = pkg.to_str().ok_or(PkgPathError::InvalidPath)?;
+        Ok(PkgPath {
+            full: format!("{PREFIX}{cat}/{pkg}"),
+        })
+    }
+
+    /**
+     * Return the short path as a string slice, for example
+     * `pkgtools/pkg_install`.
+     */
+    #[must_use]
+    pub fn as_str(&self) -> &str {
+        &self.full[PREFIX.len()..]
     }
 
     /**
@@ -196,7 +206,16 @@ impl PkgPath {
      * for example `pkgtools/pkg_install`.
      */
     pub fn as_path(&self) -> &Path {
-        &self.short
+        Path::new(self.as_str())
+    }
+
+    /**
+     * Return the full path as a string slice, for example
+     * `../../pkgtools/pkg_install`.
+     */
+    #[must_use]
+    pub fn as_full_str(&self) -> &str {
+        &self.full
     }
 
     /**
@@ -204,13 +223,13 @@ impl PkgPath {
      * for example `../../pkgtools/pkg_install`.
      */
     pub fn as_full_path(&self) -> &Path {
-        &self.full
+        Path::new(&self.full)
     }
 }
 
 impl std::fmt::Display for PkgPath {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.short.display())
+        f.write_str(self.as_str())
     }
 }
 
@@ -224,7 +243,7 @@ impl FromStr for PkgPath {
 
 impl AsRef<Path> for PkgPath {
     fn as_ref(&self) -> &Path {
-        &self.short
+        self.as_path()
     }
 }
 
@@ -239,7 +258,7 @@ impl crate::kv::FromKv for PkgPath {
 
 impl Borrow<Path> for PkgPath {
     fn borrow(&self) -> &Path {
-        &self.short
+        self.as_path()
     }
 }
 
