@@ -254,6 +254,16 @@ impl TryFrom<&str> for Depend {
     }
 }
 
+impl TryFrom<crate::scanindex::RawDepend<'_>> for Depend {
+    type Error = DependError;
+
+    fn try_from(
+        raw: crate::scanindex::RawDepend<'_>,
+    ) -> Result<Self, Self::Error> {
+        Self::new(raw.as_str())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

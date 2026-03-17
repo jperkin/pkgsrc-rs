@@ -64,11 +64,295 @@
  */
 
 use crate::kv::Kv;
-use crate::{Depend, PkgName, PkgPath};
+use crate::{Depend, DependError, PkgName, PkgPath};
 use std::fmt;
 use std::io::{self, BufRead};
-use std::path::PathBuf;
+use std::path::Path;
 use std::str::FromStr;
+
+/**
+ * Space-separated list of filesystem paths, stored as a single string.
+ *
+ * `ScanDepends` wraps the raw `SCAN_DEPENDS` value from `pbulk-index` output
+ * without splitting or allocating individual path entries.  This avoids
+ * millions of [`PathBuf`] allocations when parsing large scan datasets.
+ *
+ * Individual paths can be accessed lazily via [`iter`](ScanDepends::iter).
+ *
+ * # Examples
+ *
+ * ```
+ * use pkgsrc::ScanDepends;
+ * use std::path::Path;
+ *
+ * let deps: ScanDepends = "../../devel/gmake ../../lang/rust".into();
+ * assert_eq!(deps.len(), 2);
+ * assert!(!deps.is_empty());
+ *
+ * let paths: Vec<&Path> = deps.iter().collect();
+ * assert_eq!(paths[0], Path::new("../../devel/gmake"));
+ * assert_eq!(paths[1], Path::new("../../lang/rust"));
+ * ```
+ */
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "serde", serde(transparent))]
+pub struct ScanDepends(String);
+
+impl ScanDepends {
+    fn items(&self) -> std::str::SplitAsciiWhitespace<'_> {
+        self.0.split_ascii_whitespace()
+    }
+
+    /**
+     * Iterate over the individual paths.
+     */
+    pub fn iter(&self) -> impl Iterator<Item = &Path> {
+        self.items().map(Path::new)
+    }
+
+    /**
+     * Return the number of paths.
+     */
+    pub fn len(&self) -> usize {
+        self.items().count()
+    }
+
+    /**
+     * Return true if there are no paths.
+     */
+    pub fn is_empty(&self) -> bool {
+        self.items().next().is_none()
+    }
+
+    /**
+     * Return the raw string contents.
+     */
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+impl fmt::Display for ScanDepends {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
+impl From<&str> for ScanDepends {
+    fn from(s: &str) -> Self {
+        ScanDepends(s.to_string())
+    }
+}
+
+impl crate::kv::FromKv for ScanDepends {
+    fn from_kv(value: &str, _span: crate::kv::Span) -> crate::kv::Result<Self> {
+        Ok(ScanDepends(value.to_string()))
+    }
+}
+
+/**
+ * Space-separated list of dependency entries, stored as a single string.
+ *
+ * `AllDepends` wraps the raw `ALL_DEPENDS` value from `pbulk-index` output
+ * without parsing individual [`Depend`] entries upfront.  This avoids
+ * compiling hundreds of thousands of [`Pattern`] objects during parsing,
+ * deferring that cost to when the data is actually accessed.
+ *
+ * Two iteration modes are available:
+ *
+ * - [`iter`](AllDepends::iter) yields [`RawDepend`] views with cheap access
+ *   to the pattern and pkgpath strings.
+ * - [`depends`](AllDepends::depends) yields fully parsed [`Depend`] objects
+ *   with compiled [`Pattern`]s.
+ *
+ * Both yield [`Result`]s, with validation errors surfaced via `?`.
+ *
+ * # Examples
+ *
+ * ```
+ * use pkgsrc::AllDepends;
+ *
+ * let deps: AllDepends = "mktool-[0-9]*:../../pkgtools/mktool curl>=7.0:../../www/curl".into();
+ * assert_eq!(deps.len(), 2);
+ *
+ * // Cheap access to raw strings
+ * for dep in deps.iter() {
+ *     let dep = dep?;
+ *     println!("{} -> {}", dep.pattern(), dep.pkgpath());
+ * }
+ *
+ * // Full parsing into Depend objects
+ * for dep in deps.depends() {
+ *     let dep = dep?;
+ *     assert!(dep.pattern().matches("mktool-1.4.2") || dep.pattern().matches("curl-8.0"));
+ * }
+ * # Ok::<(), pkgsrc::DependError>(())
+ * ```
+ *
+ * [`Pattern`]: crate::Pattern
+ */
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "serde", serde(transparent))]
+pub struct AllDepends(String);
+
+impl AllDepends {
+    fn items(&self) -> std::str::SplitAsciiWhitespace<'_> {
+        self.0.split_ascii_whitespace()
+    }
+
+    /**
+     * Iterate over entries as lightweight borrowed views.
+     *
+     * Each entry is validated to contain a `:` separator.  Access the
+     * pattern and pkgpath strings via [`RawDepend::pattern`] and
+     * [`RawDepend::pkgpath`].
+     */
+    pub fn iter(&self) -> AllDependsIter<'_> {
+        AllDependsIter(self.items())
+    }
+
+    /**
+     * Iterate over entries as fully parsed [`Depend`] objects.
+     *
+     * Each entry is validated and the [`Pattern`] is compiled.  This is
+     * more expensive than [`iter`](AllDepends::iter) but provides access
+     * to pattern matching.
+     *
+     * [`Pattern`]: crate::Pattern
+     */
+    pub fn depends(
+        &self,
+    ) -> impl Iterator<Item = Result<Depend, DependError>> + '_ {
+        self.items().map(Depend::new)
+    }
+
+    /**
+     * Return the number of dependency entries.
+     */
+    pub fn len(&self) -> usize {
+        self.items().count()
+    }
+
+    /**
+     * Return true if there are no dependency entries.
+     */
+    pub fn is_empty(&self) -> bool {
+        self.items().next().is_none()
+    }
+
+    /**
+     * Return the raw string contents.
+     */
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+/**
+ * Iterator over [`AllDepends`] entries as [`RawDepend`] views.
+ */
+pub struct AllDependsIter<'a>(std::str::SplitAsciiWhitespace<'a>);
+
+impl<'a> Iterator for AllDependsIter<'a> {
+    type Item = Result<RawDepend<'a>, DependError>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.0.next().map(RawDepend::new)
+    }
+}
+
+impl<'a> IntoIterator for &'a AllDepends {
+    type Item = Result<RawDepend<'a>, DependError>;
+    type IntoIter = AllDependsIter<'a>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.iter()
+    }
+}
+
+impl fmt::Display for AllDepends {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
+impl From<&str> for AllDepends {
+    fn from(s: &str) -> Self {
+        AllDepends(s.to_string())
+    }
+}
+
+impl crate::kv::FromKv for AllDepends {
+    fn from_kv(value: &str, _span: crate::kv::Span) -> crate::kv::Result<Self> {
+        Ok(AllDepends(value.to_string()))
+    }
+}
+
+/**
+ * A borrowed view of a single `pattern:pkgpath` dependency entry.
+ *
+ * Provides zero-cost access to the raw string and near-zero-cost access
+ * to the pattern and pkgpath components.  For a fully validated [`Depend`]
+ * with a compiled [`Pattern`], use [`TryFrom`]:
+ *
+ * ```
+ * use pkgsrc::{AllDepends, Depend};
+ *
+ * let deps: AllDepends = "mktool-[0-9]*:../../pkgtools/mktool".into();
+ * for raw in deps.iter() {
+ *     let raw = raw?;
+ *     let depend: Depend = raw.try_into()?;
+ *     assert!(depend.pattern().matches("mktool-1.4.2"));
+ * }
+ * # Ok::<(), pkgsrc::DependError>(())
+ * ```
+ *
+ * [`Pattern`]: crate::Pattern
+ */
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct RawDepend<'a> {
+    raw: &'a str,
+    colon: usize,
+}
+
+impl<'a> RawDepend<'a> {
+    fn new(raw: &'a str) -> Result<Self, DependError> {
+        let colon = raw.find(':').ok_or(DependError::Invalid)?;
+        if raw[colon + 1..].contains(':') {
+            return Err(DependError::Invalid);
+        }
+        Ok(RawDepend { raw, colon })
+    }
+
+    /**
+     * Return the pattern portion (left of `:`).
+     */
+    pub fn pattern(&self) -> &'a str {
+        &self.raw[..self.colon]
+    }
+
+    /**
+     * Return the pkgpath portion (right of `:`).
+     */
+    pub fn pkgpath(&self) -> &'a str {
+        &self.raw[self.colon + 1..]
+    }
+
+    /**
+     * Return the raw `pattern:pkgpath` string.
+     */
+    pub fn as_str(&self) -> &'a str {
+        self.raw
+    }
+}
+
+impl fmt::Display for RawDepend<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(self.raw)
+    }
+}
 
 /**
  * Parse the output of `make pbulk-index` into individual records.
@@ -113,7 +397,7 @@ pub struct ScanIndex {
     /// Path to the package inside pkgsrc.  Should really be PKGPATH.
     pub pkg_location: Option<PkgPath>,
     /// All dependencies of the package as DEPENDS matches.
-    pub all_depends: Option<Vec<Depend>>,
+    pub all_depends: Option<AllDepends>,
     /// A string containing the reason if the package should be skipped.
     pub pkg_skip_reason: Option<String>,
     /// A string containing the reason if the package failed or is broken.
@@ -136,7 +420,7 @@ pub struct ScanIndex {
     /// needed by this package need to be available.
     pub usergroup_phase: Option<String>,
     /// List of files read during the dependency scanning step.
-    pub scan_depends: Option<Vec<PathBuf>>,
+    pub scan_depends: Option<ScanDepends>,
     /// Whether this package supports parallel builds (`make -j`). Packages
     /// that do not support parallel builds set `MAKE_JOBS_SAFE=no`.
     pub make_jobs_safe: Option<String>,
@@ -178,12 +462,7 @@ impl fmt::Display for ScanIndex {
         }
         write!(f, "ALL_DEPENDS=")?;
         if let Some(ref deps) = self.all_depends {
-            for (i, d) in deps.iter().enumerate() {
-                if i > 0 {
-                    write!(f, " ")?;
-                }
-                write!(f, "{d}")?;
-            }
+            write!(f, "{deps}")?;
         }
         writeln!(f)?;
         writeln!(f, "PKG_SKIP_REASON={}", opt_str(&self.pkg_skip_reason))?;
@@ -196,13 +475,8 @@ impl fmt::Display for ScanIndex {
         writeln!(f, "BOOTSTRAP_PKG={}", opt_str(&self.bootstrap_pkg))?;
         writeln!(f, "USERGROUP_PHASE={}", opt_str(&self.usergroup_phase))?;
         write!(f, "SCAN_DEPENDS=")?;
-        if let Some(ref paths) = self.scan_depends {
-            for (i, p) in paths.iter().enumerate() {
-                if i > 0 {
-                    write!(f, " ")?;
-                }
-                write!(f, "{}", p.display())?;
-            }
+        if let Some(ref deps) = self.scan_depends {
+            write!(f, "{deps}")?;
         }
         writeln!(f)?;
         if let Some(ref v) = self.make_jobs_safe {
@@ -388,12 +662,18 @@ mod tests {
             ScanIndex::from_reader(input.as_bytes()).collect();
         assert!(result.is_err());
 
-        // If ALL_DEPENDS is specified then it should be correct, i.e. here
-        // we're testing that Depend::new errors are propagated.
+        // ALL_DEPENDS stores the raw string; invalid entries are caught
+        // when iterating, not during parsing.
         let input = "PKGNAME=\nALL_DEPENDS=hello\n";
-        let result: Result<Vec<_>, _> =
-            ScanIndex::from_reader(input.as_bytes()).collect();
-        assert!(result.is_err());
+        let index: Vec<_> = ScanIndex::from_reader(input.as_bytes())
+            .collect::<Result<_, io::Error>>()
+            .expect("lazy parse should succeed");
+        let deps = index[0]
+            .all_depends
+            .as_ref()
+            .expect("should have all_depends");
+        assert!(deps.iter().any(|r| r.is_err()));
+        assert!(deps.depends().any(|r| r.is_err()));
     }
 
     #[test]
@@ -434,23 +714,21 @@ mod tests {
     fn error_invalid_depend() -> Result<(), KvError> {
         use std::str::FromStr;
 
-        // "invalid" is not a valid Depend (missing ":" separator)
+        // "invalid" is not a valid Depend (missing ":" separator).
+        // With AllDepends the raw string is stored at parse time; errors
+        // surface when iterating.
         let input = "PKGNAME=test-1.0\nALL_DEPENDS=invalid\n";
-        let err = ScanIndex::from_str(input)
-            .err()
-            .ok_or(KvError::Incomplete("expected error".to_string()))?;
-        match err {
-            KvError::Parse { message, span } => {
-                assert!(message.contains("Invalid DEPENDS"));
-                assert_eq!(span.offset, 29);
-                assert_eq!(span.len, 7);
-                assert_eq!(
-                    &input[span.offset..span.offset + span.len],
-                    "invalid"
-                );
-            }
-            _ => panic!("expected Parse error, got {err:?}"),
-        }
+        let index = ScanIndex::from_str(input)?;
+        let deps = index
+            .all_depends
+            .as_ref()
+            .ok_or(KvError::Incomplete("all_depends".to_string()))?;
+        assert_eq!(deps.len(), 1);
+        assert_eq!(deps.as_str(), "invalid");
+        let results: Vec<_> = deps.iter().collect();
+        assert!(results[0].is_err());
+        let results: Vec<_> = deps.depends().collect();
+        assert!(results[0].is_err());
         Ok(())
     }
 

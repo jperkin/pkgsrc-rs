@@ -142,5 +142,7 @@ pub use crate::pkgdb::{DBType, PkgDB};
 pub use crate::pkgname::PkgName;
 pub use crate::pkgpath::{PkgPath, PkgPathError};
 pub use crate::plist::Plist;
-pub use crate::scanindex::{ScanIndex, ScanIndexIter};
+pub use crate::scanindex::{
+    AllDepends, RawDepend, ScanDepends, ScanIndex, ScanIndexIter,
+};
 pub use crate::summary::{Summary, SummaryError};
