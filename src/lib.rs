@@ -137,7 +137,7 @@ pub use crate::digest::Digest;
 pub use crate::distinfo::Distinfo;
 pub use crate::kv::KvError;
 pub use crate::metadata::{Metadata, MetadataError};
-pub use crate::pattern::{Pattern, PatternError};
+pub use crate::pattern::{Pattern, PatternCache, PatternError};
 pub use crate::pkgdb::{DBType, PkgDB};
 pub use crate::pkgname::PkgName;
 pub use crate::pkgpath::{PkgPath, PkgPathError};

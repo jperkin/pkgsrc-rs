@@ -97,24 +97,37 @@
  * use pkgsrc::Pattern;
  *
  * let p = Pattern::new("pkg-[0-9]*")?;
- * assert_eq!(p.best_match("pkg-1.0", "pkg-2.0")?, Some("pkg-2.0"));
- * assert_eq!(p.best_match("pkg-2.0", "other-1.0")?, Some("pkg-2.0"));
+ * let mut best = None;
+ * best = p.best_match(best, "pkg-1.0")?;
+ * best = p.best_match(best, "pkg-2.0")?;
+ * assert_eq!(best, Some("pkg-2.0"));
  * # Ok::<(), pkgsrc::PatternError>(())
  * ```
  */
 
 use crate::PkgName;
 use crate::dewey::{Dewey, DeweyError, DeweyOp, DeweyVersion, dewey_cmp};
+use std::collections::HashMap;
 use std::fmt;
 use std::str::FromStr;
 use thiserror::Error;
+
+/**
+ * Characters that indicate the start of a glob pattern.
+ */
+const GLOB_START: [char; 3] = ['*', '?', '['];
+
+/**
+ * Characters that indicate the start of a dewey version constraint.
+ */
+const DEWEY_START: [char; 2] = ['>', '<'];
 
 #[cfg(feature = "serde")]
 use serde_with::{DeserializeFromStr, SerializeDisplay};
 
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 enum PatternType {
-    Alternate,
+    Alternate(Vec<Pattern>),
     Dewey(Dewey),
     Glob(glob::Pattern),
     Simple,
@@ -281,7 +294,10 @@ impl Pattern {
      * ```
      */
     pub fn new(pattern: &str) -> Result<Self, PatternError> {
-        if pattern.contains('{') || pattern.contains('}') {
+        if let Some(brace) = pattern.find(['{', '}']) {
+            if pattern.as_bytes()[brace] == b'}' {
+                return Err(PatternError::Alternate);
+            }
             /*
              * Verify that braces are correctly balanced.
              */
@@ -296,24 +312,40 @@ impl Pattern {
             if !stack.is_empty() {
                 return Err(PatternError::Alternate);
             }
+            /*
+             * Expand the outermost brace group and pre-compile each
+             * alternative.  Recursive Pattern::new calls handle any
+             * remaining brace groups in the expanded patterns.
+             */
+            let Some(i) = pattern.rfind('{') else {
+                return Err(PatternError::Alternate);
+            };
+            let (first, rest) = pattern.split_at(i);
+            let Some(n) = rest.find('}') else {
+                return Err(PatternError::Alternate);
+            };
+            let (group, last) = rest.split_at(n + 1);
+            let alts = &group[1..group.len() - 1];
+
+            let mut expanded = Vec::new();
+            for m in alts.split(',') {
+                let s = format!("{first}{m}{last}");
+                expanded.push(Pattern::new(&s)?);
+            }
             return Ok(Self {
-                matchtype: PatternType::Alternate,
+                matchtype: PatternType::Alternate(expanded),
                 pattern: pattern.to_string(),
                 likely: false,
             });
         }
-        if pattern.contains('>') || pattern.contains('<') {
+        if pattern.contains(DEWEY_START) {
             return Ok(Self {
                 matchtype: PatternType::Dewey(Dewey::new(pattern)?),
                 pattern: pattern.to_string(),
                 likely: false,
             });
         }
-        if pattern.contains('*')
-            || pattern.contains('?')
-            || pattern.contains('[')
-            || pattern.contains(']')
-        {
+        if pattern.contains(GLOB_START) {
             return Ok(Self {
                 matchtype: PatternType::Glob(glob::Pattern::new(pattern)?),
                 pattern: pattern.to_string(),
@@ -361,7 +393,9 @@ impl Pattern {
          * Delegate match to each type.
          */
         match self.matchtype {
-            PatternType::Alternate => Self::alternate_match(&self.pattern, pkg),
+            PatternType::Alternate(ref patterns) => {
+                patterns.iter().any(|p| p.matches(pkg))
+            }
             PatternType::Dewey(ref dewey) => dewey.matches(pkg),
             PatternType::Glob(ref glob) => glob.matches(pkg),
             PatternType::Simple => self.pattern == pkg,
@@ -369,11 +403,14 @@ impl Pattern {
     }
 
     /**
-     * Given two package names, return the "best" match - that is, the one that
-     * is a match with the higher version.  If neither match return [`None`].
+     * Accumulate the best matching package from a sequence of candidates.
      *
-     * When versions compare equal, the lexicographically smaller string is
-     * returned, to match pkg_install's `pkg_order()`.
+     * Given the current best (or [`None`] if no match yet) and a new
+     * candidate, return the updated best.  Only `candidate` is tested
+     * against the pattern; `current` is assumed to already match.
+     *
+     * When versions compare equal, the lexicographically smaller string
+     * is returned, to match pkg_install's `pkg_order()`.
      *
      * # Errors
      *
@@ -381,16 +418,16 @@ impl Pattern {
      */
     pub fn best_match<'a>(
         &self,
-        pkg1: &'a str,
-        pkg2: &'a str,
+        current: Option<&'a str>,
+        candidate: &'a str,
     ) -> Result<Option<&'a str>, PatternError> {
-        self.best_match_cmp(pkg1, pkg2, std::cmp::Ordering::Less)
+        self.best_match_cmp(current, candidate, std::cmp::Ordering::Less)
     }
 
     /**
-     * Identical to [`Pattern::best_match`] except when versions compare equal,
-     * the lexicographically greater string is returned to match pbulk's
-     * `pkg_order()`.
+     * Identical to [`Pattern::best_match`] except when versions compare
+     * equal, the lexicographically greater string is returned to match
+     * pbulk's `pkg_order()`.
      *
      * # Errors
      *
@@ -398,35 +435,34 @@ impl Pattern {
      */
     pub fn best_match_pbulk<'a>(
         &self,
-        pkg1: &'a str,
-        pkg2: &'a str,
+        current: Option<&'a str>,
+        candidate: &'a str,
     ) -> Result<Option<&'a str>, PatternError> {
-        self.best_match_cmp(pkg1, pkg2, std::cmp::Ordering::Greater)
+        self.best_match_cmp(current, candidate, std::cmp::Ordering::Greater)
     }
 
     fn best_match_cmp<'a>(
         &self,
-        pkg1: &'a str,
-        pkg2: &'a str,
+        current: Option<&'a str>,
+        candidate: &'a str,
         tiebreak: std::cmp::Ordering,
     ) -> Result<Option<&'a str>, PatternError> {
-        match (self.matches(pkg1), self.matches(pkg2)) {
-            (true, false) => Ok(Some(pkg1)),
-            (false, true) => Ok(Some(pkg2)),
-            (true, true) => {
-                let d1 = DeweyVersion::new(PkgName::new(pkg1).pkgversion())?;
-                let d2 = DeweyVersion::new(PkgName::new(pkg2).pkgversion())?;
-                if dewey_cmp(&d1, &DeweyOp::GT, &d2) {
-                    Ok(Some(pkg1))
-                } else if dewey_cmp(&d1, &DeweyOp::LT, &d2) {
-                    Ok(Some(pkg2))
-                } else if pkg1.cmp(pkg2) == tiebreak {
-                    Ok(Some(pkg1))
-                } else {
-                    Ok(Some(pkg2))
-                }
-            }
-            (false, false) => Ok(None),
+        if !self.matches(candidate) {
+            return Ok(current);
+        }
+        let Some(current) = current else {
+            return Ok(Some(candidate));
+        };
+        let d1 = DeweyVersion::new(PkgName::new(current).pkgversion())?;
+        let d2 = DeweyVersion::new(PkgName::new(candidate).pkgversion())?;
+        if dewey_cmp(&d1, &DeweyOp::GT, &d2) {
+            Ok(Some(current))
+        } else if dewey_cmp(&d1, &DeweyOp::LT, &d2) {
+            Ok(Some(candidate))
+        } else if current.cmp(candidate) == tiebreak {
+            Ok(Some(current))
+        } else {
+            Ok(Some(candidate))
         }
     }
 
@@ -472,44 +508,18 @@ impl Pattern {
                 self.pattern.rsplit_once('-').map(|(b, _)| b)
             }
             PatternType::Glob(_) => {
-                let end = self
-                    .pattern
-                    .find(['*', '?', '['])
-                    .unwrap_or(self.pattern.len());
-                self.pattern[..end].strip_suffix('-')
+                let end =
+                    self.pattern.find(GLOB_START).unwrap_or(self.pattern.len());
+                let prefix = &self.pattern[..end];
+                prefix.strip_suffix('-').or_else(|| {
+                    let (base, ver) = prefix.rsplit_once('-')?;
+                    (!ver.is_empty()
+                        && ver.chars().all(|c| c.is_ascii_digit() || c == '.'))
+                    .then_some(base)
+                })
             }
-            PatternType::Alternate => None,
+            PatternType::Alternate(_) => None,
         }
-    }
-
-    /**
-     * Implement csh-style alternate matches.  [`Pattern::new`] has already
-     * verified that the pattern is valid and braces are correctly balanced.
-     *
-     * Find the right-most opening brace, expand each alternative, and
-     * recursively call Pattern to verify that there is a match.  Recursion
-     * handles any remaining braces in the expanded patterns.
-     */
-    fn alternate_match(pattern: &str, pkg: &str) -> bool {
-        let Some(i) = pattern.rfind('{') else {
-            return false;
-        };
-        let (first, rest) = pattern.split_at(i);
-        let Some(n) = rest.find('}') else {
-            return false;
-        };
-        let (matches, last) = rest.split_at(n + 1);
-        let matches = &matches[1..matches.len() - 1];
-
-        for m in matches.split(',') {
-            let fmt = format!("{first}{m}{last}");
-            if let Ok(pat) = Self::new(&fmt) {
-                if pat.matches(pkg) {
-                    return true;
-                }
-            }
-        }
-        false
     }
 
     /**
@@ -541,6 +551,93 @@ impl Pattern {
 
     const fn is_simple_char(c: char) -> bool {
         c.is_ascii_alphanumeric() || c == '-'
+    }
+}
+
+/**
+ * A cache of compiled [`Pattern`] objects for efficient reuse.
+ *
+ * When resolving dependencies across a large package set, the same
+ * pattern strings appear repeatedly.  `PatternCache` ensures each
+ * unique pattern string is compiled only once.
+ *
+ * # Example
+ *
+ * ```
+ * use pkgsrc::PatternCache;
+ *
+ * let mut cache = PatternCache::new();
+ * let p = cache.compile("foo-[0-9]*")?;
+ * assert!(p.matches("foo-1.0"));
+ * let p = cache.compile("foo-[0-9]*")?;
+ * assert!(p.matches("foo-2.0"));
+ * # Ok::<(), pkgsrc::PatternError>(())
+ * ```
+ */
+#[derive(Debug)]
+pub struct PatternCache {
+    cache: HashMap<String, Pattern>,
+}
+
+impl PatternCache {
+    /**
+     * Create an empty cache.
+     */
+    #[must_use]
+    pub fn new() -> Self {
+        PatternCache {
+            cache: HashMap::new(),
+        }
+    }
+
+    /**
+     * Create an empty cache with capacity for the given number of
+     * unique patterns.
+     */
+    #[must_use]
+    pub fn with_capacity(capacity: usize) -> Self {
+        PatternCache {
+            cache: HashMap::with_capacity(capacity),
+        }
+    }
+
+    /**
+     * Compile a pattern string, returning a cached reference if the
+     * same string was previously compiled.
+     *
+     * # Errors
+     *
+     * Returns [`PatternError`] if the pattern is invalid and has not
+     * been previously compiled.
+     */
+    pub fn compile(&mut self, pattern: &str) -> Result<&Pattern, PatternError> {
+        if !self.cache.contains_key(pattern) {
+            self.cache
+                .insert(pattern.to_string(), Pattern::new(pattern)?);
+        }
+        Ok(&self.cache[pattern])
+    }
+
+    /**
+     * Return the number of cached patterns.
+     */
+    #[must_use]
+    pub fn len(&self) -> usize {
+        self.cache.len()
+    }
+
+    /**
+     * Return true if the cache is empty.
+     */
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.cache.is_empty()
+    }
+}
+
+impl Default for PatternCache {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
@@ -578,20 +675,58 @@ mod tests {
     #[test]
     fn alternate_match_ok() -> Result<(), PatternError> {
         use super::PatternType::Alternate;
-        assert_pattern_eq!("a-{b,c}-{d{e,f},g}-h>=1", "a-b-de-h-2", Alternate);
-        assert_pattern_eq!("a-{b,c}-{d{e,f},g}-h>=1", "a-b-de-h-2", Alternate);
-        assert_pattern_eq!("a-{b,c}-{d{e,f},g}-h>=1", "a-b-df-h-2", Alternate);
-        assert_pattern_eq!("a-{b,c}-{d{e,f},g}-h>=1", "a-b-g-h-2", Alternate);
-        assert_pattern_eq!("a-{b,c}-{d{e,f},g}-h>=1", "a-c-de-h-2", Alternate);
-        assert_pattern_eq!("a-{b,c}-{d{e,f},g}-h>=1", "a-c-df-h-2", Alternate);
-        assert_pattern_eq!("a-{b,c}-{d{e,f},g}-h>=1", "a-c-g-h-2", Alternate);
+        assert_pattern_eq!(
+            "a-{b,c}-{d{e,f},g}-h>=1",
+            "a-b-de-h-2",
+            Alternate(_)
+        );
+        assert_pattern_eq!(
+            "a-{b,c}-{d{e,f},g}-h>=1",
+            "a-b-de-h-2",
+            Alternate(_)
+        );
+        assert_pattern_eq!(
+            "a-{b,c}-{d{e,f},g}-h>=1",
+            "a-b-df-h-2",
+            Alternate(_)
+        );
+        assert_pattern_eq!(
+            "a-{b,c}-{d{e,f},g}-h>=1",
+            "a-b-g-h-2",
+            Alternate(_)
+        );
+        assert_pattern_eq!(
+            "a-{b,c}-{d{e,f},g}-h>=1",
+            "a-c-de-h-2",
+            Alternate(_)
+        );
+        assert_pattern_eq!(
+            "a-{b,c}-{d{e,f},g}-h>=1",
+            "a-c-df-h-2",
+            Alternate(_)
+        );
+        assert_pattern_eq!(
+            "a-{b,c}-{d{e,f},g}-h>=1",
+            "a-c-g-h-2",
+            Alternate(_)
+        );
+        assert_pattern_eq!("foo*{a,b}-[0-9]*", "fooxa-1", Alternate(_));
         Ok(())
     }
     #[test]
     fn alternate_match_notok() -> Result<(), PatternError> {
         use super::PatternType::Alternate;
-        assert_pattern_ne!("a-{b,c}-{d{e,f},g}-h>=1", "a-a-g-h-2", Alternate);
-        assert_pattern_ne!("a-{b,c}-{d{e,f},g}-h>=1", "a-b-d-h-2", Alternate);
+        assert_pattern_ne!(
+            "a-{b,c}-{d{e,f},g}-h>=1",
+            "a-a-g-h-2",
+            Alternate(_)
+        );
+        assert_pattern_ne!(
+            "a-{b,c}-{d{e,f},g}-h>=1",
+            "a-b-d-h-2",
+            Alternate(_)
+        );
+        assert_pattern_ne!("abc{d,e}-[0-9]*", "abz-1.0", Alternate(_));
         Ok(())
     }
     #[test]
@@ -656,6 +791,16 @@ mod tests {
     #[test]
     fn dewey_match_err() -> std::result::Result<(), &'static str> {
         use super::PatternError::Dewey;
+
+        fn dewey_err(
+            r: Result<Pattern, PatternError>,
+        ) -> std::result::Result<DeweyError, &'static str> {
+            match r {
+                Err(Dewey(e)) => Ok(e),
+                _ => Err("expected Dewey error"),
+            }
+        }
+
         /* Must be no more than 1 of each direction operator. */
         assert_pattern_err!("foo>1<2<3", Dewey(_));
         /* Greater than must come before less than. */
@@ -667,25 +812,17 @@ mod tests {
          * the original intent may not be obvious and the first operator may
          * be correct.
          */
-        let Err(Dewey(e)) = Pattern::new("<>") else {
-            return Err("expected Dewey error");
-        };
+        let e = dewey_err(Pattern::new("<>"))?;
         assert_eq!(e.pos, 0);
 
-        let Err(Dewey(e)) = Pattern::new("foo>=1>2") else {
-            return Err("expected Dewey error");
-        };
+        let e = dewey_err(Pattern::new("foo>=1>2"))?;
         assert_eq!(e.pos, 3);
 
-        let Err(Dewey(e)) = Pattern::new("pkg>=1<2<4") else {
-            return Err("expected Dewey error");
-        };
+        let e = dewey_err(Pattern::new("pkg>=1<2<4"))?;
         assert_eq!(e.pos, 8);
 
         /* Version component overflow (exceeds i64::MAX). */
-        let Err(Dewey(e)) = Pattern::new("pkg>=20251208143052123456") else {
-            return Err("expected Dewey error");
-        };
+        let e = dewey_err(Pattern::new("pkg>=20251208143052123456"))?;
         assert_eq!(e.msg, "Version component overflow");
         Ok(())
     }
@@ -740,25 +877,27 @@ mod tests {
     #[test]
     fn best_match_dewey() -> Result<(), PatternError> {
         let m = Pattern::new("pkg>1<3")?;
-        assert_eq!(m.best_match("pkg-1.1", "pkg-3.0")?, Some("pkg-1.1"));
-        assert_eq!(m.best_match("pkg-1.1", "pkg-1.1")?, Some("pkg-1.1"));
-        assert_eq!(m.best_match("pkg-1.1", "pkg-2.0")?, Some("pkg-2.0"));
-        assert_eq!(m.best_match("pkg-2.0", "pkg-1.1")?, Some("pkg-2.0"));
-        assert_eq!(m.best_match("pkg", "pkg-2.0")?, Some("pkg-2.0"));
-        assert_eq!(m.best_match("pkg-2.0", "pkg")?, Some("pkg-2.0"));
-        assert_eq!(m.best_match("pkg-1", "pkg-3.0")?, None);
-        assert_eq!(m.best_match("pkg", "pkg")?, None);
+        // Non-matching candidates are ignored
+        assert_eq!(m.best_match(None, "pkg-0.5")?, None);
+        assert_eq!(m.best_match(None, "pkg-3.0")?, None);
+        // First match becomes the best
+        assert_eq!(m.best_match(None, "pkg-1.1")?, Some("pkg-1.1"));
+        // Higher version wins
+        assert_eq!(m.best_match(Some("pkg-1.1"), "pkg-2.0")?, Some("pkg-2.0"));
+        assert_eq!(m.best_match(Some("pkg-2.0"), "pkg-1.1")?, Some("pkg-2.0"));
+        // Non-matching candidate preserves current best
+        assert_eq!(m.best_match(Some("pkg-2.0"), "pkg-3.0")?, Some("pkg-2.0"));
         Ok(())
     }
 
     #[test]
     fn best_match_alternate() -> Result<(), PatternError> {
         let m = Pattern::new("{foo,bar}-[0-9]*")?;
-        assert_eq!(m.best_match("foo-1.1", "bar-1.0")?, Some("foo-1.1"));
-        assert_eq!(m.best_match("foo-1.0", "bar-1.1")?, Some("bar-1.1"));
+        assert_eq!(m.best_match(Some("bar-1.0"), "foo-1.1")?, Some("foo-1.1"));
+        assert_eq!(m.best_match(Some("foo-1.0"), "bar-1.1")?, Some("bar-1.1"));
         // In the case of a tie pkg_order() returns the _smaller_ string,
         // which feels backwards, but we aim to preserve compatibility.
-        assert_eq!(m.best_match("foo-1.0", "bar-1.0")?, Some("bar-1.0"));
+        assert_eq!(m.best_match(Some("foo-1.0"), "bar-1.0")?, Some("bar-1.0"));
         Ok(())
     }
 
@@ -769,19 +908,19 @@ mod tests {
         let pkg2 = "mpg123-esound-1";
         let pkg3 = "mpg123-nas-1";
         // pkg_install pkg_order returns the smaller string on tie.
-        assert_eq!(m.best_match(pkg1, pkg2)?, Some(pkg1));
-        assert_eq!(m.best_match(pkg2, pkg1)?, Some(pkg1));
-        assert_eq!(m.best_match(pkg2, pkg3)?, Some(pkg2));
-        assert_eq!(m.best_match(pkg3, pkg2)?, Some(pkg2));
-        assert_eq!(m.best_match(pkg1, pkg3)?, Some(pkg1));
-        assert_eq!(m.best_match(pkg3, pkg1)?, Some(pkg1));
+        assert_eq!(m.best_match(Some(pkg1), pkg2)?, Some(pkg1));
+        assert_eq!(m.best_match(Some(pkg2), pkg1)?, Some(pkg1));
+        assert_eq!(m.best_match(Some(pkg2), pkg3)?, Some(pkg2));
+        assert_eq!(m.best_match(Some(pkg3), pkg2)?, Some(pkg2));
+        assert_eq!(m.best_match(Some(pkg1), pkg3)?, Some(pkg1));
+        assert_eq!(m.best_match(Some(pkg3), pkg1)?, Some(pkg1));
         // pbulk pkg_order() returns the greater string on tie.
-        assert_eq!(m.best_match_pbulk(pkg1, pkg2)?, Some(pkg2));
-        assert_eq!(m.best_match_pbulk(pkg2, pkg1)?, Some(pkg2));
-        assert_eq!(m.best_match_pbulk(pkg2, pkg3)?, Some(pkg3));
-        assert_eq!(m.best_match_pbulk(pkg3, pkg2)?, Some(pkg3));
-        assert_eq!(m.best_match_pbulk(pkg1, pkg3)?, Some(pkg3));
-        assert_eq!(m.best_match_pbulk(pkg3, pkg1)?, Some(pkg3));
+        assert_eq!(m.best_match_pbulk(Some(pkg1), pkg2)?, Some(pkg2));
+        assert_eq!(m.best_match_pbulk(Some(pkg2), pkg1)?, Some(pkg2));
+        assert_eq!(m.best_match_pbulk(Some(pkg2), pkg3)?, Some(pkg3));
+        assert_eq!(m.best_match_pbulk(Some(pkg3), pkg2)?, Some(pkg3));
+        assert_eq!(m.best_match_pbulk(Some(pkg1), pkg3)?, Some(pkg3));
+        assert_eq!(m.best_match_pbulk(Some(pkg3), pkg1)?, Some(pkg3));
         Ok(())
     }
 
@@ -795,7 +934,7 @@ mod tests {
         assert!(m.matches(overflow_ver));
         // But best_match should fail when comparing versions
         assert!(matches!(
-            m.best_match("pkg-1.0", overflow_ver),
+            m.best_match(Some("pkg-1.0"), overflow_ver),
             Err(PatternError::Dewey(_))
         ));
         Ok(())
@@ -874,13 +1013,94 @@ mod tests {
         let p = Pattern::new("mpg123-nas-[0-9]*")?;
         assert_eq!(p.pkgbase(), Some("mpg123-nas"));
         let p = Pattern::new("foo-1.[0-9]*")?;
-        assert_eq!(p.pkgbase(), None);
+        assert_eq!(p.pkgbase(), Some("foo"));
         let p = Pattern::new("foo-bar*-1")?;
         assert_eq!(p.pkgbase(), None);
         let p = Pattern::new("*-1.0")?;
         assert_eq!(p.pkgbase(), None);
         let p = Pattern::new("fo?-[0-9]*")?;
         assert_eq!(p.pkgbase(), None);
+
+        /*
+         * Version-pinning globs: the text between the last '-' and the
+         * first glob char consists only of digits and dots, so it is
+         * treated as a version prefix and the base is extracted.
+         */
+        let p = Pattern::new("boost-headers-1.90.*")?;
+        assert_eq!(p.pkgbase(), Some("boost-headers"));
+        let p = Pattern::new("foo-1.[0-9]")?;
+        assert_eq!(p.pkgbase(), Some("foo"));
+        let p = Pattern::new("foo-1.*")?;
+        assert_eq!(p.pkgbase(), Some("foo"));
+        let p = Pattern::new("foo-10*")?;
+        assert_eq!(p.pkgbase(), Some("foo"));
+        let p = Pattern::new("lib2to3-3.1[0-9]*")?;
+        assert_eq!(p.pkgbase(), Some("lib2to3"));
+        let p = Pattern::new("R-4.*")?;
+        assert_eq!(p.pkgbase(), Some("R"));
+        let p = Pattern::new("p5-IO-1.2[0-9]*")?;
+        assert_eq!(p.pkgbase(), Some("p5-IO"));
+
+        /*
+         * Non-version text after the last '-': contains letters or
+         * other non-version characters, so the fallback does not apply
+         * and pkgbase returns None to force a full scan.
+         */
+        let p = Pattern::new("foo-bar*")?;
+        assert_eq!(p.pkgbase(), None);
+        let p = Pattern::new("foo-abc[0-9]*")?;
+        assert_eq!(p.pkgbase(), None);
+        let p = Pattern::new("foo-2bar*")?;
+        assert_eq!(p.pkgbase(), None);
+        let p = Pattern::new("foo-1alpha*")?;
+        assert_eq!(p.pkgbase(), None);
+        let p = Pattern::new("foo-1.0rc*")?;
+        assert_eq!(p.pkgbase(), None);
+
+        /*
+         * Packages with digits in name components.  These all use the
+         * standard "-[0-9]*" form so strip_suffix('-') handles them,
+         * but the fallback must also be safe if a version-pinning glob
+         * were ever used (e.g. "font-adobe-100dpi-1.*").
+         */
+        let p = Pattern::new("font-adobe-100dpi-[0-9]*")?;
+        assert_eq!(p.pkgbase(), Some("font-adobe-100dpi"));
+        let p = Pattern::new("font-adobe-100dpi-1.*")?;
+        assert_eq!(p.pkgbase(), Some("font-adobe-100dpi"));
+        let p = Pattern::new("fuse-ntfs-3g-[0-9]*")?;
+        assert_eq!(p.pkgbase(), Some("fuse-ntfs-3g"));
+        let p = Pattern::new("tex-pst-3dplot-[0-9]*")?;
+        assert_eq!(p.pkgbase(), Some("tex-pst-3dplot"));
+        let p = Pattern::new("tex-2up-[0-9]*")?;
+        assert_eq!(p.pkgbase(), Some("tex-2up"));
+        let p = Pattern::new("nerd-fonts-3270-[0-9]*")?;
+        assert_eq!(p.pkgbase(), Some("nerd-fonts-3270"));
+        let p = Pattern::new("u-boot-rpi3-32-[0-9]*")?;
+        assert_eq!(p.pkgbase(), Some("u-boot-rpi3-32"));
+
+        /*
+         * Real version-pinning patterns from pkgsrc.
+         */
+        let p = Pattern::new("boost-libs-1.90.*")?;
+        assert_eq!(p.pkgbase(), Some("boost-libs"));
+        let p = Pattern::new("SDL-1.2.[0-9]*")?;
+        assert_eq!(p.pkgbase(), Some("SDL"));
+        let p = Pattern::new("mongodb-3*")?;
+        assert_eq!(p.pkgbase(), Some("mongodb"));
+        let p = Pattern::new("python27-2.7.*")?;
+        assert_eq!(p.pkgbase(), Some("python27"));
+        let p = Pattern::new("go14-1.4*")?;
+        assert_eq!(p.pkgbase(), Some("go14"));
+        let p = Pattern::new("go110-1.10.*")?;
+        assert_eq!(p.pkgbase(), Some("go110"));
+        let p = Pattern::new("mariadb-client-10.11.*")?;
+        assert_eq!(p.pkgbase(), Some("mariadb-client"));
+        let p = Pattern::new("gcc10-aux-10.*")?;
+        assert_eq!(p.pkgbase(), Some("gcc10-aux"));
+        let p = Pattern::new("binutils-2.22*")?;
+        assert_eq!(p.pkgbase(), Some("binutils"));
+        let p = Pattern::new("gtar-base-1.*")?;
+        assert_eq!(p.pkgbase(), Some("gtar-base"));
 
         // Alternate patterns
         let p = Pattern::new("{foo,bar}-[0-9]*")?;
