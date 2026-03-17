@@ -1,28 +1,35 @@
-use pkgsrc::{PkgName, ScanIndex};
+use pkgsrc::{DependError, PatternCache, PatternError, PkgName, ScanIndex};
 use std::collections::{HashMap, HashSet};
 use std::fs::File;
 use std::io::BufReader;
 use std::path::PathBuf;
 use std::time::Instant;
 
-fn load_scan_index() -> Vec<ScanIndex> {
+#[derive(Debug, thiserror::Error)]
+enum ResolveError {
+    #[error(transparent)]
+    Io(#[from] std::io::Error),
+    #[error(transparent)]
+    Depend(#[from] DependError),
+    #[error(transparent)]
+    Pattern(#[from] PatternError),
+}
+
+fn load_scan_index() -> Result<Vec<ScanIndex>, ResolveError> {
     let mut path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     path.push("tests/data/scanindex/pscan.zstd");
 
-    let file = File::open(&path).expect("failed to open pscan.zstd");
-    let decoder =
-        zstd::stream::Decoder::new(file).expect("failed to create decoder");
+    let file = File::open(&path)?;
+    let decoder = zstd::stream::Decoder::new(file)?;
     let reader = BufReader::new(decoder);
 
-    ScanIndex::from_reader(reader)
-        .collect::<Result<Vec<_>, _>>()
-        .expect("failed to parse scan index")
+    Ok(ScanIndex::from_reader(reader).collect::<Result<Vec<_>, _>>()?)
 }
 
 #[test]
-fn resolve_full_scan() {
+fn resolve_full_scan() -> Result<(), ResolveError> {
     let start = Instant::now();
-    let packages = load_scan_index();
+    let packages = load_scan_index()?;
     let load_time = start.elapsed();
 
     let has_reason =
@@ -38,9 +45,9 @@ fn resolve_full_scan() {
     }
 
     let start = Instant::now();
-    let mut total_matches = 0usize;
     let mut total_patterns = 0usize;
     let mut unresolved: Vec<(String, String)> = Vec::new();
+    let mut cache = PatternCache::with_capacity(packages.len());
 
     for pkg in &packages {
         if has_reason(&pkg.pkg_skip_reason) || has_reason(&pkg.pkg_fail_reason)
@@ -52,8 +59,9 @@ fn resolve_full_scan() {
         };
 
         for dep in deps {
+            let dep = dep?;
             total_patterns += 1;
-            let pattern = dep.pattern();
+            let pattern = cache.compile(dep.pattern())?;
 
             let candidates: &[&PkgName] = match pattern.pkgbase() {
                 Some(base) => {
@@ -64,20 +72,7 @@ fn resolve_full_scan() {
 
             let mut best: Option<&str> = None;
             for candidate in candidates {
-                if pattern.matches(candidate.pkgname()) {
-                    total_matches += 1;
-                    best = Some(match best {
-                        None => candidate.pkgname(),
-                        Some(current) => {
-                            match pattern
-                                .best_match_pbulk(current, candidate.pkgname())
-                            {
-                                Ok(Some(best)) => best,
-                                _ => current,
-                            }
-                        }
-                    });
-                }
+                best = pattern.best_match_pbulk(best, candidate.pkgname())?;
             }
 
             if best.is_none() {
@@ -93,7 +88,6 @@ fn resolve_full_scan() {
 
     eprintln!("Packages:     {}", packages.len());
     eprintln!("Patterns:     {}", total_patterns);
-    eprintln!("Matches:      {}", total_matches);
     eprintln!("Unresolved:   {}", unresolved.len());
     eprintln!("Load time:    {:?}", load_time);
     eprintln!("Resolve time: {:?}", resolve_time);
@@ -118,4 +112,6 @@ fn resolve_full_scan() {
         .collect();
 
     assert_eq!(actual, expected, "unresolved dependencies mismatch");
+
+    Ok(())
 }
