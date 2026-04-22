@@ -106,7 +106,7 @@ pub struct DeweyError {
  * Note: pkg_install implements == and != operators but doesn't actually
  * support them (or document them), so we don't bother.
  */
-#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub(crate) enum DeweyOp {
     LE,
@@ -250,10 +250,7 @@ struct DeweyMatch {
 impl DeweyMatch {
     fn new(op: &DeweyOp, pattern: &str) -> Result<Self, DeweyError> {
         let version = DeweyVersion::new(pattern)?;
-        Ok(Self {
-            op: op.clone(),
-            version,
-        })
+        Ok(Self { op: *op, version })
     }
 }
 
