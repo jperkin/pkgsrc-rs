@@ -270,7 +270,7 @@ impl fmt::Display for Summary {
  *
  * [`pkg_summary(5)`]: https://man.netbsd.org/pkg_summary.5
  */
-#[derive(Clone, Debug, PartialEq, Eq, Kv)]
+#[derive(Clone, Debug, Eq, Hash, Kv, PartialEq)]
 pub struct Summary {
     #[kv(variable = "BUILD_DATE")]
     build_date: String,
