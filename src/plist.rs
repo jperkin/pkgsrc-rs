@@ -478,7 +478,7 @@ impl PlistEntry {
  * - Symlink target (from `@comment Symlink:...`)
  * - File mode, owner, and group (from `@mode`, `@owner`, `@group`)
  */
-#[derive(Clone, Debug, Default, Eq, PartialEq)]
+#[derive(Clone, Debug, Default, Eq, Hash, PartialEq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct FileInfo {
     /// The file path relative to the current working directory.
