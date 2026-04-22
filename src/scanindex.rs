@@ -94,7 +94,7 @@ use std::str::FromStr;
  * assert_eq!(paths[1], Path::new("../../lang/rust"));
  * ```
  */
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Debug, Default, Eq, Hash, PartialEq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(feature = "serde", serde(transparent))]
 pub struct ScanDepends(String);
@@ -198,7 +198,7 @@ impl crate::kv::FromKv for ScanDepends {
  *
  * [`Pattern`]: crate::Pattern
  */
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Debug, Default, Eq, Hash, PartialEq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(feature = "serde", serde(transparent))]
 pub struct AllDepends(String);
