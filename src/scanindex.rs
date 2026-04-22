@@ -552,7 +552,8 @@ impl ScanIndex {
      */
     pub fn from_reader<R: BufRead>(reader: R) -> ScanIndexIter<R> {
         ScanIndexIter {
-            lines: reader.lines(),
+            reader,
+            line_buf: String::new(),
             buffer: String::new(),
             done: false,
         }
@@ -565,7 +566,8 @@ impl ScanIndex {
  * Created by [`ScanIndex::from_reader`].
  */
 pub struct ScanIndexIter<R> {
-    lines: io::Lines<R>,
+    reader: R,
+    line_buf: String,
     buffer: String,
     done: bool,
 }
@@ -579,19 +581,9 @@ impl<R: BufRead> Iterator for ScanIndexIter<R> {
         }
 
         loop {
-            match self.lines.next() {
-                Some(Ok(line)) => {
-                    if line.starts_with("PKGNAME=") && !self.buffer.is_empty() {
-                        let record = std::mem::take(&mut self.buffer);
-                        self.buffer.push_str(&line);
-                        self.buffer.push('\n');
-                        return Some(parse_record(&record));
-                    }
-                    self.buffer.push_str(&line);
-                    self.buffer.push('\n');
-                }
-                Some(Err(e)) => return Some(Err(e)),
-                None => {
+            self.line_buf.clear();
+            match self.reader.read_line(&mut self.line_buf) {
+                Ok(0) => {
                     self.done = true;
                     if self.buffer.is_empty() {
                         return None;
@@ -600,6 +592,17 @@ impl<R: BufRead> Iterator for ScanIndexIter<R> {
                         &mut self.buffer,
                     )));
                 }
+                Ok(_) => {
+                    if self.line_buf.starts_with("PKGNAME=")
+                        && !self.buffer.is_empty()
+                    {
+                        let record = std::mem::take(&mut self.buffer);
+                        self.buffer.push_str(&self.line_buf);
+                        return Some(parse_record(&record));
+                    }
+                    self.buffer.push_str(&self.line_buf);
+                }
+                Err(e) => return Some(Err(e)),
             }
         }
     }
