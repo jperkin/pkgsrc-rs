@@ -444,85 +444,6 @@ impl PkgHash {
         }
     }
 
-    /// Parse a `PkgHash` from `+PKG_HASH` file contents.
-    pub fn parse(content: &str) -> Result<Self> {
-        let lines: Vec<&str> = content.lines().collect();
-
-        if lines.is_empty() || lines[0] != "pkgsrc signature" {
-            return Err(ArchiveError::InvalidPkgHash(
-                "missing 'pkgsrc signature' header".into(),
-            ));
-        }
-
-        let mut pkg_hash = PkgHash::default();
-        let mut header_complete = false;
-        let mut line_idx = 1;
-
-        while line_idx < lines.len() && !header_complete {
-            let line = lines[line_idx];
-
-            if let Some((key, value)) = line.split_once(": ") {
-                match key {
-                    "version" => {
-                        pkg_hash.version = value.parse().map_err(|_| {
-                            ArchiveError::InvalidPkgHash(format!(
-                                "invalid version: {}",
-                                value
-                            ))
-                        })?;
-                    }
-                    "pkgname" => {
-                        pkg_hash.pkgname = value.to_string();
-                    }
-                    "algorithm" => {
-                        pkg_hash.algorithm = value.parse()?;
-                    }
-                    "block size" => {
-                        pkg_hash.block_size = value.parse().map_err(|_| {
-                            ArchiveError::InvalidPkgHash(format!(
-                                "invalid block size: {}",
-                                value
-                            ))
-                        })?;
-                    }
-                    "file size" => {
-                        pkg_hash.file_size = value.parse().map_err(|_| {
-                            ArchiveError::InvalidPkgHash(format!(
-                                "invalid file size: {}",
-                                value
-                            ))
-                        })?;
-                        header_complete = true;
-                    }
-                    _ => {
-                        return Err(ArchiveError::InvalidPkgHash(format!(
-                            "unknown header field: {}",
-                            key
-                        )));
-                    }
-                }
-            } else if !line.is_empty() {
-                header_complete = true;
-                line_idx -= 1;
-            }
-            line_idx += 1;
-        }
-
-        while line_idx < lines.len() {
-            let line = lines[line_idx].trim();
-            if !line.is_empty() {
-                pkg_hash.hashes.push(line.to_string());
-            }
-            line_idx += 1;
-        }
-
-        if pkg_hash.pkgname.is_empty() {
-            return Err(ArchiveError::InvalidPkgHash("missing pkgname".into()));
-        }
-
-        Ok(pkg_hash)
-    }
-
     /// Generate `PkgHash` from a tarball.
     pub fn from_tarball<R: Read>(
         pkgname: impl Into<String>,
@@ -648,6 +569,91 @@ impl fmt::Display for PkgHash {
             writeln!(f, "{}", hash)?;
         }
         Ok(())
+    }
+}
+
+impl std::str::FromStr for PkgHash {
+    type Err = ArchiveError;
+
+    /**
+     * Parse a `PkgHash` from `+PKG_HASH` file contents.
+     */
+    fn from_str(s: &str) -> Result<Self> {
+        let lines: Vec<&str> = s.lines().collect();
+
+        if lines.is_empty() || lines[0] != "pkgsrc signature" {
+            return Err(ArchiveError::InvalidPkgHash(
+                "missing 'pkgsrc signature' header".into(),
+            ));
+        }
+
+        let mut pkg_hash = PkgHash::default();
+        let mut header_complete = false;
+        let mut line_idx = 1;
+
+        while line_idx < lines.len() && !header_complete {
+            let line = lines[line_idx];
+
+            if let Some((key, value)) = line.split_once(": ") {
+                match key {
+                    "version" => {
+                        pkg_hash.version = value.parse().map_err(|_| {
+                            ArchiveError::InvalidPkgHash(format!(
+                                "invalid version: {}",
+                                value
+                            ))
+                        })?;
+                    }
+                    "pkgname" => {
+                        pkg_hash.pkgname = value.to_string();
+                    }
+                    "algorithm" => {
+                        pkg_hash.algorithm = value.parse()?;
+                    }
+                    "block size" => {
+                        pkg_hash.block_size = value.parse().map_err(|_| {
+                            ArchiveError::InvalidPkgHash(format!(
+                                "invalid block size: {}",
+                                value
+                            ))
+                        })?;
+                    }
+                    "file size" => {
+                        pkg_hash.file_size = value.parse().map_err(|_| {
+                            ArchiveError::InvalidPkgHash(format!(
+                                "invalid file size: {}",
+                                value
+                            ))
+                        })?;
+                        header_complete = true;
+                    }
+                    _ => {
+                        return Err(ArchiveError::InvalidPkgHash(format!(
+                            "unknown header field: {}",
+                            key
+                        )));
+                    }
+                }
+            } else if !line.is_empty() {
+                header_complete = true;
+                line_idx -= 1;
+            }
+            line_idx += 1;
+        }
+
+        while line_idx < lines.len() {
+            let line = lines[line_idx].trim();
+            if !line.is_empty() {
+                pkg_hash.hashes.push(line.to_string());
+            }
+            line_idx += 1;
+        }
+
+        if pkg_hash.pkgname.is_empty() {
+            return Err(ArchiveError::InvalidPkgHash("missing pkgname".into()));
+        }
+
+        Ok(pkg_hash)
     }
 }
 
@@ -1051,8 +1057,8 @@ impl BinaryPackage {
             }
         }
 
-        let pkg_hash =
-            pkg_hash_content.map(|c| PkgHash::parse(&c)).transpose()?;
+        let pkg_hash: Option<PkgHash> =
+            pkg_hash_content.as_deref().map(str::parse).transpose()?;
 
         metadata.validate().map_err(|e| {
             ArchiveError::MissingMetadata(format!("incomplete package: {}", e))
@@ -1883,7 +1889,7 @@ file size: 12345
 abc123
 def456
 ";
-        let pkg_hash = PkgHash::parse(content)?;
+        let pkg_hash: PkgHash = content.parse()?;
 
         assert_eq!(pkg_hash.version(), 1);
         assert_eq!(pkg_hash.pkgname(), "test-1.0");
@@ -1940,7 +1946,7 @@ def456
         )?;
 
         let serialized = pkg_hash.to_string();
-        let parsed = PkgHash::parse(&serialized)?;
+        let parsed: PkgHash = serialized.parse()?;
 
         assert_eq!(pkg_hash.version(), parsed.version());
         assert_eq!(pkg_hash.pkgname(), parsed.pkgname());
