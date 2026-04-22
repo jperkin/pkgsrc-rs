@@ -101,6 +101,7 @@
 use std::collections::HashMap;
 use std::ffi::OsString;
 use std::fmt;
+use std::fmt::Write as FmtWrite;
 use std::fs::{self, File, Permissions};
 use std::io::{self, BufReader, Cursor, Read, Seek, SeekFrom, Write};
 #[cfg(unix)]
@@ -256,10 +257,12 @@ impl PkgHashAlgorithm {
     /// Format hash as lowercase hex string.
     #[must_use]
     pub fn hash_hex(&self, data: &[u8]) -> String {
-        self.hash(data)
-            .iter()
-            .map(|b| format!("{:02x}", b))
-            .collect()
+        let bytes = self.hash(data);
+        let mut s = String::with_capacity(bytes.len() * 2);
+        for b in &bytes {
+            let _ = write!(s, "{b:02x}");
+        }
+        s
     }
 }
 
