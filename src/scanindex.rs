@@ -284,6 +284,24 @@ impl From<&str> for AllDepends {
     }
 }
 
+impl<S: AsRef<str>> FromIterator<S> for AllDepends {
+    /**
+     * Collect `pattern:pkgpath` entries into an [`AllDepends`].  Entries
+     * are joined with a single space; no validation of the `pattern:pkgpath`
+     * shape is performed here (use [`AllDepends::iter`] to validate).
+     */
+    fn from_iter<I: IntoIterator<Item = S>>(iter: I) -> Self {
+        let mut out = String::new();
+        for item in iter {
+            if !out.is_empty() {
+                out.push(' ');
+            }
+            out.push_str(item.as_ref());
+        }
+        AllDepends(out)
+    }
+}
+
 impl crate::kv::FromKv for AllDepends {
     fn from_kv(value: &str, _span: crate::kv::Span) -> crate::kv::Result<Self> {
         Ok(AllDepends(value.to_string()))
