@@ -59,6 +59,7 @@ use indexmap::IndexMap;
 use std::ffi::{OsStr, OsString};
 use std::fs::File;
 use std::io;
+use std::io::Write;
 use std::os::unix::ffi::{OsStrExt, OsStringExt};
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
@@ -310,24 +311,20 @@ impl Entry {
     pub fn as_bytes(&self) -> Vec<u8> {
         let mut bytes = Vec::new();
         for c in &self.checksums {
-            bytes.extend_from_slice(
-                format!(
-                    "{} ({}) = {}\n",
-                    c.digest,
-                    self.filename.display(),
-                    c.hash
-                )
-                .as_bytes(),
+            let _ = writeln!(
+                bytes,
+                "{} ({}) = {}",
+                c.digest,
+                self.filename.display(),
+                c.hash,
             );
         }
         if let Some(size) = self.size {
-            bytes.extend_from_slice(
-                format!(
-                    "Size ({}) = {} bytes\n",
-                    self.filename.display(),
-                    size
-                )
-                .as_bytes(),
+            let _ = writeln!(
+                bytes,
+                "Size ({}) = {} bytes",
+                self.filename.display(),
+                size,
             );
         }
         bytes
@@ -682,38 +679,32 @@ impl Distinfo {
 
         for q in self.distfiles.values() {
             for c in &q.checksums {
-                bytes.extend_from_slice(
-                    format!(
-                        "{} ({}) = {}\n",
-                        c.digest,
-                        q.filename.display(),
-                        c.hash
-                    )
-                    .as_bytes(),
+                let _ = writeln!(
+                    bytes,
+                    "{} ({}) = {}",
+                    c.digest,
+                    q.filename.display(),
+                    c.hash,
                 );
             }
             if let Some(size) = q.size {
-                bytes.extend_from_slice(
-                    format!(
-                        "Size ({}) = {} bytes\n",
-                        q.filename.display(),
-                        size
-                    )
-                    .as_bytes(),
+                let _ = writeln!(
+                    bytes,
+                    "Size ({}) = {} bytes",
+                    q.filename.display(),
+                    size,
                 );
             }
         }
 
         for q in self.patchfiles.values() {
             for c in &q.checksums {
-                bytes.extend_from_slice(
-                    format!(
-                        "{} ({}) = {}\n",
-                        c.digest,
-                        q.filename.display(),
-                        c.hash
-                    )
-                    .as_bytes(),
+                let _ = writeln!(
+                    bytes,
+                    "{} ({}) = {}",
+                    c.digest,
+                    q.filename.display(),
+                    c.hash,
                 );
             }
         }
