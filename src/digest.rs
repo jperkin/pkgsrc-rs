@@ -380,10 +380,7 @@ mod tests {
             std::io::ErrorKind::NotFound,
             "b",
         ));
-        let e3 = DigestError::Io(std::io::Error::new(
-            std::io::ErrorKind::Other,
-            "a",
-        ));
+        let e3 = DigestError::Io(std::io::Error::other("a"));
         assert_eq!(e1, e2);
         assert_ne!(e1, e3);
         assert_ne!(e1, DigestError::Unsupported("x".to_string()));

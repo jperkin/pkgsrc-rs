@@ -838,14 +838,7 @@ impl Plist {
                     ignore = true;
                     false
                 }
-                PlistEntry::File(_) => {
-                    if ignore {
-                        ignore = false;
-                        false
-                    } else {
-                        true
-                    }
-                }
+                PlistEntry::File(_) => !std::mem::take(&mut ignore),
                 PlistEntry::Cwd(_)
                 | PlistEntry::Exec(_)
                 | PlistEntry::Mode(_)
@@ -875,14 +868,7 @@ impl Plist {
                     ignore = true;
                     false
                 }
-                PlistEntry::File(_) => {
-                    if ignore {
-                        ignore = false;
-                        false
-                    } else {
-                        true
-                    }
-                }
+                PlistEntry::File(_) => !std::mem::take(&mut ignore),
                 PlistEntry::Cwd(_)
                 | PlistEntry::UnExec(_)
                 | PlistEntry::Mode(_)

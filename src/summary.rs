@@ -2428,7 +2428,7 @@ mod tests {
         "};
         let trimmed = input.trim();
 
-        let err = Summary::from_str(trimmed).err().expect("expected error");
+        let err = Summary::from_str(trimmed).expect_err("expected error");
         assert!(
             matches!(err, SummaryError::UnknownVariable { variable, .. } if variable == "UNKNOWN_FIELD")
         );
