@@ -133,6 +133,12 @@ impl ScanDepends {
     }
 }
 
+impl AsRef<str> for ScanDepends {
+    fn as_ref(&self) -> &str {
+        &self.0
+    }
+}
+
 impl fmt::Display for ScanDepends {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", self.0)
@@ -269,6 +275,12 @@ impl<'a> IntoIterator for &'a AllDepends {
 
     fn into_iter(self) -> Self::IntoIter {
         self.iter()
+    }
+}
+
+impl AsRef<str> for AllDepends {
+    fn as_ref(&self) -> &str {
+        &self.0
     }
 }
 
