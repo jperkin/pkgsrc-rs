@@ -90,11 +90,11 @@
  *      let pkglist = Plist::from_bytes(input.as_bytes())?;
  *
  *      assert_eq!(pkglist.pkgname(), Some("pkgtest-1.0"));
- *      assert_eq!(pkglist.depends().len(), 2);
- *      assert_eq!(pkglist.build_depends().len(), 2);
- *      assert_eq!(pkglist.conflicts().len(), 1);
- *      assert_eq!(pkglist.pkgdirs().len(), 1);
- *      assert_eq!(pkglist.pkgrmdirs().len(), 1);
+ *      assert_eq!(pkglist.depends().count(), 2);
+ *      assert_eq!(pkglist.build_depends().count(), 2);
+ *      assert_eq!(pkglist.conflicts().count(), 1);
+ *      assert_eq!(pkglist.pkgdirs().count(), 1);
+ *      assert_eq!(pkglist.pkgrmdirs().count(), 1);
  *
  *      Ok(())
  * }
@@ -525,25 +525,19 @@ pub struct Plist {
 
 macro_rules! plist_match_filter_str {
     ($s:ident, $p:path) => {
-        $s.entries
-            .iter()
-            .filter_map(|entry| match entry {
-                $p(s) => Some(s.as_str()),
-                _ => None,
-            })
-            .collect()
+        $s.entries.iter().filter_map(|entry| match entry {
+            $p(s) => Some(s.as_str()),
+            _ => None,
+        })
     };
 }
 
 macro_rules! plist_match_filter_osstr {
     ($s:ident, $p:path) => {
-        $s.entries
-            .iter()
-            .filter_map(|entry| match entry {
-                $p(s) => Some(s.as_os_str()),
-                _ => None,
-            })
-            .collect()
+        $s.entries.iter().filter_map(|entry| match entry {
+            $p(s) => Some(s.as_os_str()),
+            _ => None,
+        })
     };
 }
 
@@ -658,42 +652,37 @@ impl Plist {
     }
 
     /**
-     * Return a vector containing `@pkgdep` entries as string slices.
+     * Return an iterator over `@pkgdep` entries as string slices.
      */
-    #[must_use]
-    pub fn depends(&self) -> Vec<&str> {
+    pub fn depends(&self) -> impl Iterator<Item = &str> + '_ {
         plist_match_filter_str!(self, PlistEntry::PkgDep)
     }
 
     /**
-     * Return a vector containing `@blddep` entries as string slices.
+     * Return an iterator over `@blddep` entries as string slices.
      */
-    #[must_use]
-    pub fn build_depends(&self) -> Vec<&str> {
+    pub fn build_depends(&self) -> impl Iterator<Item = &str> + '_ {
         plist_match_filter_str!(self, PlistEntry::BldDep)
     }
 
     /**
-     * Return a vector containing `@pkgcfl` entries as string slices.
+     * Return an iterator over `@pkgcfl` entries as string slices.
      */
-    #[must_use]
-    pub fn conflicts(&self) -> Vec<&str> {
+    pub fn conflicts(&self) -> impl Iterator<Item = &str> + '_ {
         plist_match_filter_str!(self, PlistEntry::PkgCfl)
     }
 
     /**
-     * Return a vector containing `@pkgdir` entries as string slices.
+     * Return an iterator over `@pkgdir` entries as os-string slices.
      */
-    #[must_use]
-    pub fn pkgdirs(&self) -> Vec<&OsStr> {
+    pub fn pkgdirs(&self) -> impl Iterator<Item = &OsStr> + '_ {
         plist_match_filter_osstr!(self, PlistEntry::PkgDir)
     }
 
     /**
-     * Return a vector containing `@dirrm` entries as string slices.
+     * Return an iterator over `@dirrm` entries as os-string slices.
      */
-    #[must_use]
-    pub fn pkgrmdirs(&self) -> Vec<&OsStr> {
+    pub fn pkgrmdirs(&self) -> impl Iterator<Item = &OsStr> + '_ {
         plist_match_filter_osstr!(self, PlistEntry::DirRm)
     }
 
@@ -1165,9 +1154,9 @@ mod tests {
             +BUILD_INFO
         "};
         let plist = Plist::from_bytes(input.as_bytes())?;
-        assert_eq!(plist.depends().len(), 2);
-        assert_eq!(plist.build_depends().len(), 2);
-        assert_eq!(plist.conflicts().len(), 2);
+        assert_eq!(plist.depends().count(), 2);
+        assert_eq!(plist.build_depends().count(), 2);
+        assert_eq!(plist.conflicts().count(), 2);
         Ok(())
     }
 
@@ -1312,19 +1301,34 @@ mod tests {
     #[test]
     fn test_vecs() -> Result<()> {
         let plist = plist!("@pkgdir one\n@pkgdir two\n@pkgdir three")?;
-        assert_eq!(plist.pkgdirs(), ["one", "two", "three"]);
+        assert_eq!(
+            plist.pkgdirs().collect::<Vec<_>>(),
+            ["one", "two", "three"]
+        );
 
         let plist = plist!("@dirrm one\n@dirrm two\n@dirrm three")?;
-        assert_eq!(plist.pkgrmdirs(), ["one", "two", "three"]);
+        assert_eq!(
+            plist.pkgrmdirs().collect::<Vec<_>>(),
+            ["one", "two", "three"]
+        );
 
         let plist = plist!("@pkgdep one\n@pkgdep two\n@pkgdep three")?;
-        assert_eq!(plist.depends(), ["one", "two", "three"]);
+        assert_eq!(
+            plist.depends().collect::<Vec<_>>(),
+            ["one", "two", "three"]
+        );
 
         let plist = plist!("@blddep one\n@blddep two\n@blddep three")?;
-        assert_eq!(plist.build_depends(), ["one", "two", "three"]);
+        assert_eq!(
+            plist.build_depends().collect::<Vec<_>>(),
+            ["one", "two", "three"]
+        );
 
         let plist = plist!("@pkgcfl one\n@pkgcfl two\n@pkgcfl three")?;
-        assert_eq!(plist.conflicts(), ["one", "two", "three"]);
+        assert_eq!(
+            plist.conflicts().collect::<Vec<_>>(),
+            ["one", "two", "three"]
+        );
 
         Ok(())
     }

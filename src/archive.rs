@@ -1396,15 +1396,6 @@ impl BinaryPackage {
             .map(crate::PkgName::new)
             .ok_or_else(|| ArchiveError::MissingMetadata("PKGNAME".into()))?;
 
-        // Helper to convert Vec<&str> to Option<Vec<String>>, avoiding allocation when empty
-        fn to_opt_vec(v: Vec<&str>) -> Option<Vec<String>> {
-            if v.is_empty() {
-                None
-            } else {
-                Some(v.into_iter().map(String::from).collect())
-            }
-        }
-
         // Helper to filter empty/whitespace-only strings
         let non_empty = |s: &&str| !s.trim().is_empty();
 
@@ -1444,8 +1435,10 @@ impl BinaryPackage {
             to_string(self.build_info_value("PKGTOOLS_VERSION").unwrap_or("")),
             self.metadata.desc().lines().map(String::from).collect(),
             // Optional fields - avoid Vec<String> allocation when empty
-            to_opt_vec(self.plist.conflicts()),
-            to_opt_vec(self.plist.depends()),
+            Some(self.plist.conflicts().map(String::from).collect::<Vec<_>>())
+                .filter(|v| !v.is_empty()),
+            Some(self.plist.depends().map(String::from).collect::<Vec<_>>())
+                .filter(|v| !v.is_empty()),
             self.build_info_value("HOMEPAGE")
                 .filter(non_empty)
                 .map(to_string),
