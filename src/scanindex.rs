@@ -390,7 +390,7 @@ impl fmt::Display for RawDepend<'_> {
  * # Ok::<(), std::io::Error>(())
  * ```
  */
-#[derive(Clone, Debug, PartialEq, Eq, Kv)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, Kv)]
 pub struct ScanIndex {
     /// Name of the package including the version number.
     pub pkgname: PkgName,
