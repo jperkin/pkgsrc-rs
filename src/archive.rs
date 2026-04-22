@@ -1408,12 +1408,13 @@ impl BinaryPackage {
             let mut hasher = Sha256::new();
             io::copy(&mut file, &mut hasher)?;
             let hash = hasher.finalize();
-            Some(format!(
-                "sha256 {}",
-                hash.iter()
-                    .map(|b| format!("{:02x}", b))
-                    .collect::<String>()
-            ))
+            const PREFIX: &str = "sha256 ";
+            let mut s = String::with_capacity(PREFIX.len() + hash.len() * 2);
+            s.push_str(PREFIX);
+            for b in &hash {
+                let _ = write!(s, "{b:02x}");
+            }
+            Some(s)
         } else {
             None
         };
