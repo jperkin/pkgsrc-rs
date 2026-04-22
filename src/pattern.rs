@@ -107,7 +107,8 @@
 
 use crate::PkgName;
 use crate::dewey::{Dewey, DeweyError, DeweyOp, DeweyVersion, dewey_cmp};
-use std::collections::HashMap;
+use hashbrown::HashMap;
+use hashbrown::hash_map::EntryRef;
 use std::fmt;
 use std::str::FromStr;
 use thiserror::Error;
@@ -614,11 +615,13 @@ impl PatternCache {
      * been previously compiled.
      */
     pub fn compile(&mut self, pattern: &str) -> Result<&Pattern, PatternError> {
-        if !self.cache.contains_key(pattern) {
-            self.cache
-                .insert(pattern.to_string(), Pattern::new(pattern)?);
+        match self.cache.entry_ref(pattern) {
+            EntryRef::Occupied(e) => Ok(e.into_mut()),
+            EntryRef::Vacant(e) => {
+                let p = Pattern::new(pattern)?;
+                Ok(e.insert(p))
+            }
         }
-        Ok(&self.cache[pattern])
     }
 
     /**
