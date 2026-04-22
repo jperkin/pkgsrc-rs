@@ -301,15 +301,18 @@ impl Pattern {
             /*
              * Verify that braces are correctly balanced.
              */
-            let mut stack = vec![];
+            let mut depth = 0usize;
             for ch in pattern.chars() {
                 if ch == '{' {
-                    stack.push(ch);
-                } else if ch == '}' && stack.pop().is_none() {
-                    return Err(PatternError::Alternate);
+                    depth += 1;
+                } else if ch == '}' {
+                    if depth == 0 {
+                        return Err(PatternError::Alternate);
+                    }
+                    depth -= 1;
                 }
             }
-            if !stack.is_empty() {
+            if depth != 0 {
                 return Err(PatternError::Alternate);
             }
             /*
