@@ -103,7 +103,7 @@ pub use pkgsrc_kv_derive::Kv;
  * assert_eq!(range, 10..15);
  * ```
  */
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Default, Eq, Hash, PartialEq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct Span {
     /** Byte offset where this span starts. */
