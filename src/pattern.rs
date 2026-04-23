@@ -118,11 +118,6 @@ use thiserror::Error;
  */
 const GLOB_START: [char; 3] = ['*', '?', '['];
 
-/**
- * Characters that indicate the start of a dewey version constraint.
- */
-const DEWEY_START: [char; 2] = ['>', '<'];
-
 #[cfg(feature = "serde")]
 use serde_with::{DeserializeFromStr, SerializeDisplay};
 
@@ -295,8 +290,28 @@ impl Pattern {
      * ```
      */
     pub fn new(pattern: &str) -> Result<Self, PatternError> {
-        if let Some(brace) = pattern.find(['{', '}']) {
-            if pattern.as_bytes()[brace] == b'}' {
+        /*
+         * Classify the pattern in a single byte scan rather than repeatedly
+         * scanning for each character class below.
+         */
+        let mut brace_pos: Option<usize> = None;
+        let mut brace_is_close = false;
+        let mut has_dewey = false;
+        let mut has_glob = false;
+        for (i, b) in pattern.bytes().enumerate() {
+            match b {
+                b'{' if brace_pos.is_none() => brace_pos = Some(i),
+                b'}' if brace_pos.is_none() => {
+                    brace_pos = Some(i);
+                    brace_is_close = true;
+                }
+                b'>' | b'<' => has_dewey = true,
+                b'*' | b'?' | b'[' => has_glob = true,
+                _ => {}
+            }
+        }
+        if brace_pos.is_some() {
+            if brace_is_close {
                 return Err(PatternError::Alternate);
             }
             /*
@@ -342,14 +357,14 @@ impl Pattern {
                 likely: false,
             });
         }
-        if pattern.contains(DEWEY_START) {
+        if has_dewey {
             return Ok(Self {
                 matchtype: PatternType::Dewey(Dewey::new(pattern)?),
                 pattern: pattern.to_string(),
                 likely: false,
             });
         }
-        if pattern.contains(GLOB_START) {
+        if has_glob {
             return Ok(Self {
                 matchtype: PatternType::Glob(glob::Pattern::new(pattern)?),
                 pattern: pattern.to_string(),
