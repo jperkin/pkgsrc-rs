@@ -517,7 +517,7 @@ pub struct FileInfo {
  *
  * [`from_bytes()`]: Plist::from_bytes
  */
-#[derive(Clone, Debug, Default, Eq, PartialEq)]
+#[derive(Clone, Debug, Default, Eq, Hash, PartialEq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct Plist {
     entries: Vec<PlistEntry>,
