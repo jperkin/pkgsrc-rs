@@ -172,7 +172,7 @@ pub trait FileRead {
 /**
  * Parsed metadata from `+*` files in a package archive.
  */
-#[derive(Clone, Debug, Default, Eq, PartialEq)]
+#[derive(Clone, Debug, Default, Eq, Hash, PartialEq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct Metadata {
     build_info: Option<Vec<String>>,
