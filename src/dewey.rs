@@ -135,7 +135,11 @@ impl DeweyVersion {
      * version component overflows i64.
      */
     pub fn new(s: &str) -> Result<Self, DeweyError> {
-        let mut version: Vec<i64> = vec![];
+        /*
+         * Typical pkgsrc versions have 3-6 numeric components; pre-allocate
+         * to avoid the initial Vec growth reallocations.
+         */
+        let mut version: Vec<i64> = Vec::with_capacity(8);
         let mut pkgrevision = 0;
         let mut idx = 0;
 
@@ -158,15 +162,17 @@ impl DeweyVersion {
             /*
              * Handle the most common cases first - digits and separators.
              */
-            let numstr: String =
-                slice.chars().take_while(char::is_ascii_digit).collect();
-            if !numstr.is_empty() {
-                let num = numstr.parse::<i64>().map_err(|_| DeweyError {
-                    pos: idx,
-                    msg: "Version component overflow",
+            let digit_end =
+                slice.bytes().take_while(u8::is_ascii_digit).count();
+            if digit_end > 0 {
+                let num = slice[..digit_end].parse::<i64>().map_err(|_| {
+                    DeweyError {
+                        pos: idx,
+                        msg: "Version component overflow",
+                    }
                 })?;
                 version.push(num);
-                idx += numstr.len();
+                idx += digit_end;
                 continue;
             }
             if c == '.' || c == '_' {
@@ -181,10 +187,10 @@ impl DeweyVersion {
             if slice.starts_with("nb") {
                 idx += 2;
                 let slice = &s[idx..];
-                let nbstr: String =
-                    slice.chars().take_while(char::is_ascii_digit).collect();
-                pkgrevision = nbstr.parse::<i64>().unwrap_or(0);
-                idx += nbstr.len();
+                let digit_end =
+                    slice.bytes().take_while(u8::is_ascii_digit).count();
+                pkgrevision = slice[..digit_end].parse::<i64>().unwrap_or(0);
+                idx += digit_end;
                 continue;
             }
 
