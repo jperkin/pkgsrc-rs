@@ -547,29 +547,24 @@ impl Pattern {
      * when matching across thousands of packages we include a similar routine.
      */
     fn quick_pkg_match(pattern: &str, pkg: &str) -> bool {
-        let mut p1 = pattern.chars();
-        let mut p2 = pkg.chars();
-
-        let p = p1.next();
-        if !p.is_some_and(Self::is_simple_char) {
-            return true;
-        }
-        if p != p2.next() {
-            return false;
-        }
-
-        let p = p1.next();
-        if !p.is_some_and(Self::is_simple_char) {
-            return true;
-        }
-        if p != p2.next() {
-            return false;
+        let pb = pattern.as_bytes();
+        let kb = pkg.as_bytes();
+        for i in 0..2 {
+            let Some(&p) = pb.get(i) else {
+                return true;
+            };
+            if !Self::is_simple_byte(p) {
+                return true;
+            }
+            if kb.get(i) != Some(&p) {
+                return false;
+            }
         }
         true
     }
 
-    const fn is_simple_char(c: char) -> bool {
-        c.is_ascii_alphanumeric() || c == '-'
+    const fn is_simple_byte(b: u8) -> bool {
+        b.is_ascii_alphanumeric() || b == b'-'
     }
 }
 
