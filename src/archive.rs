@@ -215,7 +215,7 @@ impl fmt::Display for Compression {
 // ============================================================================
 
 /// Hash algorithm used for package signing.
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Default, Eq, Hash, PartialEq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum PkgHashAlgorithm {
     /// SHA-512 (recommended, default)
@@ -342,7 +342,7 @@ pub enum ArchiveError {
 // ============================================================================
 
 /// Options for extracting package files.
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, Default, Eq, Hash, PartialEq)]
 pub struct ExtractOptions {
     /// Apply file modes from plist `@mode` directives.
     pub apply_mode: bool,
@@ -383,7 +383,7 @@ impl ExtractOptions {
 }
 
 /// Result of extracting a single file.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub struct ExtractedFile {
     /// Path where the file was extracted.
     pub path: PathBuf,
@@ -419,7 +419,7 @@ pub struct ExtractedFile {
 /// <hash2>
 /// ...
 /// ```
-#[derive(Clone, Debug, Default, Eq, PartialEq)]
+#[derive(Clone, Debug, Default, Eq, Hash, PartialEq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct PkgHash {
     version: u32,
@@ -662,7 +662,7 @@ impl std::str::FromStr for PkgHash {
 // ============================================================================
 
 /// Type of binary package archive.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum ArchiveType {
     /// Unsigned package (plain compressed tarball)
@@ -792,7 +792,7 @@ impl<R: Read> Archive<R> {
 // ============================================================================
 
 /// Options for converting a [`BinaryPackage`] to a [`Summary`].
-#[derive(Debug, Clone, Default)]
+#[derive(Clone, Debug, Default, Eq, Hash, PartialEq)]
 pub struct SummaryOptions {
     /// Compute the SHA256 checksum of the package file.
     ///
