@@ -141,6 +141,18 @@ pub struct PkgName {
     pkgrevision: Option<i64>,
 }
 
+/**
+ * Return the `PKGVERSION` portion of a package name, i.e. everything after
+ * the final `-`, or the empty string if no `-` is present.
+ *
+ * Equivalent to [`PkgName::new`] followed by [`PkgName::pkgversion`], but
+ * avoids the allocation and revision parsing.
+ */
+#[must_use]
+pub fn pkgversion(pkgname: &str) -> &str {
+    pkgname.rsplit_once('-').map_or("", |(_, v)| v)
+}
+
 impl PkgName {
     /**
      * Create a new [`PkgName`] from a [`str`] reference.
@@ -148,12 +160,7 @@ impl PkgName {
     #[must_use]
     pub fn new(pkgname: &str) -> Self {
         let split = pkgname.rfind('-').unwrap_or(pkgname.len());
-        let pkgversion = if split < pkgname.len() {
-            &pkgname[split + 1..]
-        } else {
-            ""
-        };
-        let pkgrevision = match pkgversion.rsplit_once("nb") {
+        let pkgrevision = match pkgversion(pkgname).rsplit_once("nb") {
             Some((_, v)) => v.parse::<i64>().ok().or(Some(0)),
             None => None,
         };
@@ -191,11 +198,7 @@ impl PkgName {
      */
     #[must_use]
     pub fn pkgversion(&self) -> &str {
-        if self.split < self.pkgname.len() {
-            &self.pkgname[self.split + 1..]
-        } else {
-            ""
-        }
+        pkgversion(&self.pkgname)
     }
 
     /**
