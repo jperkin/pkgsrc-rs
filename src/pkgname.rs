@@ -138,19 +138,54 @@ use serde_with::{DeserializeFromStr, SerializeDisplay};
 pub struct PkgName {
     pkgname: String,
     split: usize,
-    pkgrevision: Option<i64>,
+}
+
+/**
+ * Return the `PKGBASE` portion of a package name, i.e. everything before
+ * the final `-`, or the full input if no `-` is present.
+ */
+#[must_use]
+pub fn pkgbase(pkgname: &str) -> &str {
+    pkgname.rsplit_once('-').map_or(pkgname, |(b, _)| b)
 }
 
 /**
  * Return the `PKGVERSION` portion of a package name, i.e. everything after
  * the final `-`, or the empty string if no `-` is present.
- *
- * Equivalent to [`PkgName::new`] followed by [`PkgName::pkgversion`], but
- * avoids the allocation and revision parsing.
  */
 #[must_use]
 pub fn pkgversion(pkgname: &str) -> &str {
     pkgname.rsplit_once('-').map_or("", |(_, v)| v)
+}
+
+/**
+ * Return the `PKGVERSION_NOREV` portion of a package version, i.e. the
+ * version with any trailing `nb<n>` revision marker stripped.
+ *
+ * Splits at the final `nb` substring, matching the behaviour of
+ * [`pkgrevision`].  Returns the input unchanged when no `nb` marker is
+ * present.
+ */
+#[must_use]
+pub fn pkgversion_norev(pkgversion: &str) -> &str {
+    pkgversion
+        .rsplit_once("nb")
+        .map_or(pkgversion, |(before, _)| before)
+}
+
+/**
+ * Return the `PKGREVISION` parsed from a package version, i.e. the
+ * integer following the final `nb`.
+ *
+ * Returns [`None`] when no `nb` marker is present, [`Some(0)`] when the
+ * marker is present but the digits cannot be parsed as an [`i64`] (or
+ * are absent entirely).
+ */
+#[must_use]
+pub fn pkgrevision(pkgversion: &str) -> Option<i64> {
+    pkgversion
+        .rsplit_once("nb")
+        .map(|(_, v)| v.parse::<i64>().unwrap_or(0))
 }
 
 impl PkgName {
@@ -160,14 +195,9 @@ impl PkgName {
     #[must_use]
     pub fn new(pkgname: &str) -> Self {
         let split = pkgname.rfind('-').unwrap_or(pkgname.len());
-        let pkgrevision = match pkgversion(pkgname).rsplit_once("nb") {
-            Some((_, v)) => v.parse::<i64>().ok().or(Some(0)),
-            None => None,
-        };
         Self {
             pkgname: pkgname.to_string(),
             split,
-            pkgrevision,
         }
     }
 
@@ -198,18 +228,30 @@ impl PkgName {
      */
     #[must_use]
     pub fn pkgversion(&self) -> &str {
-        pkgversion(&self.pkgname)
+        if self.split < self.pkgname.len() {
+            &self.pkgname[self.split + 1..]
+        } else {
+            ""
+        }
     }
 
     /**
-     * Return an optional `PKGREVISION`, i.e. the `nb<x>` suffix that denotes
-     * a pkgsrc revision.  If any characters after the `nb` cannot be parsed
-     * as an [`i64`] then [`None`] is returned.  If there are no characters at
-     * all after the `nb` then `Some(0)` is returned.
+     * Return a [`str`] reference containing the `PKGVERSION_NOREV` of the
+     * package name, i.e. the version with any `nb<x>` revision marker
+     * stripped.
      */
     #[must_use]
-    pub const fn pkgrevision(&self) -> Option<i64> {
-        self.pkgrevision
+    pub fn pkgversion_norev(&self) -> &str {
+        pkgversion_norev(self.pkgversion())
+    }
+
+    /**
+     * Return the `PKGREVISION` of the package name.  See [`pkgrevision`]
+     * for the parsing rules.
+     */
+    #[must_use]
+    pub fn pkgrevision(&self) -> Option<i64> {
+        pkgrevision(self.pkgversion())
     }
 }
 
