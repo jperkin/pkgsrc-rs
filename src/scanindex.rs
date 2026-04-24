@@ -469,7 +469,8 @@ pub struct ScanIndex {
     ///
     /// When parsing presolve files (scan output augmented with resolution
     /// results), this field will contain the resolved dependencies. When
-    /// parsing raw scan output, this field will be `None`.
+    /// parsing raw scan output, this field will be `None`.  Consumers that
+    /// just want a slice can use [`depends`](Self::depends).
     ///
     /// [`all_depends`]: ScanIndex::all_depends
     #[kv(variable = "DEPENDS")]
@@ -538,6 +539,15 @@ impl ScanIndex {
         Report(self)
     }
 
+    /**
+     * Resolved dependencies as a slice.  Returns `&[]` when
+     * [`resolved_depends`](Self::resolved_depends) is `None`.
+     */
+    #[must_use]
+    pub fn depends(&self) -> &[PkgName] {
+        self.resolved_depends.as_deref().unwrap_or(&[])
+    }
+
     fn fmt_record(
         &self,
         f: &mut fmt::Formatter<'_>,
@@ -584,17 +594,16 @@ impl ScanIndex {
             }
         }
         if !matches!(mode, FormatMode::Pscan) {
-            if let Some(ref deps) = self.resolved_depends {
-                if !deps.is_empty() {
-                    write!(f, "DEPENDS=")?;
-                    for (i, d) in deps.iter().enumerate() {
-                        if i > 0 {
-                            write!(f, " ")?;
-                        }
-                        write!(f, "{d}")?;
+            let deps = self.depends();
+            if !deps.is_empty() {
+                write!(f, "DEPENDS=")?;
+                for (i, d) in deps.iter().enumerate() {
+                    if i > 0 {
+                        write!(f, " ")?;
                     }
-                    writeln!(f)?;
+                    write!(f, "{d}")?;
                 }
+                writeln!(f)?;
             }
         }
         Ok(())
@@ -965,6 +974,7 @@ mod tests {
         let input = "PKGNAME=test-1.0\n";
         let index = ScanIndex::from_str(input)?;
         assert!(index.resolved_depends.is_none());
+        assert!(index.depends().is_empty());
         assert!(!index.presolve().to_string().contains("\nDEPENDS="));
         assert!(!index.pscan().to_string().contains("\nDEPENDS="));
         Ok(())
@@ -976,10 +986,7 @@ mod tests {
 
         let input = "PKGNAME=test-1.0\nDEPENDS=foo-1.0 bar-2.0\n";
         let index = ScanIndex::from_str(input)?;
-        let deps = index
-            .resolved_depends
-            .as_ref()
-            .ok_or(KvError::Incomplete("resolved_depends".to_string()))?;
+        let deps = index.depends();
         assert_eq!(deps.len(), 2);
         assert_eq!(deps[0].pkgname(), "foo-1.0");
         assert_eq!(deps[1].pkgname(), "bar-2.0");

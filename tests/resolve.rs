@@ -176,11 +176,9 @@ fn resolve_full_scan() -> Result<(), ResolveError> {
     }
     let mut rev_deps: Vec<Vec<usize>> = vec![Vec::new(); packages.len()];
     for (i, p) in packages.iter().enumerate() {
-        if let Some(deps) = &p.resolved_depends {
-            for d in deps {
-                if let Some(&j) = pkg_to_idx.get(d.pkgname()) {
-                    rev_deps[j].push(i);
-                }
+        for d in p.depends() {
+            if let Some(&j) = pkg_to_idx.get(d.pkgname()) {
+                rev_deps[j].push(i);
             }
         }
     }
@@ -249,7 +247,10 @@ fn resolve_full_scan() -> Result<(), ResolveError> {
     zstd::stream::Decoder::new(File::open(&report_path)?)?
         .read_to_string(&mut expected)?;
 
-    assert_eq!(rendered, expected, "report() output differs from report.zst");
+    assert_eq!(
+        rendered, expected,
+        "report() output differs from report.zst"
+    );
 
     Ok(())
 }
