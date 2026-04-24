@@ -484,8 +484,65 @@ impl FromStr for ScanIndex {
     }
 }
 
-impl fmt::Display for ScanIndex {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+/**
+ * Which record format the common writer should emit.  Selected by the
+ * [`Pscan`], [`Presolve`], and [`Report`] wrappers.
+ */
+#[derive(Clone, Copy)]
+enum FormatMode {
+    /// `bmake pbulk-index` scanner output: includes `PBULK_WEIGHT`, no `DEPENDS`.
+    Pscan,
+    /// Resolved scan output: scanner output plus resolved `DEPENDS`.
+    Presolve,
+    /// pbulk report record: like [`Presolve`](Self::Presolve) but without `PBULK_WEIGHT`.
+    Report,
+}
+
+impl ScanIndex {
+    /**
+     * Format as `bmake pbulk-index` scanner output.
+     *
+     * This is the raw pre-resolution format as emitted by the `pbulk-index`
+     * target in pkgsrc: all static metadata about a package, including
+     * `PBULK_WEIGHT`, but without `DEPENDS` (which is populated later by a
+     * resolver).  Use this when producing input for a resolver, or when
+     * round-tripping scanner output.
+     */
+    #[must_use]
+    pub fn pscan(&self) -> Pscan<'_> {
+        Pscan(self)
+    }
+
+    /**
+     * Format as resolved scan output.
+     *
+     * Equivalent to [`pscan`](Self::pscan) plus a `DEPENDS=` line when
+     * [`resolved_depends`](Self::resolved_depends) is populated.  This is the
+     * format a resolver emits after mapping `ALL_DEPENDS` patterns onto
+     * concrete package names.
+     */
+    #[must_use]
+    pub fn presolve(&self) -> Presolve<'_> {
+        Presolve(self)
+    }
+
+    /**
+     * Format as a pbulk report record.
+     *
+     * Equivalent to [`presolve`](Self::presolve) without the `PBULK_WEIGHT`
+     * line.  Matches the per-package block emitted in pbulk's `report` file
+     * (the caller appends `PKG_DEPTH` and `BUILD_STATUS` themselves).
+     */
+    #[must_use]
+    pub fn report(&self) -> Report<'_> {
+        Report(self)
+    }
+
+    fn fmt_record(
+        &self,
+        f: &mut fmt::Formatter<'_>,
+        mode: FormatMode,
+    ) -> fmt::Result {
         writeln!(f, "PKGNAME={}", self.pkgname)?;
         if let Some(ref v) = self.pkg_location {
             writeln!(f, "PKG_LOCATION={v}")?;
@@ -512,8 +569,10 @@ impl fmt::Display for ScanIndex {
         if let Some(ref v) = self.make_jobs_safe {
             writeln!(f, "MAKE_JOBS_SAFE={v}")?;
         }
-        if let Some(ref v) = self.pbulk_weight {
-            writeln!(f, "PBULK_WEIGHT={v}")?;
+        if !matches!(mode, FormatMode::Report) {
+            if let Some(ref v) = self.pbulk_weight {
+                writeln!(f, "PBULK_WEIGHT={v}")?;
+            }
         }
         if let Some(ref vars) = self.multi_version {
             if !vars.is_empty() {
@@ -524,19 +583,60 @@ impl fmt::Display for ScanIndex {
                 writeln!(f)?;
             }
         }
-        if let Some(ref deps) = self.resolved_depends {
-            if !deps.is_empty() {
-                write!(f, "DEPENDS=")?;
-                for (i, d) in deps.iter().enumerate() {
-                    if i > 0 {
-                        write!(f, " ")?;
+        if !matches!(mode, FormatMode::Pscan) {
+            if let Some(ref deps) = self.resolved_depends {
+                if !deps.is_empty() {
+                    write!(f, "DEPENDS=")?;
+                    for (i, d) in deps.iter().enumerate() {
+                        if i > 0 {
+                            write!(f, " ")?;
+                        }
+                        write!(f, "{d}")?;
                     }
-                    write!(f, "{d}")?;
+                    writeln!(f)?;
                 }
-                writeln!(f)?;
             }
         }
         Ok(())
+    }
+}
+
+/**
+ * [`Display`](fmt::Display) wrapper for `bmake pbulk-index` scanner output.
+ *
+ * Created by [`ScanIndex::pscan`].
+ */
+pub struct Pscan<'a>(&'a ScanIndex);
+
+impl fmt::Display for Pscan<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.0.fmt_record(f, FormatMode::Pscan)
+    }
+}
+
+/**
+ * [`Display`](fmt::Display) wrapper for resolved scan output.
+ *
+ * Created by [`ScanIndex::presolve`].
+ */
+pub struct Presolve<'a>(&'a ScanIndex);
+
+impl fmt::Display for Presolve<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.0.fmt_record(f, FormatMode::Presolve)
+    }
+}
+
+/**
+ * [`Display`](fmt::Display) wrapper for a pbulk report record.
+ *
+ * Created by [`ScanIndex::report`].
+ */
+pub struct Report<'a>(&'a ScanIndex);
+
+impl fmt::Display for Report<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.0.fmt_record(f, FormatMode::Report)
     }
 }
 
@@ -841,7 +941,7 @@ mod tests {
     }
 
     #[test]
-    fn display_roundtrip() -> anyhow::Result<()> {
+    fn pscan_roundtrip() -> anyhow::Result<()> {
         let mut scanfile = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
         scanfile.push("tests/data/scanindex/pbulk-index.txt");
         let file = File::open(&scanfile)?;
@@ -849,7 +949,8 @@ mod tests {
         let original: Vec<_> =
             ScanIndex::from_reader(reader).collect::<Result<_, _>>()?;
 
-        let output: String = original.iter().map(|s| s.to_string()).collect();
+        let output: String =
+            original.iter().map(|s| s.pscan().to_string()).collect();
         let reparsed: Vec<_> = ScanIndex::from_reader(output.as_bytes())
             .collect::<Result<_, _>>()?;
 
@@ -864,7 +965,8 @@ mod tests {
         let input = "PKGNAME=test-1.0\n";
         let index = ScanIndex::from_str(input)?;
         assert!(index.resolved_depends.is_none());
-        assert!(!index.to_string().contains("\nDEPENDS="));
+        assert!(!index.presolve().to_string().contains("\nDEPENDS="));
+        assert!(!index.pscan().to_string().contains("\nDEPENDS="));
         Ok(())
     }
 
@@ -881,7 +983,14 @@ mod tests {
         assert_eq!(deps.len(), 2);
         assert_eq!(deps[0].pkgname(), "foo-1.0");
         assert_eq!(deps[1].pkgname(), "bar-2.0");
-        assert!(index.to_string().contains("DEPENDS=foo-1.0 bar-2.0"));
+        assert!(
+            index
+                .presolve()
+                .to_string()
+                .contains("DEPENDS=foo-1.0 bar-2.0")
+        );
+        // pscan omits DEPENDS even when resolved_depends is populated.
+        assert!(!index.pscan().to_string().contains("\nDEPENDS="));
         Ok(())
     }
 
@@ -891,7 +1000,7 @@ mod tests {
 
         let input = "PKGNAME=test-1.0\nDEPENDS=foo-1.0 bar-2.0\n";
         let index = ScanIndex::from_str(input)?;
-        let output = index.to_string();
+        let output = index.presolve().to_string();
         let reparsed = ScanIndex::from_str(&output)?;
         assert_eq!(index.resolved_depends, reparsed.resolved_depends);
         Ok(())
