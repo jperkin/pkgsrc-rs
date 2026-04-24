@@ -105,8 +105,8 @@
  * ```
  */
 
-use crate::PkgName;
 use crate::dewey::{Dewey, DeweyError, DeweyOp, DeweyVersion, dewey_cmp};
+use crate::pkgname::{pkgversion, pkgversion_norev};
 use hashbrown::HashMap;
 use hashbrown::hash_map::EntryRef;
 use std::fmt;
@@ -116,7 +116,7 @@ use thiserror::Error;
 /**
  * Characters that indicate the start of a glob pattern.
  */
-const GLOB_START: [char; 3] = ['*', '?', '['];
+const GLOB_START: [u8; 3] = [b'*', b'?', b'['];
 
 #[cfg(feature = "serde")]
 use serde_with::{DeserializeFromStr, SerializeDisplay};
@@ -472,8 +472,8 @@ impl Pattern {
         let Some(current) = current else {
             return Ok(Some(candidate));
         };
-        let d1 = DeweyVersion::new(PkgName::new(current).pkgversion())?;
-        let d2 = DeweyVersion::new(PkgName::new(candidate).pkgversion())?;
+        let d1 = DeweyVersion::new(pkgversion(current))?;
+        let d2 = DeweyVersion::new(pkgversion(candidate))?;
         if dewey_cmp(&d1, &DeweyOp::GT, &d2) {
             Ok(Some(current))
         } else if dewey_cmp(&d1, &DeweyOp::LT, &d2) {
@@ -494,50 +494,83 @@ impl Pattern {
     }
 
     /**
-     * Return the package base name this pattern matches, if known.
+     * Return the set of package base names this pattern may match, if known.
      *
-     * Returns [`Some`] for Dewey, Simple, and Glob patterns where the base
-     * name can be determined.  Returns [`None`] for Alternate patterns and
-     * Glob patterns where the base name contains a glob.
+     * Returns [`Some`] when every alternative of the pattern resolves to a
+     * determinable base.  Simple, Dewey, and version-pinning Glob patterns
+     * yield a single-element [`Vec`].  Alternate patterns yield one entry
+     * per distinct base across their alternatives, in first-occurrence
+     * order.
      *
-     * This is useful for building an index to speed up matching:
+     * Returns [`None`] when the base cannot be determined: a Glob pattern
+     * where the base itself contains a glob (e.g. `foo*-1.0`), or an
+     * Alternate pattern where at least one alternative cannot be narrowed.
+     * `None` means "unknown, the caller must full-scan", not "no matches".
+     *
+     * The returned [`Vec`] is always non-empty when [`Some`]; an empty
+     * [`Vec`] is never returned.
+     *
+     * This is useful for building an index to speed up matching: the
+     * caller can restrict candidate package names to those whose base
+     * appears in the returned set, falling back to a full scan when
+     * [`None`] is returned.
      *
      * ```
      * use pkgsrc::Pattern;
      *
      * let p = Pattern::new("foo>=1.0")?;
-     * assert_eq!(p.pkgbase(), Some("foo"));
-     *
-     * let p = Pattern::new("foo-1.0")?;
-     * assert_eq!(p.pkgbase(), Some("foo"));
+     * assert_eq!(p.pkgbases(), Some(vec!["foo"]));
      *
      * let p = Pattern::new("foo-[0-9]*")?;
-     * assert_eq!(p.pkgbase(), Some("foo"));
+     * assert_eq!(p.pkgbases(), Some(vec!["foo"]));
+     *
+     * let p = Pattern::new("{mysql,mariadb}-client-[0-9]*")?;
+     * assert_eq!(
+     *     p.pkgbases(),
+     *     Some(vec!["mysql-client", "mariadb-client"]),
+     * );
      *
      * let p = Pattern::new("foo*-1.0")?;
-     * assert_eq!(p.pkgbase(), None);
+     * assert_eq!(p.pkgbases(), None);
      * # Ok::<(), pkgsrc::PatternError>(())
      * ```
      */
     #[must_use]
-    pub fn pkgbase(&self) -> Option<&str> {
+    pub fn pkgbases(&self) -> Option<Vec<&str>> {
         match self.matchtype {
-            PatternType::Dewey(ref dewey) => Some(dewey.pkgbase()),
+            PatternType::Dewey(ref dewey) => Some(vec![dewey.pkgbase()]),
             PatternType::Simple => {
-                self.pattern.rsplit_once('-').map(|(b, _)| b)
+                self.pattern.rsplit_once('-').map(|(b, _)| vec![b])
             }
             PatternType::Glob(_) => {
-                let end =
-                    self.pattern.find(GLOB_START).unwrap_or(self.pattern.len());
+                let end = self
+                    .pattern
+                    .bytes()
+                    .position(|b| GLOB_START.contains(&b))
+                    .unwrap_or(self.pattern.len());
                 let prefix = &self.pattern[..end];
-                prefix.strip_suffix('-').or_else(|| {
+                let base = prefix.strip_suffix('-').or_else(|| {
                     let (base, ver) = prefix.rsplit_once('-')?;
-                    (!ver.is_empty()
-                        && ver.chars().all(|c| c.is_ascii_digit() || c == '.'))
+                    let norev = pkgversion_norev(ver);
+                    (norev.starts_with(|c: char| c.is_ascii_digit())
+                        && norev
+                            .bytes()
+                            .all(|b| b.is_ascii_digit() || b == b'.'))
                     .then_some(base)
-                })
+                })?;
+                Some(vec![base])
             }
-            PatternType::Alternate(_) => None,
+            PatternType::Alternate(ref patterns) => {
+                let mut bases = Vec::with_capacity(patterns.len());
+                for pattern in patterns {
+                    for base in pattern.pkgbases()? {
+                        if !bases.contains(&base) {
+                            bases.push(base);
+                        }
+                    }
+                }
+                Some(bases)
+            }
         }
     }
 
@@ -1022,117 +1055,149 @@ mod tests {
     }
 
     #[test]
-    fn pattern_pkgbase() -> Result<(), PatternError> {
+    fn pattern_pkgbases() -> Result<(), PatternError> {
         // Glob patterns
         let p = Pattern::new("foo-[0-9]*")?;
-        assert_eq!(p.pkgbase(), Some("foo"));
+        assert_eq!(p.pkgbases(), Some(vec!["foo"]));
         let p = Pattern::new("mpg123-nas-[0-9]*")?;
-        assert_eq!(p.pkgbase(), Some("mpg123-nas"));
+        assert_eq!(p.pkgbases(), Some(vec!["mpg123-nas"]));
         let p = Pattern::new("foo-1.[0-9]*")?;
-        assert_eq!(p.pkgbase(), Some("foo"));
+        assert_eq!(p.pkgbases(), Some(vec!["foo"]));
         let p = Pattern::new("foo-bar*-1")?;
-        assert_eq!(p.pkgbase(), None);
+        assert_eq!(p.pkgbases(), None);
         let p = Pattern::new("*-1.0")?;
-        assert_eq!(p.pkgbase(), None);
+        assert_eq!(p.pkgbases(), None);
         let p = Pattern::new("fo?-[0-9]*")?;
-        assert_eq!(p.pkgbase(), None);
+        assert_eq!(p.pkgbases(), None);
 
-        /*
-         * Version-pinning globs: the text between the last '-' and the
-         * first glob char consists only of digits and dots, so it is
-         * treated as a version prefix and the base is extracted.
-         */
+        // Version-pinning globs.
         let p = Pattern::new("boost-headers-1.90.*")?;
-        assert_eq!(p.pkgbase(), Some("boost-headers"));
+        assert_eq!(p.pkgbases(), Some(vec!["boost-headers"]));
         let p = Pattern::new("foo-1.[0-9]")?;
-        assert_eq!(p.pkgbase(), Some("foo"));
+        assert_eq!(p.pkgbases(), Some(vec!["foo"]));
         let p = Pattern::new("foo-1.*")?;
-        assert_eq!(p.pkgbase(), Some("foo"));
+        assert_eq!(p.pkgbases(), Some(vec!["foo"]));
         let p = Pattern::new("foo-10*")?;
-        assert_eq!(p.pkgbase(), Some("foo"));
+        assert_eq!(p.pkgbases(), Some(vec!["foo"]));
         let p = Pattern::new("lib2to3-3.1[0-9]*")?;
-        assert_eq!(p.pkgbase(), Some("lib2to3"));
+        assert_eq!(p.pkgbases(), Some(vec!["lib2to3"]));
         let p = Pattern::new("R-4.*")?;
-        assert_eq!(p.pkgbase(), Some("R"));
+        assert_eq!(p.pkgbases(), Some(vec!["R"]));
         let p = Pattern::new("p5-IO-1.2[0-9]*")?;
-        assert_eq!(p.pkgbase(), Some("p5-IO"));
+        assert_eq!(p.pkgbases(), Some(vec!["p5-IO"]));
+        let p = Pattern::new("qt5-qtbase-5.15.18nb[0-9]*")?;
+        assert_eq!(p.pkgbases(), Some(vec!["qt5-qtbase"]));
 
-        /*
-         * Non-version text after the last '-': contains letters or
-         * other non-version characters, so the fallback does not apply
-         * and pkgbase returns None to force a full scan.
-         */
+        // Non-version text after the last '-' forces full scan.
         let p = Pattern::new("foo-bar*")?;
-        assert_eq!(p.pkgbase(), None);
+        assert_eq!(p.pkgbases(), None);
         let p = Pattern::new("foo-abc[0-9]*")?;
-        assert_eq!(p.pkgbase(), None);
+        assert_eq!(p.pkgbases(), None);
         let p = Pattern::new("foo-2bar*")?;
-        assert_eq!(p.pkgbase(), None);
+        assert_eq!(p.pkgbases(), None);
         let p = Pattern::new("foo-1alpha*")?;
-        assert_eq!(p.pkgbase(), None);
+        assert_eq!(p.pkgbases(), None);
         let p = Pattern::new("foo-1.0rc*")?;
-        assert_eq!(p.pkgbase(), None);
+        assert_eq!(p.pkgbases(), None);
 
-        /*
-         * Packages with digits in name components.  These all use the
-         * standard "-[0-9]*" form so strip_suffix('-') handles them,
-         * but the fallback must also be safe if a version-pinning glob
-         * were ever used (e.g. "font-adobe-100dpi-1.*").
-         */
+        // Packages with digits in name components.
         let p = Pattern::new("font-adobe-100dpi-[0-9]*")?;
-        assert_eq!(p.pkgbase(), Some("font-adobe-100dpi"));
+        assert_eq!(p.pkgbases(), Some(vec!["font-adobe-100dpi"]));
         let p = Pattern::new("font-adobe-100dpi-1.*")?;
-        assert_eq!(p.pkgbase(), Some("font-adobe-100dpi"));
+        assert_eq!(p.pkgbases(), Some(vec!["font-adobe-100dpi"]));
         let p = Pattern::new("fuse-ntfs-3g-[0-9]*")?;
-        assert_eq!(p.pkgbase(), Some("fuse-ntfs-3g"));
+        assert_eq!(p.pkgbases(), Some(vec!["fuse-ntfs-3g"]));
         let p = Pattern::new("tex-pst-3dplot-[0-9]*")?;
-        assert_eq!(p.pkgbase(), Some("tex-pst-3dplot"));
+        assert_eq!(p.pkgbases(), Some(vec!["tex-pst-3dplot"]));
         let p = Pattern::new("tex-2up-[0-9]*")?;
-        assert_eq!(p.pkgbase(), Some("tex-2up"));
+        assert_eq!(p.pkgbases(), Some(vec!["tex-2up"]));
         let p = Pattern::new("nerd-fonts-3270-[0-9]*")?;
-        assert_eq!(p.pkgbase(), Some("nerd-fonts-3270"));
+        assert_eq!(p.pkgbases(), Some(vec!["nerd-fonts-3270"]));
         let p = Pattern::new("u-boot-rpi3-32-[0-9]*")?;
-        assert_eq!(p.pkgbase(), Some("u-boot-rpi3-32"));
+        assert_eq!(p.pkgbases(), Some(vec!["u-boot-rpi3-32"]));
 
-        /*
-         * Real version-pinning patterns from pkgsrc.
-         */
+        // Real version-pinning patterns from pkgsrc.
         let p = Pattern::new("boost-libs-1.90.*")?;
-        assert_eq!(p.pkgbase(), Some("boost-libs"));
+        assert_eq!(p.pkgbases(), Some(vec!["boost-libs"]));
         let p = Pattern::new("SDL-1.2.[0-9]*")?;
-        assert_eq!(p.pkgbase(), Some("SDL"));
+        assert_eq!(p.pkgbases(), Some(vec!["SDL"]));
         let p = Pattern::new("mongodb-3*")?;
-        assert_eq!(p.pkgbase(), Some("mongodb"));
+        assert_eq!(p.pkgbases(), Some(vec!["mongodb"]));
         let p = Pattern::new("python27-2.7.*")?;
-        assert_eq!(p.pkgbase(), Some("python27"));
+        assert_eq!(p.pkgbases(), Some(vec!["python27"]));
         let p = Pattern::new("go14-1.4*")?;
-        assert_eq!(p.pkgbase(), Some("go14"));
+        assert_eq!(p.pkgbases(), Some(vec!["go14"]));
         let p = Pattern::new("go110-1.10.*")?;
-        assert_eq!(p.pkgbase(), Some("go110"));
+        assert_eq!(p.pkgbases(), Some(vec!["go110"]));
         let p = Pattern::new("mariadb-client-10.11.*")?;
-        assert_eq!(p.pkgbase(), Some("mariadb-client"));
+        assert_eq!(p.pkgbases(), Some(vec!["mariadb-client"]));
         let p = Pattern::new("gcc10-aux-10.*")?;
-        assert_eq!(p.pkgbase(), Some("gcc10-aux"));
+        assert_eq!(p.pkgbases(), Some(vec!["gcc10-aux"]));
         let p = Pattern::new("binutils-2.22*")?;
-        assert_eq!(p.pkgbase(), Some("binutils"));
+        assert_eq!(p.pkgbases(), Some(vec!["binutils"]));
         let p = Pattern::new("gtar-base-1.*")?;
-        assert_eq!(p.pkgbase(), Some("gtar-base"));
+        assert_eq!(p.pkgbases(), Some(vec!["gtar-base"]));
 
         // Alternate patterns
         let p = Pattern::new("{foo,bar}-[0-9]*")?;
-        assert_eq!(p.pkgbase(), None);
+        assert_eq!(p.pkgbases(), Some(vec!["foo", "bar"]));
+        let p = Pattern::new("qt5-qtbase-5.15.18{,nb[0-9]*}")?;
+        assert_eq!(p.pkgbases(), Some(vec!["qt5-qtbase"]));
+        let p = Pattern::new("boost-build-1.90{,nb*,.*}")?;
+        assert_eq!(p.pkgbases(), Some(vec!["boost-build"]));
+        let p = Pattern::new("mpg123{,-esound,-nas}>=0.59.18")?;
+        assert_eq!(
+            p.pkgbases(),
+            Some(vec!["mpg123", "mpg123-esound", "mpg123-nas"])
+        );
+        let p = Pattern::new("{gzip>=1.2.4b,gzip-base>=1.2.4b}")?;
+        assert_eq!(p.pkgbases(), Some(vec!["gzip", "gzip-base"]));
+        let p = Pattern::new("foo{,bar*}")?;
+        assert_eq!(p.pkgbases(), None);
+
+        // Nested braces: outer Alternate of inner Alternates.
+        let p = Pattern::new("{foo,{bar,baz}}-1.0")?;
+        assert_eq!(p.pkgbases(), Some(vec!["foo", "bar", "baz"]));
+
+        // Mixed Dewey + Simple + Glob alternatives.
+        let p = Pattern::new("{foo>=1.0,bar-1.0,baz-[0-9]*}")?;
+        assert_eq!(p.pkgbases(), Some(vec!["foo", "bar", "baz"]));
+
+        // Cartesian expansion (two brace groups).
+        let p = Pattern::new("{tcl,tk}-{8,9}.*")?;
+        assert_eq!(p.pkgbases(), Some(vec!["tcl", "tk"]));
+
+        // Brace inside the version part: dedups to a single base.
+        let p = Pattern::new("foo-1.{0,2,4}")?;
+        assert_eq!(p.pkgbases(), Some(vec!["foo"]));
+
+        // All alternatives unbreakable: None (not just any).
+        let p = Pattern::new("{foo*,bar*}-1.0")?;
+        assert_eq!(p.pkgbases(), None);
+
+        // Single-element brace: degenerate but should work.
+        let p = Pattern::new("{foo}-1.0")?;
+        assert_eq!(p.pkgbases(), Some(vec!["foo"]));
+
+        // Glob alternative paired with a non-Glob alternative.
+        let p = Pattern::new("{foo-[0-9]*,bar>=1.0}")?;
+        assert_eq!(p.pkgbases(), Some(vec!["foo", "bar"]));
+
+        // Extractable Glob paired with an unbreakable Glob: None.
+        let p = Pattern::new("{foo-[0-9]*,bar*-1.0}")?;
+        assert_eq!(p.pkgbases(), None);
 
         // Dewey patterns
         let p = Pattern::new("foo>=1.0")?;
-        assert_eq!(p.pkgbase(), Some("foo"));
+        assert_eq!(p.pkgbases(), Some(vec!["foo"]));
         let p = Pattern::new("pkg-name>=2.0<3.0")?;
-        assert_eq!(p.pkgbase(), Some("pkg-name"));
+        assert_eq!(p.pkgbases(), Some(vec!["pkg-name"]));
 
         // Simple patterns
         let p = Pattern::new("foo-1.0")?;
-        assert_eq!(p.pkgbase(), Some("foo"));
+        assert_eq!(p.pkgbases(), Some(vec!["foo"]));
         let p = Pattern::new("pkg-name-2.0nb1")?;
-        assert_eq!(p.pkgbase(), Some("pkg-name"));
+        assert_eq!(p.pkgbases(), Some(vec!["pkg-name"]));
 
         Ok(())
     }

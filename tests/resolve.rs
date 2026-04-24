@@ -63,16 +63,21 @@ fn resolve_full_scan() -> Result<(), ResolveError> {
             total_patterns += 1;
             let pattern = cache.compile(dep.pattern())?;
 
-            let candidates: &[&PkgName] = match pattern.pkgbase() {
-                Some(base) => {
-                    by_base.get(base).map(|v| v.as_slice()).unwrap_or(&[])
-                }
-                None => &pkgnames,
-            };
-
             let mut best: Option<&str> = None;
-            for candidate in candidates {
-                best = pattern.best_match_pbulk(best, candidate.pkgname())?;
+            if let Some(bases) = pattern.pkgbases() {
+                for base in bases {
+                    if let Some(candidates) = by_base.get(base) {
+                        for candidate in candidates {
+                            best = pattern
+                                .best_match_pbulk(best, candidate.pkgname())?;
+                        }
+                    }
+                }
+            } else {
+                for candidate in &pkgnames {
+                    best =
+                        pattern.best_match_pbulk(best, candidate.pkgname())?;
+                }
             }
 
             if best.is_none() {
