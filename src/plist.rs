@@ -741,9 +741,9 @@ impl Plist {
                         let mut path = OsString::new();
                         if let Some(pfx) = &prefix {
                             path.push(pfx);
-                        }
-                        if !path.to_string_lossy().ends_with('/') {
-                            path.push("/");
+                            if !pfx.as_os_str().as_bytes().ends_with(b"/") {
+                                path.push("/");
+                            }
                         }
                         path.push(file);
                         Some(path)
@@ -1341,6 +1341,10 @@ mod tests {
             plist.files_prefixed(),
             ["/opt/pkg/bin/good", "/bin/evil", "/opt/pkg/bin/ok"]
         );
+
+        let plist = Plist::from_bytes(b"bin/relative\n")?;
+        assert_eq!(plist.files(), ["bin/relative"]);
+        assert_eq!(plist.files_prefixed(), ["bin/relative"]);
         Ok(())
     }
     /*
