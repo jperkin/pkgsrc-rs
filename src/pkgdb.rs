@@ -34,8 +34,8 @@
  *   metadata in a single file.  This format is not yet implemented.
  *
  * The format is detected automatically when opening a pkgdb: directories
- * use the Files format, while regular files are assumed to be SQLite
- * databases.
+ * use the Files format.  SQLite databases are reserved for future support;
+ * opening a regular file currently returns an unsupported-operation error.
  *
  * # Example
  *
@@ -129,11 +129,10 @@ impl PkgDB {
                 readdir: Some(readdir),
             })
         } else if path.is_file() {
-            Ok(PkgDB {
-                dbtype: DBType::Database,
-                path: path.to_path_buf(),
-                readdir: None,
-            })
+            Err(io::Error::new(
+                io::ErrorKind::Unsupported,
+                "sqlite pkgdb is not implemented",
+            ))
         } else {
             Err(io::Error::new(io::ErrorKind::NotFound, "Invalid pkgdb"))
         }
