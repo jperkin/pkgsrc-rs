@@ -325,6 +325,10 @@ pub enum ArchiveError {
     #[error("unsupported compression: {0}")]
     UnsupportedCompression(String),
 
+    /// Unsupported operation.
+    #[error("unsupported operation: {0}")]
+    UnsupportedOperation(String),
+
     /// Summary generation error.
     #[error("summary error: {0}")]
     Summary(String),
@@ -1225,6 +1229,17 @@ impl BinaryPackage {
         let dest = dest.as_ref();
         let mut extracted = Vec::new();
 
+        if options.apply_ownership {
+            return Err(ArchiveError::UnsupportedOperation(
+                "plist ownership application is not implemented".into(),
+            ));
+        }
+        if options.preserve_mtime {
+            return Err(ArchiveError::UnsupportedOperation(
+                "mtime preservation is not implemented".into(),
+            ));
+        }
+
         // Build a map of file paths to their plist metadata
         let file_infos: HashMap<OsString, FileInfo> = self
             .plist
@@ -1265,19 +1280,6 @@ impl BinaryPackage {
                                 applied_mode = Some(mode);
                             }
                         }
-                    }
-                }
-            }
-
-            // Apply ownership from plist if requested
-            // Note: This requires root privileges
-            #[cfg(unix)]
-            if options.apply_ownership && !is_metadata {
-                if let Some(info) = file_info {
-                    if info.owner.is_some() || info.group.is_some() {
-                        // Ownership changes require the nix crate or libc
-                        // For now, we just note it in the result but don't apply
-                        // To implement: use nix::unistd::{chown, Uid, Gid}
                     }
                 }
             }
