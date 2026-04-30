@@ -160,9 +160,6 @@ impl Compression {
     /// Detect compression format from magic bytes.
     #[must_use]
     pub fn from_magic(bytes: &[u8]) -> Option<Self> {
-        if bytes.len() < ZSTD_MAGIC.len() {
-            return None;
-        }
         if bytes.starts_with(&GZIP_MAGIC) {
             Some(Self::Gzip)
         } else if bytes.starts_with(&ZSTD_MAGIC) {
@@ -1844,6 +1841,10 @@ mod tests {
         assert_eq!(
             Compression::from_magic(&[0x28, 0xb5, 0x2f, 0xfd, 0, 0]),
             Some(Compression::Zstd)
+        );
+        assert_eq!(
+            Compression::from_magic(&[0x1f, 0x8b]),
+            Some(Compression::Gzip)
         );
         assert_eq!(Compression::from_magic(&[0, 0, 0, 0, 0, 0]), None);
     }
