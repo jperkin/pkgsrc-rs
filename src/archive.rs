@@ -916,7 +916,12 @@ impl BinaryPackage {
             // Pre-allocate based on entry size to avoid reallocation during read
             let entry_size = entry.header().size().unwrap_or(0) as usize;
             let mut content = String::with_capacity(entry_size);
-            entry.read_to_string(&mut content)?;
+            entry.read_to_string(&mut content).map_err(|e| {
+                io::Error::new(
+                    e.kind(),
+                    format!("{}: {}", entry_path.display(), e),
+                )
+            })?;
             metadata.read_metadata(entry_type, &content).map_err(|e| {
                 ArchiveError::InvalidMetadata(format!(
                     "{}: {}",
@@ -986,7 +991,9 @@ impl BinaryPackage {
             match name.as_str() {
                 "+PKG_HASH" => {
                     let mut content = String::new();
-                    entry.read_to_string(&mut content)?;
+                    entry.read_to_string(&mut content).map_err(|e| {
+                        io::Error::new(e.kind(), format!("{name}: {e}"))
+                    })?;
                     pkg_hash_content = Some(content);
                 }
                 "+PKG_GPG_SIGNATURE" => {
@@ -1026,7 +1033,14 @@ impl BinaryPackage {
                         let entry_size =
                             tar_entry.header().size().unwrap_or(0) as usize;
                         let mut content = String::with_capacity(entry_size);
-                        tar_entry.read_to_string(&mut content)?;
+                        tar_entry.read_to_string(&mut content).map_err(
+                            |e| {
+                                io::Error::new(
+                                    e.kind(),
+                                    format!("{}: {}", entry_path.display(), e),
+                                )
+                            },
+                        )?;
                         metadata.read_metadata(entry_type, &content).map_err(
                             |e| {
                                 ArchiveError::InvalidMetadata(format!(
