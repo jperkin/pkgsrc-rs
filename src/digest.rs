@@ -77,6 +77,7 @@
  * [`hashes`]: https://github.com/RustCrypto/hashes
  */
 
+use digest::DynDigest;
 use std::fmt;
 use std::io::{BufRead, BufReader, Read};
 use std::str::FromStr;
@@ -256,6 +257,76 @@ impl Digest {
             Digest::SHA256 => str_hash::<sha2::Sha256>(s),
             Digest::SHA512 => str_hash::<sha2::Sha512>(s),
         }
+    }
+
+    /**
+     * Construct a fresh dynamic hasher for this digest type.  This allows
+     * callers to drive multiple algorithms over a single byte stream rather
+     * than re-reading the input once per algorithm.
+     */
+    pub fn hasher(&self) -> Box<dyn DynDigest> {
+        match self {
+            Digest::BLAKE2s => Box::<blake2::Blake2s256>::default(),
+            Digest::MD5 => Box::<md5::Md5>::default(),
+            Digest::RMD160 => Box::<ripemd::Ripemd160>::default(),
+            Digest::SHA1 => Box::<sha1::Sha1>::default(),
+            Digest::SHA256 => Box::<sha2::Sha256>::default(),
+            Digest::SHA512 => Box::<sha2::Sha512>::default(),
+        }
+    }
+
+    /**
+     * Read `reader` once and compute every digest in `digests`, returning
+     * the lowercase-hex hashes in matching order.  Suitable for distfiles,
+     * where every byte contributes to the hash.
+     */
+    pub fn multi_hash_file<R: Read>(
+        reader: &mut R,
+        digests: &[Digest],
+    ) -> DigestResult<Vec<String>> {
+        let mut hashers: Vec<Box<dyn DynDigest>> =
+            digests.iter().map(Digest::hasher).collect();
+        let mut buf = [0u8; 8192];
+        loop {
+            let n = reader.read(&mut buf)?;
+            if n == 0 {
+                break;
+            }
+            for h in &mut hashers {
+                h.update(&buf[..n]);
+            }
+        }
+        Ok(hashers
+            .into_iter()
+            .map(|h| hex_encode(&h.finalize()))
+            .collect())
+    }
+
+    /**
+     * Read `reader` once and compute every digest in `digests` over the
+     * patch's canonical form (lines containing `$NetBSD` are skipped,
+     * mirroring [`Digest::hash_patch`]).
+     */
+    pub fn multi_hash_patch<R: Read>(
+        reader: &mut R,
+        digests: &[Digest],
+    ) -> DigestResult<Vec<String>> {
+        let mut hashers: Vec<Box<dyn DynDigest>> =
+            digests.iter().map(Digest::hasher).collect();
+        for line in BufReader::new(reader).split(b'\n') {
+            let line = line?;
+            if line.windows(7).any(|w| w == b"$NetBSD") {
+                continue;
+            }
+            for h in &mut hashers {
+                h.update(&line);
+                h.update(b"\n");
+            }
+        }
+        Ok(hashers
+            .into_iter()
+            .map(|h| hex_encode(&h.finalize()))
+            .collect())
     }
 }
 
