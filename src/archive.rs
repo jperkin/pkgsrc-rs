@@ -317,6 +317,10 @@ pub enum ArchiveError {
     #[error("hash verification failed: {0}")]
     HashMismatch(String),
 
+    /// Invalid package hash block size.
+    #[error("invalid package hash block size: {0}")]
+    InvalidBlockSize(usize),
+
     /// Unsupported algorithm.
     #[error("unsupported hash algorithm: {0}")]
     UnsupportedAlgorithm(String),
@@ -452,6 +456,10 @@ impl PkgHash {
         algorithm: PkgHashAlgorithm,
         block_size: usize,
     ) -> Result<Self> {
+        if block_size == 0 {
+            return Err(ArchiveError::InvalidBlockSize(block_size));
+        }
+
         let mut pkg_hash = PkgHash::new(pkgname);
         pkg_hash.algorithm = algorithm;
         pkg_hash.block_size = block_size;
@@ -512,6 +520,10 @@ impl PkgHash {
 
     /// Verify a tarball against this hash.
     pub fn verify<R: Read>(&self, mut reader: R) -> Result<bool> {
+        if self.block_size == 0 {
+            return Err(ArchiveError::InvalidBlockSize(self.block_size));
+        }
+
         let mut buffer = vec![0u8; self.block_size];
         let mut hash_idx = 0;
         let mut total_size: u64 = 0;
@@ -652,6 +664,10 @@ impl std::str::FromStr for PkgHash {
 
         if pkg_hash.pkgname.is_empty() {
             return Err(ArchiveError::InvalidPkgHash("missing pkgname".into()));
+        }
+
+        if pkg_hash.block_size == 0 {
+            return Err(ArchiveError::InvalidBlockSize(pkg_hash.block_size));
         }
 
         Ok(pkg_hash)
