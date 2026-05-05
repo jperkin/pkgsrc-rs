@@ -56,7 +56,7 @@
  *     let record = result?;
  *     println!("Package: {}", record.pkgname);
  *     if let Some(deps) = &record.all_depends {
- *         println!("  Dependencies: {}", deps.len());
+ *         println!("  Dependencies: {}", deps.iter().count());
  *     }
  * }
  * # Ok::<(), std::io::Error>(())
@@ -86,10 +86,8 @@ use std::str::FromStr;
  * use std::path::Path;
  *
  * let deps: ScanDepends = "../../devel/gmake ../../lang/rust".into();
- * assert_eq!(deps.len(), 2);
- * assert!(!deps.is_empty());
- *
  * let paths: Vec<&Path> = deps.iter().collect();
+ * assert_eq!(paths.len(), 2);
  * assert_eq!(paths[0], Path::new("../../devel/gmake"));
  * assert_eq!(paths[1], Path::new("../../lang/rust"));
  * ```
@@ -109,20 +107,6 @@ impl ScanDepends {
      */
     pub fn iter(&self) -> impl Iterator<Item = &Path> {
         self.items().map(Path::new)
-    }
-
-    /**
-     * Return the number of paths.
-     */
-    pub fn len(&self) -> usize {
-        self.items().count()
-    }
-
-    /**
-     * Return true if there are no paths.
-     */
-    pub fn is_empty(&self) -> bool {
-        self.items().next().is_none()
     }
 
     /**
@@ -180,7 +164,6 @@ impl crate::kv::FromKv for ScanDepends {
  * use pkgsrc::AllDepends;
  *
  * let deps: AllDepends = "mktool-[0-9]*:../../pkgtools/mktool curl>=7.0:../../www/curl".into();
- * assert_eq!(deps.len(), 2);
  *
  * // Cheap access to raw strings
  * for dep in deps.iter() {
@@ -232,20 +215,6 @@ impl AllDepends {
         &self,
     ) -> impl Iterator<Item = Result<Depend, DependError>> + '_ {
         self.items().map(Depend::new)
-    }
-
-    /**
-     * Return the number of dependency entries.
-     */
-    pub fn len(&self) -> usize {
-        self.items().count()
-    }
-
-    /**
-     * Return true if there are no dependency entries.
-     */
-    pub fn is_empty(&self) -> bool {
-        self.items().next().is_none()
     }
 
     /**
@@ -749,12 +718,12 @@ mod tests {
             .all_depends
             .as_ref()
             .context("missing all_depends")?;
-        assert_eq!(all_depends.len(), 11);
+        assert_eq!(all_depends.iter().count(), 11);
         let scan_depends = index[0]
             .scan_depends
             .as_ref()
             .context("missing scan_depends")?;
-        assert_eq!(scan_depends.len(), 155);
+        assert_eq!(scan_depends.iter().count(), 155);
         let multi_version = index[0]
             .multi_version
             .as_ref()
@@ -865,9 +834,9 @@ mod tests {
             .all_depends
             .as_ref()
             .ok_or(KvError::Incomplete("all_depends".to_string()))?;
-        assert_eq!(deps.len(), 1);
         assert_eq!(deps.as_str(), "invalid");
         let results: Vec<_> = deps.iter().collect();
+        assert_eq!(results.len(), 1);
         assert!(results[0].is_err());
         let results: Vec<_> = deps.depends().collect();
         assert!(results[0].is_err());
