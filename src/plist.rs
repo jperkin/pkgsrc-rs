@@ -276,7 +276,7 @@ pub enum PlistEntry {
  * List of valid arguments for the `@option` command.  Currently the only
  * supported argument is `preserve`.
  */
-#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum PlistOption {
     /**
@@ -687,71 +687,63 @@ impl Plist {
     }
 
     /**
-     * Return a vector containing a list of file entries as string slices.  Any
-     * files that come after an "@ignore" command are not listed.
+     * Return an iterator over file entries as os-string slices.  Any files
+     * that come after an `@ignore` command are not listed.
      */
-    #[must_use]
-    pub fn files(&self) -> Vec<&OsStr> {
+    pub fn files(&self) -> impl Iterator<Item = &OsStr> + '_ {
         let mut ignore = false;
-        self.entries
-            .iter()
-            .filter_map(|entry| match entry {
-                PlistEntry::Ignore => {
-                    ignore = true;
+        self.entries.iter().filter_map(move |entry| match entry {
+            PlistEntry::Ignore => {
+                ignore = true;
+                None
+            }
+            PlistEntry::File(file) => {
+                if ignore {
+                    ignore = false;
                     None
+                } else {
+                    Some(file.as_os_str())
                 }
-                PlistEntry::File(file) => {
-                    if ignore {
-                        ignore = false;
-                        None
-                    } else {
-                        Some(file.as_os_str())
-                    }
-                }
-                _ => None,
-            })
-            .collect()
+            }
+            _ => None,
+        })
     }
 
     /**
-     * Return a vector containing a list of file entries including their prefix
-     * (as set by `@cwd`) as OsStrings.  Any files that come after an "@ignore"
-     * command are not listed.
+     * Return an iterator over file entries including their prefix (as set by
+     * `@cwd`).  Any files that come after an `@ignore` command are not
+     * listed.
      */
-    #[must_use]
-    pub fn files_prefixed(&self) -> Vec<OsString> {
+    pub fn files_prefixed(&self) -> impl Iterator<Item = OsString> + '_ {
         let mut ignore = false;
         let mut prefix: Option<OsString> = None;
-        self.entries
-            .iter()
-            .filter_map(|entry| match entry {
-                PlistEntry::Cwd(dir) => {
-                    prefix = Some(dir.to_os_string());
+        self.entries.iter().filter_map(move |entry| match entry {
+            PlistEntry::Cwd(dir) => {
+                prefix = Some(dir.to_os_string());
+                None
+            }
+            PlistEntry::Ignore => {
+                ignore = true;
+                None
+            }
+            PlistEntry::File(file) => {
+                if ignore {
+                    ignore = false;
                     None
-                }
-                PlistEntry::Ignore => {
-                    ignore = true;
-                    None
-                }
-                PlistEntry::File(file) => {
-                    if ignore {
-                        ignore = false;
-                        None
-                    } else {
-                        let mut path = OsString::new();
-                        if let Some(pfx) = &prefix {
-                            path.push(pfx);
-                            if !pfx.as_os_str().as_bytes().ends_with(b"/") {
-                                path.push("/");
-                            }
+                } else {
+                    let mut path = OsString::new();
+                    if let Some(pfx) = &prefix {
+                        path.push(pfx);
+                        if !pfx.as_os_str().as_bytes().ends_with(b"/") {
+                            path.push("/");
                         }
-                        path.push(file);
-                        Some(path)
                     }
+                    path.push(file);
+                    Some(path)
                 }
-                _ => None,
-            })
-            .collect()
+            }
+            _ => None,
+        })
     }
 
     /**
@@ -1336,15 +1328,19 @@ mod tests {
             bin/ok
         "};
         let plist = Plist::from_bytes(input.as_bytes())?;
-        assert_eq!(plist.files(), ["bin/good", "bin/evil", "bin/ok"]);
+        let files: Vec<&OsStr> = plist.files().collect();
+        assert_eq!(files, ["bin/good", "bin/evil", "bin/ok"]);
+        let prefixed: Vec<OsString> = plist.files_prefixed().collect();
         assert_eq!(
-            plist.files_prefixed(),
+            prefixed,
             ["/opt/pkg/bin/good", "/bin/evil", "/opt/pkg/bin/ok"]
         );
 
         let plist = Plist::from_bytes(b"bin/relative\n")?;
-        assert_eq!(plist.files(), ["bin/relative"]);
-        assert_eq!(plist.files_prefixed(), ["bin/relative"]);
+        let files: Vec<&OsStr> = plist.files().collect();
+        assert_eq!(files, ["bin/relative"]);
+        let prefixed: Vec<OsString> = plist.files_prefixed().collect();
+        assert_eq!(prefixed, ["bin/relative"]);
         Ok(())
     }
     /*
