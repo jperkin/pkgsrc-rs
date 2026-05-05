@@ -1,6 +1,6 @@
 use pkgsrc::digest::Digest;
 use pkgsrc::distinfo::*;
-use std::ffi::OsString;
+use std::ffi::OsStr;
 use std::fs;
 use std::path::PathBuf;
 
@@ -23,7 +23,7 @@ fn test_distinfo_distfile_checks() -> Result<(), DistinfoError> {
         di.verify_checksum(&file, Digest::RMD160),
         Err(DistinfoError::MissingChecksum(_, _))
     ));
-    for result in di.verify_checksums(&file) {
+    for result in di.verify_checksums(&file)? {
         assert!(result.is_ok());
     }
 
@@ -51,7 +51,7 @@ fn test_distinfo_patchfile_checks() -> Result<(), DistinfoError> {
         di.verify_checksum(&file, Digest::BLAKE2s),
         Err(DistinfoError::MissingChecksum(_, _))
     ));
-    for result in di.verify_checksums(&file) {
+    for result in di.verify_checksums(&file)? {
         assert!(result.is_ok());
     }
 
@@ -83,7 +83,7 @@ fn test_distinfo_bad_distinfo() -> Result<(), DistinfoError> {
         Err(DistinfoError::MissingChecksum(_, _))
     ));
     assert!(matches!(
-        di.verify_checksums(&file)[0],
+        di.verify_checksums(&file)?[0],
         Err(DistinfoError::Checksum(_, _, _, _))
     ));
 
@@ -102,15 +102,15 @@ fn test_distinfo_notfound() -> Result<(), DistinfoError> {
 
     assert!(matches!(
         di.verify_size(&distinfo),
-        Err(DistinfoError::NotFound)
+        Err(DistinfoError::NotFound(_))
     ));
     assert!(matches!(
         di.verify_checksum(&distinfo, Digest::BLAKE2s),
-        Err(DistinfoError::NotFound)
+        Err(DistinfoError::NotFound(_))
     ));
     assert!(matches!(
-        di.verify_checksums(&distinfo)[0],
-        Err(DistinfoError::NotFound)
+        di.verify_checksums(&distinfo),
+        Err(DistinfoError::NotFound(_))
     ));
 
     Ok(())
@@ -124,31 +124,33 @@ fn test_distinfo_contents() -> Result<(), DistinfoError> {
 
     assert_eq!(
         di.rcsid(),
-        Some(OsString::from(
+        Some(OsStr::new(
             "$NetBSD: distinfo,v 1.1 1970/01/01 00:00:00 ken Exp $"
-        ))
-        .as_ref()
+        )),
     );
+
+    let first = di.distfiles().next().expect("at least one distfile entry");
+    assert_eq!(first.filename(), PathBuf::from("patch-2.7.6.tar.xz"));
+    assert_eq!(first.size(), Some(783756));
+    assert_eq!(first.checksums()[0].digest, Digest::BLAKE2s);
     assert_eq!(
-        di.distfiles()[0].filename,
-        PathBuf::from("patch-2.7.6.tar.xz")
-    );
-    assert_eq!(di.distfiles()[0].size, Some(783756));
-    assert_eq!(di.distfiles()[0].checksums[0].digest, Digest::BLAKE2s);
-    assert_eq!(
-        di.distfiles()[0].checksums[0].hash,
+        first.checksums()[0].hash,
         "712c28f8a0fbfbd5ec4cd71ef45204a3780a332d559b5566070138554b89e400"
     );
-    assert_eq!(di.distfiles()[0].checksums[1].digest, Digest::SHA512);
+    assert_eq!(first.checksums()[1].digest, Digest::SHA512);
     assert_eq!(
-        di.distfiles()[0].checksums[1].hash,
+        first.checksums()[1].hash,
         "fcca87bdb67a88685a8a25597f9e015f5e60197b9a269fa350ae35a7991ed8da553939b4bbc7f7d3cfd863c67142af403b04165633acbce4339056a905e87fbd"
     );
 
-    assert_eq!(di.patchfiles()[0].filename, PathBuf::from("patch-Makefile"));
-    assert_eq!(di.patchfiles()[0].checksums[0].digest, Digest::SHA1);
+    let patch = di
+        .patchfiles()
+        .next()
+        .expect("at least one patchfile entry");
+    assert_eq!(patch.filename(), PathBuf::from("patch-Makefile"));
+    assert_eq!(patch.checksums()[0].digest, Digest::SHA1);
     assert_eq!(
-        di.patchfiles()[0].checksums[0].hash,
+        patch.checksums()[0].hash,
         "ab5ce8a374d3aca7948eecabc35386d8195e3fbf"
     );
 
@@ -170,7 +172,7 @@ fn test_distinfo_subdir() -> Result<(), DistinfoError> {
 
     assert_eq!(di.verify_size(&file)?, 158);
 
-    let results = di.verify_checksums(&file);
+    let results = di.verify_checksums(&file)?;
     assert_eq!(results.len(), 2);
     assert!(matches!(results[0], Ok(Digest::BLAKE2s)));
     assert!(matches!(results[1], Ok(Digest::SHA512)));

@@ -34,7 +34,7 @@
  *
  * ```
  * use pkgsrc::distinfo::Distinfo;
- * use std::ffi::OsString;
+ * use std::ffi::OsStr;
  *
  * let input = r#"
  *     $NetBSD: distinfo,v 1.80 2024/05/27 23:27:10 riastradh Exp $
@@ -44,8 +44,8 @@
  *     Size (pkgin-23.8.1.tar.gz) = 267029 bytes
  *     SHA1 (patch-configure.ac) = 53f56351fb602d9fdce2c1ed266d65919a369086
  *     "#;
- * let distinfo = Distinfo::from_bytes(&input.as_bytes());
- * assert_eq!(distinfo.rcsid(), Some(&OsString::from("$NetBSD: distinfo,v 1.80 2024/05/27 23:27:10 riastradh Exp $")));
+ * let distinfo = Distinfo::from_bytes(input.as_bytes());
+ * assert_eq!(distinfo.rcsid(), Some(OsStr::new("$NetBSD: distinfo,v 1.80 2024/05/27 23:27:10 riastradh Exp $")));
  * ```
  *
  * As `distinfo` files can contain usernames and filenames that are not UTF-8
@@ -56,6 +56,7 @@
 
 use crate::digest::{Digest, DigestError};
 use indexmap::IndexMap;
+use indexmap::map::Values;
 use std::ffi::{OsStr, OsString};
 use std::fs::File;
 use std::io;
@@ -97,7 +98,7 @@ impl Checksum {
  * [`Distfile`]: EntryType::Distfile
  * [`Patchfile`]: EntryType::Patchfile
  */
-#[derive(Clone, Debug, Default, Eq, Hash, PartialEq)]
+#[derive(Clone, Copy, Debug, Default, Eq, Hash, PartialEq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum EntryType {
     /**
@@ -111,53 +112,20 @@ pub enum EntryType {
     Patchfile,
 }
 
-impl<P: AsRef<Path>> From<P> for EntryType {
-    fn from(path: P) -> Self {
-        if Entry::is_patch_filename(&path) {
+impl EntryType {
+    /**
+     * Classify a path based on its file name component.  Judges by basename
+     * alone and is appropriate for filesystem paths handed to
+     * [`Distinfo::calculate_checksum`].
+     */
+    pub fn classify<P: AsRef<Path>>(path: P) -> EntryType {
+        if Self::is_patch_filename(&path) {
             EntryType::Patchfile
         } else {
             EntryType::Distfile
         }
     }
-}
 
-/**
- * [`Entry`] contains the information stored about each unique file listed in
- * the distinfo file.
- */
-#[derive(Clone, Debug, Default, Eq, Hash, PartialEq)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-pub struct Entry {
-    /**
-     * Path relative to a certain directory (usually `DISTDIR`) where this
-     * entry is stored.  This may contain a directory portion, for example if
-     * the package uses DIST_SUBDIR.  This is the string that will be stored
-     * in the resulting `distinfo` file.
-     */
-    pub filename: PathBuf,
-    /**
-     * Full path to filename.  This is not used in the `distinfo` file but is
-     * stored here for processing purposes.
-     */
-    pub filepath: PathBuf,
-    /**
-     * File size.  This field is not currently used for patch files, as they
-     * are distributed alongside the distinfo file and are not downloaded
-     * separately, thus a single hash check is sufficient.
-     */
-    pub size: Option<u64>,
-    /**
-     * List of checksums, one [`Checksum`] entry per Digest type.  These are in
-     * order of appearance in the `distinfo` file.
-     */
-    pub checksums: Vec<Checksum>,
-    /**
-     * Whether this entry is a distfile or a patchfile.
-     */
-    pub filetype: EntryType,
-}
-
-impl Entry {
     /**
      * Returns true if the path is a valid patch filename for inclusion in a
      * distinfo.  Returns false for backup/temporary files (.orig, .rej, ~),
@@ -185,7 +153,37 @@ impl Entry {
         s.starts_with("patch-")
             || (s.starts_with("emul-") && s.contains("-patch-"))
     }
+}
 
+/*
+ * Classify a path as it appears in a `distinfo` file.  pkgsrc records
+ * patches by basename only; anything with a directory component is a
+ * distfile distributed under a `DIST_SUBDIR` (for example
+ * `mush/patch-7.2.6-alpha-1` is an upstream archive, not a pkgsrc patch).
+ */
+fn classify_stored(path: &Path) -> EntryType {
+    if path.parent().is_some_and(|p| !p.as_os_str().is_empty()) {
+        EntryType::Distfile
+    } else {
+        EntryType::classify(path)
+    }
+}
+
+/**
+ * [`Entry`] contains the information stored about each unique file listed in
+ * the distinfo file.
+ */
+#[derive(Clone, Debug, Default, Eq, Hash, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub struct Entry {
+    filename: PathBuf,
+    filepath: PathBuf,
+    size: Option<u64>,
+    checksums: Vec<Checksum>,
+    filetype: EntryType,
+}
+
+impl Entry {
     /**
      * Create a new [`Entry`].
      */
@@ -199,7 +197,7 @@ impl Entry {
         P1: AsRef<Path>,
         P2: AsRef<Path>,
     {
-        let filetype = EntryType::from(filename.as_ref());
+        let filetype = classify_stored(filename.as_ref());
         Entry {
             filename: filename.as_ref().to_path_buf(),
             filepath: filepath.as_ref().to_path_buf(),
@@ -208,11 +206,54 @@ impl Entry {
             filetype,
         }
     }
+
+    /**
+     * Path relative to a certain directory (usually `DISTDIR`) where this
+     * entry is stored.  This may contain a directory portion, for example if
+     * the package uses DIST_SUBDIR.  This is the string that will be stored
+     * in the resulting `distinfo` file.
+     */
+    pub fn filename(&self) -> &Path {
+        &self.filename
+    }
+
+    /**
+     * Full path to filename.  This is not used in the `distinfo` file but is
+     * stored here for processing purposes.
+     */
+    pub fn filepath(&self) -> &Path {
+        &self.filepath
+    }
+
+    /**
+     * File size.  This field is not currently used for patch files, as they
+     * are distributed alongside the distinfo file and are not downloaded
+     * separately, thus a single hash check is sufficient.
+     */
+    pub fn size(&self) -> Option<u64> {
+        self.size
+    }
+
+    /**
+     * List of checksums, one [`Checksum`] entry per Digest type.  These are in
+     * order of appearance in the `distinfo` file.
+     */
+    pub fn checksums(&self) -> &[Checksum] {
+        &self.checksums
+    }
+
+    /**
+     * Whether this entry is a distfile or a patchfile.
+     */
+    pub fn filetype(&self) -> EntryType {
+        self.filetype
+    }
+
     /**
      * Pass the full path to a file to check as a [`PathBuf`] and verify that
      * it matches the size stored in the [`Distinfo`].
      *
-     * Returns the size if [`Ok`], otherwise return a [`DistinfoError`].
+     * Returns the size if [`Ok`], otherwise return an [`DistinfoError`].
      */
     pub fn verify_size<P: AsRef<Path>>(
         &self,
@@ -235,9 +276,16 @@ impl Entry {
     }
 
     /**
-     * Internal function to check a specific hash.
+     * Pass the full path to a file to check as a [`PathBuf`] and verify that
+     * it matches a specific [`Digest`] checksum stored in the [`Distinfo`].
+     *
+     * Return the [`Digest`] if [`Ok`], otherwise return an [`DistinfoError`].
+     *
+     * To verify all stored checksums use [`verify_checksums`].
+     *
+     * [`verify_checksums`]: Entry::verify_checksums
      */
-    fn verify_checksum_internal<P: AsRef<Path>>(
+    pub fn verify_checksum<P: AsRef<Path>>(
         &self,
         path: P,
         digest: Digest,
@@ -246,7 +294,7 @@ impl Entry {
             if digest != c.digest {
                 continue;
             }
-            let mut f = File::open(path)?;
+            let mut f = File::open(path.as_ref())?;
             let hash = match self.filetype {
                 EntryType::Distfile => c.digest.hash_file(&mut f)?,
                 EntryType::Patchfile => c.digest.hash_patch(&mut f)?,
@@ -270,78 +318,78 @@ impl Entry {
 
     /**
      * Pass the full path to a file to check as a [`PathBuf`] and verify that
-     * it matches a specific [`Digest`] checksum stored in the [`Distinfo`].
-     *
-     * Return the [`Digest`] if [`Ok`], otherwise return a [`DistinfoError`].
-     *
-     * To verify all stored checksums use use [`verify_checksums`].
-     *
-     * [`verify_checksums`]: Distinfo::verify_checksums
-     */
-    pub fn verify_checksum<P: AsRef<Path>>(
-        &self,
-        path: P,
-        digest: Digest,
-    ) -> Result<Digest, DistinfoError> {
-        self.verify_checksum_internal(path, digest)
-    }
-
-    /**
-     * Pass the full path to a file to check as a [`PathBuf`] and verify that
-     * it matches all of the checksums stored in the [`Distinfo`].  Returns a
-     * [`Vec`] of [`Result`]s containing the [`Digest`] if [`Ok`], otherwise
-     * return a [`DistinfoError`].
+     * it matches all of the checksums stored in the [`Distinfo`].  The file
+     * is opened and read exactly once regardless of how many algorithms are
+     * recorded.  The returned vector contains one inner [`Result`] per
+     * [`Checksum`] in order; the outer [`Result`] reports failures that
+     * prevent verification from starting, such as the file being unreadable.
      */
     pub fn verify_checksums<P: AsRef<Path>>(
         &self,
         path: P,
-    ) -> Vec<Result<Digest, DistinfoError>> {
-        let mut results = vec![];
-        for c in &self.checksums {
-            results
-                .push(self.verify_checksum_internal(path.as_ref(), c.digest));
+    ) -> Result<Vec<Result<Digest, DistinfoError>>, DistinfoError> {
+        let path = path.as_ref();
+        if self.checksums.is_empty() {
+            return Ok(Vec::new());
         }
-        results
+        let digests: Vec<Digest> =
+            self.checksums.iter().map(|c| c.digest).collect();
+        let mut file = File::open(path)?;
+        let actual = match self.filetype {
+            EntryType::Distfile => {
+                Digest::multi_hash_file(&mut file, &digests)?
+            }
+            EntryType::Patchfile => {
+                Digest::multi_hash_patch(&mut file, &digests)?
+            }
+        };
+        Ok(self
+            .checksums
+            .iter()
+            .zip(actual)
+            .map(|(c, hash)| {
+                if hash == c.hash {
+                    Ok(c.digest)
+                } else {
+                    Err(DistinfoError::Checksum(
+                        self.filename.clone(),
+                        c.digest,
+                        c.hash.clone(),
+                        hash,
+                    ))
+                }
+            })
+            .collect())
     }
 
     /**
-     * Convert [`Entry`] into a byte representation suitable for writing to
-     * a `distinfo` file.  The contents will be ordered as expected.
+     * Write this entry's `distinfo` lines to `writer`.  Filenames are written
+     * verbatim as bytes so that non-UTF-8 names round-trip correctly.
      */
-    pub fn as_bytes(&self) -> Vec<u8> {
-        let mut bytes = Vec::new();
+    pub fn write_to<W: Write>(&self, mut writer: W) -> io::Result<()> {
+        let name = self.filename.as_os_str().as_bytes();
         for c in &self.checksums {
-            let _ = writeln!(
-                bytes,
-                "{} ({}) = {}",
-                c.digest,
-                self.filename.display(),
-                c.hash,
-            );
+            write!(writer, "{} (", c.digest)?;
+            writer.write_all(name)?;
+            writeln!(writer, ") = {}", c.hash)?;
         }
         if let Some(size) = self.size {
-            let _ = writeln!(
-                bytes,
-                "Size ({}) = {} bytes",
-                self.filename.display(),
-                size,
-            );
+            write!(writer, "Size (")?;
+            writer.write_all(name)?;
+            writeln!(writer, ") = {size} bytes")?;
         }
-        bytes
+        Ok(())
     }
-}
 
-/**
- * Parse a single `distinfo` line into a valid line type.  This is an
- * intermediate format, as it doesn't serve any useful function to the user,
- * but is helpful for internally constructing an eventual [`Distinfo`].
- */
-#[derive(Debug, Eq, PartialEq)]
-enum Line {
-    RcsId(OsString),
-    Size(PathBuf, u64),
-    Checksum(Digest, PathBuf, String),
-    None,
+    /**
+     * Convenience wrapper around [`Entry::write_to`] that returns an owned
+     * byte vector.
+     */
+    pub fn to_bytes(&self) -> Vec<u8> {
+        let mut out = Vec::new();
+        let _ = self.write_to(&mut out);
+        out
+    }
 }
 
 /**
@@ -352,10 +400,12 @@ enum Line {
  * handling.  Any input that is unrecognised or not in the correct format is
  * simply ignored.
  *
- * To create a new `distinfo` file, use [`new`] and set the fields manually.
+ * To create a new `distinfo` file, use [`new`] and populate it with
+ * [`insert`].
  *
  * [`from_bytes`]: Distinfo::from_bytes
  * [`new`]: Distinfo::new
+ * [`insert`]: Distinfo::insert
  */
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
@@ -391,18 +441,18 @@ pub enum DistinfoError {
     #[error(transparent)]
     Digest(#[from] DigestError),
     /// File was not found as a valid entry in the current [`Distinfo`] struct.
-    #[error("File not found")]
-    NotFound,
+    #[error("File not found: {0}")]
+    NotFound(PathBuf),
     /// Checksum mismatch, expected vs actual.
     #[error("Checksum {1} mismatch for {0}: expected {2}, actual {3}")]
     Checksum(PathBuf, Digest, String, String),
-    /// No checksum found for the requested Digest
+    /// No checksum found for the requested Digest.
     #[error("Missing {1} checksum entry for {0}")]
     MissingChecksum(PathBuf, Digest),
     /// Size mismatch, expected vs actual.
     #[error("Size mismatch for {0}: expected {1}, actual {2}")]
     Size(PathBuf, u64, u64),
-    /// No checksum found for the requested Digest
+    /// No size found for the requested entry.
     #[error("Missing size entry for {0}")]
     MissingSize(PathBuf),
 }
@@ -419,192 +469,134 @@ impl Distinfo {
      * Return an [`Option`] containing either a valid `$NetBSD: ...` RCS Id
      * line, or None if one was not found.
      */
-    pub fn rcsid(&self) -> Option<&OsString> {
-        self.rcsid.as_ref()
+    pub fn rcsid(&self) -> Option<&OsStr> {
+        self.rcsid.as_deref()
     }
 
     /**
-     * Set the rcsid value.
+     * Set the rcsid value, returning the previous value if any.
      */
-    pub fn set_rcsid(&mut self, rcsid: impl Into<OsString>) {
-        self.rcsid = Some(rcsid.into());
+    pub fn set_rcsid(
+        &mut self,
+        rcsid: impl Into<OsString>,
+    ) -> Option<OsString> {
+        self.rcsid.replace(rcsid.into())
     }
+
     /**
      * Return a matching distfile [`Entry`] if found, otherwise [`None`].
      */
-    pub fn distfile<P: AsRef<Path>>(&self, path: P) -> Option<&Entry> {
-        self.distfiles.get(path.as_ref())
+    pub fn distfile<P: AsRef<Path>>(&self, name: P) -> Option<&Entry> {
+        self.distfiles.get(name.as_ref())
     }
 
     /**
      * Return a matching patchfile [`Entry`] if found, otherwise [`None`].
      */
-    pub fn patchfile<P: AsRef<Path>>(&self, path: P) -> Option<&Entry> {
-        self.patchfiles.get(path.as_ref())
+    pub fn patchfile<P: AsRef<Path>>(&self, name: P) -> Option<&Entry> {
+        self.patchfiles.get(name.as_ref())
     }
 
     /**
-     * Return a [`Vec`] of references to distfile entries, if any.
+     * Return an iterator of distfile entries in insertion order.
      */
-    pub fn distfiles(&self) -> Vec<&Entry> {
-        self.distfiles.values().collect()
+    pub fn distfiles(&self) -> Values<'_, PathBuf, Entry> {
+        self.distfiles.values()
     }
 
     /**
-     * Return a [`Vec`] of references to patchfile entries, if any.
+     * Return an iterator of patchfile entries in insertion order.
      */
-    pub fn patchfiles(&self) -> Vec<&Entry> {
-        self.patchfiles.values().collect()
-    }
-
-    /**
-     * Calculate size of a [`PathBuf`].
-     */
-    pub fn calculate_size<P: AsRef<Path>>(
-        path: P,
-    ) -> Result<u64, DistinfoError> {
-        let file = File::open(path)?;
-        Ok(file.metadata()?.len())
-    }
-
-    /**
-     * Calculate [`Digest`] hash for a [`Path`].  The hash will differ depending on the
-     * [`EntryType`] of the supplied path.
-     */
-    pub fn calculate_checksum<P: AsRef<Path>>(
-        path: P,
-        digest: Digest,
-    ) -> Result<String, DistinfoError> {
-        let filetype = EntryType::from(path.as_ref());
-        let mut f = File::open(path)?;
-        match filetype {
-            EntryType::Distfile => Ok(digest.hash_file(&mut f)?),
-            EntryType::Patchfile => Ok(digest.hash_patch(&mut f)?),
-        }
-    }
-
-    /**
-     * Insert a populated [`Entry`] into the [`Distinfo`].
-     */
-    pub fn insert(&mut self, entry: Entry) -> bool {
-        let map = match entry.filetype {
-            EntryType::Distfile => &mut self.distfiles,
-            EntryType::Patchfile => &mut self.patchfiles,
-        };
-        map.insert(entry.filename.clone(), entry).is_none()
+    pub fn patchfiles(&self) -> Values<'_, PathBuf, Entry> {
+        self.patchfiles.values()
     }
 
     /**
      * Find an [`Entry`] in the current [`Distinfo`] given a [`Path`].
      * [`Distinfo`] distfile entries may include a directory component
-     * (`DIST_SUBDIR`) so applications can't simply look up by filename.
+     * (`DIST_SUBDIR`) and patches are conventionally stored under a
+     * `patches/` prefix on disk, so applications can't simply look up by
+     * filename.
      *
-     * This function iterates over the [`Path`] in reverse, adding any leading
-     * components until an entry is found, or returns
-     * [`DistinfoError::NotFound`].
+     * This function iterates over the [`Path`] in reverse, adding any
+     * leading components until an entry is found in either namespace, or
+     * returns [`None`].
      */
-    pub fn find_entry<P: AsRef<Path>>(
-        &self,
-        path: P,
-    ) -> Result<&Entry, DistinfoError> {
-        let filetype = EntryType::from(path.as_ref());
-        let mut file = PathBuf::new();
-        for component in path.as_ref().iter().rev() {
-            if file.parent().is_none() {
-                file = PathBuf::from(component);
-            } else {
-                file = PathBuf::from(component).join(file);
-            }
-            match filetype {
-                EntryType::Distfile => {
-                    if let Some(entry) = self.distfile(&file) {
-                        return Ok(entry);
-                    }
-                }
-                EntryType::Patchfile => {
-                    if let Some(entry) = self.patchfile(&file) {
-                        return Ok(entry);
-                    }
-                }
+    pub fn find<P: AsRef<Path>>(&self, path: P) -> Option<&Entry> {
+        let path = path.as_ref();
+        let mut suffix = PathBuf::new();
+        for component in path.iter().rev() {
+            suffix = Path::new(component).join(&suffix);
+            if let Some(entry) = self
+                .distfiles
+                .get(&suffix)
+                .or_else(|| self.patchfiles.get(&suffix))
+            {
+                return Some(entry);
             }
         }
-        Err(DistinfoError::NotFound)
+        None
     }
 
     /**
-     * Internal functions to update or insert entries in the current
-     * [`Distinfo`], given a [`Path`] and its value data.
+     * Insert a populated [`Entry`] into the [`Distinfo`].  Returns the
+     * previous entry stored under the same filename, if any.
      */
-    fn update_size<P: AsRef<Path>>(&mut self, path: P, size: u64) {
-        let filetype = EntryType::from(path.as_ref());
-        let map = match filetype {
+    pub fn insert(&mut self, entry: Entry) -> Option<Entry> {
+        let map = match entry.filetype {
             EntryType::Distfile => &mut self.distfiles,
             EntryType::Patchfile => &mut self.patchfiles,
         };
-        match map.get_mut(path.as_ref()) {
-            Some(entry) => entry.size = Some(size),
-            None => {
-                map.insert(
-                    path.as_ref().to_path_buf(),
-                    Entry {
-                        filename: path.as_ref().to_path_buf(),
-                        size: Some(size),
-                        filetype,
-                        ..Default::default()
-                    },
-                );
-            }
-        };
+        map.insert(entry.filename.clone(), entry)
     }
-    fn update_checksum<P: AsRef<Path>>(
-        &mut self,
+
+    /**
+     * Calculate size of a [`Path`].
+     */
+    pub fn calculate_size<P: AsRef<Path>>(path: P) -> io::Result<u64> {
+        Ok(File::open(path)?.metadata()?.len())
+    }
+
+    /**
+     * Calculate [`Digest`] hash for a [`Path`].  The hash will differ
+     * depending on the [`EntryType`] of the supplied path.
+     */
+    pub fn calculate_checksum<P: AsRef<Path>>(
         path: P,
         digest: Digest,
-        hash: String,
-    ) {
-        let filetype = EntryType::from(path.as_ref());
-        let map = match filetype {
-            EntryType::Distfile => &mut self.distfiles,
-            EntryType::Patchfile => &mut self.patchfiles,
+    ) -> Result<String, DistinfoError> {
+        let path = path.as_ref();
+        let mut file = File::open(path)?;
+        let hash = match EntryType::classify(path) {
+            EntryType::Distfile => digest.hash_file(&mut file)?,
+            EntryType::Patchfile => digest.hash_patch(&mut file)?,
         };
-        match map.get_mut(path.as_ref()) {
-            Some(entry) => entry.checksums.push(Checksum { digest, hash }),
-            None => {
-                let v: Vec<Checksum> = vec![Checksum { digest, hash }];
-                map.insert(
-                    path.as_ref().to_path_buf(),
-                    Entry {
-                        filename: path.as_ref().to_path_buf(),
-                        checksums: v,
-                        filetype,
-                        ..Default::default()
-                    },
-                );
-            }
-        };
+        Ok(hash)
     }
 
     /**
      * Pass the full path to a file to check as a [`PathBuf`] and verify that
      * it matches the size stored in the [`Distinfo`].
      *
-     * Returns the size if [`Ok`], otherwise return a [`DistinfoError`].
+     * Returns the size if [`Ok`], otherwise return an [`DistinfoError`].
      */
     pub fn verify_size<P: AsRef<Path>>(
         &self,
         path: P,
     ) -> Result<u64, DistinfoError> {
-        let entry = self.find_entry(path.as_ref())?;
-        entry.verify_size(path)
+        let path = path.as_ref();
+        self.find(path)
+            .ok_or_else(|| DistinfoError::NotFound(path.into()))?
+            .verify_size(path)
     }
 
     /**
      * Pass the full path to a file to check as a [`PathBuf`] and verify that
      * it matches a specific [`Digest`] checksum stored in the [`Distinfo`].
      *
-     * Return the [`Digest`] if [`Ok`], otherwise return a [`DistinfoError`].
+     * Return the [`Digest`] if [`Ok`], otherwise return an [`DistinfoError`].
      *
-     * To verify all stored checksums use use [`verify_checksums`].
+     * To verify all stored checksums use [`verify_checksums`].
      *
      * [`verify_checksums`]: Distinfo::verify_checksums
      */
@@ -613,38 +605,33 @@ impl Distinfo {
         path: P,
         digest: Digest,
     ) -> Result<Digest, DistinfoError> {
-        let entry = self.find_entry(path.as_ref())?;
-        entry.verify_checksum_internal(path, digest)
+        let path = path.as_ref();
+        self.find(path)
+            .ok_or_else(|| DistinfoError::NotFound(path.into()))?
+            .verify_checksum(path, digest)
     }
 
     /**
      * Pass the full path to a file to check as a [`PathBuf`] and verify that
-     * it matches all of the checksums stored in the [`Distinfo`].  Returns a
-     * [`Vec`] of [`Result`]s containing the [`Digest`] if [`Ok`], otherwise
-     * return a [`DistinfoError`].
+     * it matches all of the checksums stored in the [`Distinfo`].  See
+     * [`Entry::verify_checksums`] for the return shape.
      */
     pub fn verify_checksums<P: AsRef<Path>>(
         &self,
         path: P,
-    ) -> Vec<Result<Digest, DistinfoError>> {
-        let entry = match self.find_entry(path.as_ref()) {
-            Ok(entry) => entry,
-            Err(e) => return vec![Err(e)],
-        };
-        let mut results = vec![];
-        for c in &entry.checksums {
-            results
-                .push(entry.verify_checksum_internal(path.as_ref(), c.digest));
-        }
-        results
+    ) -> Result<Vec<Result<Digest, DistinfoError>>, DistinfoError> {
+        let path = path.as_ref();
+        self.find(path)
+            .ok_or_else(|| DistinfoError::NotFound(path.into()))?
+            .verify_checksums(path)
     }
 
     /**
      * Read a [`Vec`] of [`u8`] bytes and parse for [`Distinfo`] entries.  If
      * nothing is found then an empty [`Distinfo`] is returned.
      */
-    pub fn from_bytes(bytes: &[u8]) -> Distinfo {
-        let mut distinfo = Distinfo::new();
+    pub fn from_bytes(bytes: &[u8]) -> Self {
+        let mut distinfo = Self::new();
         for line in bytes.split(|c| *c == b'\n') {
             match Line::from_bytes(line) {
                 /*
@@ -652,11 +639,9 @@ impl Distinfo {
                  * then last match wins.
                  */
                 Line::RcsId(s) => distinfo.rcsid = Some(s),
-                Line::Size(p, v) => {
-                    distinfo.update_size(&p, v);
-                }
-                Line::Checksum(d, p, s) => {
-                    distinfo.update_checksum(&p, d, s);
+                Line::Size { path, size } => distinfo.upsert_size(path, size),
+                Line::Checksum { digest, path, hash } => {
+                    distinfo.upsert_checksum(path, digest, hash);
                 }
                 Line::None => {}
             }
@@ -668,146 +653,172 @@ impl Distinfo {
      * Convert [`Distinfo`] into a byte representation suitable for writing to
      * a `distinfo` file.  The contents will be ordered as expected.
      */
-    pub fn as_bytes(&self) -> Vec<u8> {
-        let mut bytes = Vec::new();
-        if let Some(s) = self.rcsid() {
-            bytes.extend_from_slice(s.as_bytes());
-        } else {
-            bytes.extend_from_slice("$NetBSD$".as_bytes());
+    pub fn write_to<W: Write>(&self, mut writer: W) -> io::Result<()> {
+        match self.rcsid() {
+            Some(s) => writer.write_all(s.as_bytes())?,
+            None => writer.write_all(b"$NetBSD$")?,
         }
-        bytes.extend_from_slice("\n\n".as_bytes());
-
-        for q in self.distfiles.values() {
-            for c in &q.checksums {
-                let _ = writeln!(
-                    bytes,
-                    "{} ({}) = {}",
-                    c.digest,
-                    q.filename.display(),
-                    c.hash,
-                );
-            }
-            if let Some(size) = q.size {
-                let _ = writeln!(
-                    bytes,
-                    "Size ({}) = {} bytes",
-                    q.filename.display(),
-                    size,
-                );
-            }
+        writer.write_all(b"\n\n")?;
+        for entry in self.distfiles.values().chain(self.patchfiles.values()) {
+            entry.write_to(&mut writer)?;
         }
+        Ok(())
+    }
 
-        for q in self.patchfiles.values() {
-            for c in &q.checksums {
-                let _ = writeln!(
-                    bytes,
-                    "{} ({}) = {}",
-                    c.digest,
-                    q.filename.display(),
-                    c.hash,
-                );
-            }
-        }
+    /**
+     * Convenience wrapper around [`Distinfo::write_to`] that returns an
+     * owned byte vector.
+     */
+    pub fn to_bytes(&self) -> Vec<u8> {
+        let mut out = Vec::new();
+        let _ = self.write_to(&mut out);
+        out
+    }
 
-        bytes
+    /*
+     * Internal functions to update or insert entries in the current
+     * [`Distinfo`], given a [`Path`] and its value data.
+     */
+    fn upsert_size(&mut self, path: PathBuf, size: u64) {
+        let filetype = classify_stored(&path);
+        let map = match filetype {
+            EntryType::Distfile => &mut self.distfiles,
+            EntryType::Patchfile => &mut self.patchfiles,
+        };
+        map.entry(path.clone())
+            .and_modify(|e| e.size = Some(size))
+            .or_insert_with(|| Entry {
+                filename: path,
+                size: Some(size),
+                filetype,
+                ..Default::default()
+            });
+    }
+
+    fn upsert_checksum(&mut self, path: PathBuf, digest: Digest, hash: String) {
+        let filetype = classify_stored(&path);
+        let map = match filetype {
+            EntryType::Distfile => &mut self.distfiles,
+            EntryType::Patchfile => &mut self.patchfiles,
+        };
+        let checksum = Checksum { digest, hash };
+        map.entry(path.clone())
+            .and_modify(|e| e.checksums.push(checksum.clone()))
+            .or_insert_with(|| Entry {
+                filename: path,
+                checksums: vec![checksum],
+                filetype,
+                ..Default::default()
+            });
     }
 }
 
+/**
+ * Parse a single `distinfo` line into a valid line type.  This is an
+ * intermediate format, as it doesn't serve any useful function to the user,
+ * but is helpful for internally constructing an eventual [`Distinfo`].
+ */
+#[derive(Debug, Eq, PartialEq)]
+enum Line {
+    RcsId(OsString),
+    Size {
+        path: PathBuf,
+        size: u64,
+    },
+    Checksum {
+        digest: Digest,
+        path: PathBuf,
+        hash: String,
+    },
+    None,
+}
+
 impl Line {
-    fn from_bytes(bytes: &[u8]) -> Line {
+    fn from_bytes(mut line: &[u8]) -> Line {
         /*
-         * Despite expecting a single line, handle embedded newlines anyway
-         * to simplify things.  First valid (i.e. not None) match wins.
+         * Skip leading whitespace.  Technically this isn't supported, but
+         * be liberal in what you accept...
          */
-        for line in bytes.split(|c| *c == b'\n') {
-            let mut start = 0;
-            /*
-             * Skip leading whitespace.  Technically this isn't supported, but
-             * be liberal in what you accept...
-             */
-            for ch in line.iter() {
-                if !(*ch as char).is_whitespace() {
-                    break;
-                }
-                start += 1;
-            }
-
-            let line = &line[start..];
-
-            /* Skip comments and empty lines */
-            if line.starts_with(b"#") || line.is_empty() {
-                continue;
-            }
-
-            /*
-             * Match NetBSD RCS Id.  Only match an expanded "$NetBSD: ..."
-             * string, there's no point matching an unexpanded "$NetBSD$".
-             */
-            if line.starts_with(b"$NetBSD: ") {
-                return Line::RcsId(OsString::from_vec((*line).to_vec()));
-            }
-
-            /*
-             * The remaining types are matched the same, even though they in
-             * format, because the important parts are in the same place:
-             *
-             *   DIGEST (FILENAME) = HASH
-             *   Size (FILENAME) = BYTES bytes
-             *
-             * We just ignore the trailing "bytes" of "Size" lines.
-             *
-             * If we see anything we don't like then Line::None is
-             * immediately returned.
-             */
-            let mut field = 0;
-            let mut action = String::new();
-            let mut path = PathBuf::new();
-            let mut value = String::new();
-            for s in line.split(|c| (*c as char).is_whitespace()) {
-                /* Skip extra whitespace */
-                if s.is_empty() {
-                    continue;
-                }
-                if field == 0 {
-                    action = match String::from_utf8(s.to_vec()) {
-                        Ok(s) => s,
-                        Err(_) => return Line::None,
-                    };
-                }
-                /* Record path from "(filename)" */
-                if field == 1 {
-                    if s[0] == b'(' && s[s.len() - 1] == b')' {
-                        path.push(OsStr::from_bytes(&s[1..s.len() - 1]));
-                    } else {
-                        return Line::None;
-                    }
-                }
-                /* Record size or hash */
-                if field == 3 {
-                    value = match String::from_utf8(s.to_vec()) {
-                        Ok(s) => s,
-                        Err(_) => return Line::None,
-                    }
-                }
-                field += 1;
-            }
-            /*
-             * Valid actions are "Size", or a valid Digest type.  Anything
-             * else is unmatched.
-             */
-            if action == "Size" {
-                match u64::from_str(&value) {
-                    Ok(n) => return Line::Size(path, n),
-                    Err(_) => return Line::None,
-                };
+        while let Some((&c, rest)) = line.split_first() {
+            if (c as char).is_whitespace() {
+                line = rest;
             } else {
-                match Digest::from_str(&action) {
-                    Ok(d) => return Line::Checksum(d, path, value),
-                    Err(_) => return Line::None,
-                }
+                break;
             }
         }
-        Line::None
+
+        /* Skip comments and empty lines */
+        if line.is_empty() || line.starts_with(b"#") {
+            return Line::None;
+        }
+
+        /*
+         * Match NetBSD RCS Id.  Only match an expanded "$NetBSD: ..."
+         * string, there's no point matching an unexpanded "$NetBSD$".
+         */
+        if line.starts_with(b"$NetBSD: ") {
+            return Line::RcsId(OsString::from_vec(line.to_vec()));
+        }
+
+        /*
+         * The remaining types are matched the same, because the important
+         * parts are in the same place:
+         *
+         *   DIGEST (FILENAME) = HASH
+         *   Size (FILENAME) = BYTES bytes
+         *
+         * We just ignore the trailing "bytes" of "Size" lines.  If we see
+         * anything we don't like then Line::None is immediately returned.
+         */
+        let mut fields = line
+            .split(|b| (*b as char).is_whitespace())
+            .filter(|s| !s.is_empty());
+
+        let action =
+            match fields.next().and_then(|s| std::str::from_utf8(s).ok()) {
+                Some(s) => s,
+                None => return Line::None,
+            };
+        let path_field = match fields.next() {
+            Some(s) => s,
+            None => return Line::None,
+        };
+        if fields.next().is_none() {
+            return Line::None;
+        }
+        let value =
+            match fields.next().and_then(|s| std::str::from_utf8(s).ok()) {
+                Some(s) => s,
+                None => return Line::None,
+            };
+
+        let path = match path_field
+            .strip_prefix(b"(")
+            .and_then(|s| s.strip_suffix(b")"))
+        {
+            Some(inner) => PathBuf::from(OsStr::from_bytes(inner)),
+            None => return Line::None,
+        };
+
+        /*
+         * Valid actions are "Size", or a valid Digest type.  Anything
+         * else is unmatched.
+         */
+        if action == "Size" {
+            match u64::from_str(value) {
+                Ok(size) => Line::Size { path, size },
+                Err(_) => Line::None,
+            }
+        } else {
+            match Digest::from_str(action) {
+                Ok(digest) => Line::Checksum {
+                    digest,
+                    path,
+                    hash: value.to_string(),
+                },
+                Err(_) => Line::None,
+            }
+        }
     }
 }
 
@@ -825,8 +836,6 @@ mod tests {
 
         assert_eq!(Line::from_bytes(rcsid.as_bytes()), exp);
         assert_eq!(Line::from_bytes(format!("     {rcsid}").as_bytes()), exp);
-        assert_eq!(Line::from_bytes(format!("\n\n {rcsid}").as_bytes()), exp);
-        assert_eq!(Line::from_bytes(format!(" {rcsid}\n\n").as_bytes()), exp);
 
         /* Commented entry should return None */
         let entry = Line::from_bytes(format!("#{rcsid}").as_bytes());
@@ -840,22 +849,26 @@ mod tests {
          */
         let i = "Size    (foo-1.2.3.tar.gz)    =    321     bytes";
         let o = Line::from_bytes(i.as_bytes());
-        assert_eq!(o, Line::Size(PathBuf::from("foo-1.2.3.tar.gz"), 321));
-
-        /*
-         * Entry with extra whitespace is accepted, but in reality is likely
-         * to be rejected by other tools.
-         */
-        let i = "Size    (foo-1.2.3.tar.gz)    =    321     bytes";
-        let o = Line::from_bytes(i.as_bytes());
-        assert_eq!(o, Line::Size(PathBuf::from("foo-1.2.3.tar.gz"), 321));
+        assert_eq!(
+            o,
+            Line::Size {
+                path: PathBuf::from("foo-1.2.3.tar.gz"),
+                size: 321,
+            },
+        );
 
         /*
          * Invalid as it's missing "bytes", but accepted anyway.
          */
         let i = "Size (foo-1.2.3.tar.gz) = 123";
         let o = Line::from_bytes(i.as_bytes());
-        assert_eq!(o, Line::Size(PathBuf::from("foo-1.2.3.tar.gz"), 123));
+        assert_eq!(
+            o,
+            Line::Size {
+                path: PathBuf::from("foo-1.2.3.tar.gz"),
+                size: 123,
+            },
+        );
 
         /*
          * Check for u64 overflow
@@ -864,7 +877,10 @@ mod tests {
         let o = Line::from_bytes(i.as_bytes());
         assert_eq!(
             o,
-            Line::Size(PathBuf::from("a.tar.gz"), 18446744073709551615)
+            Line::Size {
+                path: PathBuf::from("a.tar.gz"),
+                size: 18446744073709551615,
+            },
         );
         let i = "Size (a.tar.gz) = 18446744073709551616";
         let o = Line::from_bytes(i.as_bytes());
@@ -877,11 +893,11 @@ mod tests {
         let o = Line::from_bytes(i.as_bytes());
         assert_eq!(
             o,
-            Line::Checksum(
-                Digest::BLAKE2s,
-                PathBuf::from("pkgin-23.8.1.tar.gz"),
-                "ojnk".to_string()
-            )
+            Line::Checksum {
+                digest: Digest::BLAKE2s,
+                path: PathBuf::from("pkgin-23.8.1.tar.gz"),
+                hash: "ojnk".to_string(),
+            },
         );
     }
 
@@ -908,70 +924,67 @@ mod tests {
         let di = Distinfo::from_bytes(i.as_bytes());
         assert_eq!(
             di.rcsid(),
-            Some(&OsString::from(
+            Some(OsStr::new(
                 "$NetBSD: distinfo,v 1.80 2024/05/27 23:27:10 riastradh Exp $"
-            ))
+            )),
         );
-        let f = di.distfile("pkgin-23.8.1.tar.gz");
-        assert!(f.is_some());
-        let p = di.patchfile("patch-configure.ac");
-        assert!(p.is_some());
-        assert_eq!(None, di.distfile("foo-23.8.1.tar.gz"));
-        assert_eq!(None, di.patchfile("patch-Makefile"));
+        assert!(di.distfile("pkgin-23.8.1.tar.gz").is_some());
+        assert!(di.patchfile("patch-configure.ac").is_some());
+        assert!(di.distfile("foo-23.8.1.tar.gz").is_none());
+        assert!(di.patchfile("patch-Makefile").is_none());
     }
 
     #[test]
     fn test_construct() {
         let mut di = Distinfo::new();
 
-        let distsums: Vec<Checksum> = vec![
-            Checksum::new(Digest::BLAKE2s, String::new()),
-            Checksum::new(Digest::SHA512, String::new()),
-        ];
+        let entry = Entry::new(
+            "foo.tar.gz",
+            "/distfiles/foo.tar.gz",
+            vec![
+                Checksum::new(Digest::BLAKE2s, String::new()),
+                Checksum::new(Digest::SHA512, String::new()),
+            ],
+            None,
+        );
 
-        let entry =
-            Entry::new("foo.tar.gz", "/distfiles/foo.tar.gz", distsums, None);
+        /* First insert returns None (no previous entry). */
+        assert!(di.insert(entry.clone()).is_none());
 
-        /* First insert is created, returns true */
-        assert!(di.insert(entry.clone()));
+        /* Second insert returns the previous entry. */
+        assert_eq!(di.insert(entry.clone()), Some(entry));
 
-        /* Second insert is an update, returns false */
-        assert!(!di.insert(entry.clone()));
-
-        assert_eq!(di.distfiles()[0].filetype, EntryType::Distfile);
-        assert_eq!(di.distfiles().len(), 1);
-
-        let patchsums: Vec<Checksum> =
-            vec![Checksum::new(Digest::SHA1, String::new())];
+        let mut distfiles = di.distfiles();
+        let first = distfiles.next().expect("at least one distfile");
+        assert_eq!(first.filetype(), EntryType::Distfile);
+        assert!(distfiles.next().is_none());
 
         di.insert(Entry::new(
             "patch-Makefile",
             "patches/patch-Makefile",
-            patchsums,
+            vec![Checksum::new(Digest::SHA1, String::new())],
             None,
         ));
 
-        assert_eq!(di.patchfiles().len(), 1);
-        assert_eq!(di.patchfiles()[0].filetype, EntryType::Patchfile);
+        let mut patchfiles = di.patchfiles();
+        let p = patchfiles.next().expect("at least one patchfile");
+        assert_eq!(p.filetype(), EntryType::Patchfile);
     }
 
     #[test]
     fn test_is_patch_filename() {
-        /* Valid patch filenames */
-        assert!(Entry::is_patch_filename("patch-Makefile"));
-        assert!(Entry::is_patch_filename("patch-configure.ac"));
-        assert!(Entry::is_patch_filename("emul-linux-x86-patch-foo"));
+        assert!(EntryType::is_patch_filename("patch-Makefile"));
+        assert!(EntryType::is_patch_filename("patch-configure.ac"));
+        assert!(EntryType::is_patch_filename("emul-linux-x86-patch-foo"));
 
-        /* Junk files */
-        assert!(!Entry::is_patch_filename("patch-local-foo"));
-        assert!(!Entry::is_patch_filename("patch-Makefile.orig"));
-        assert!(!Entry::is_patch_filename("patch-Makefile.rej"));
-        assert!(!Entry::is_patch_filename("patch-Makefile~"));
+        assert!(!EntryType::is_patch_filename("patch-local-foo"));
+        assert!(!EntryType::is_patch_filename("patch-Makefile.orig"));
+        assert!(!EntryType::is_patch_filename("patch-Makefile.rej"));
+        assert!(!EntryType::is_patch_filename("patch-Makefile~"));
 
-        /* Distfiles (don't match patch pattern) */
-        assert!(!Entry::is_patch_filename("foo-1.0.tar.gz"));
-        assert!(!Entry::is_patch_filename("patch-2.7.6.tar.xz"));
-        assert!(!Entry::is_patch_filename("emul-foo.tar.gz"));
+        assert!(!EntryType::is_patch_filename("foo-1.0.tar.gz"));
+        assert!(!EntryType::is_patch_filename("patch-2.7.6.tar.xz"));
+        assert!(!EntryType::is_patch_filename("emul-foo.tar.gz"));
     }
 
     #[test]
@@ -979,15 +992,16 @@ mod tests {
         let mut di = Distinfo::new();
         assert_eq!(di.rcsid(), None);
 
-        di.set_rcsid("$NetBSD$");
-        assert_eq!(di.rcsid(), Some(&OsString::from("$NetBSD$")));
+        assert_eq!(di.set_rcsid("$NetBSD$"), None);
+        assert_eq!(di.rcsid(), Some(OsStr::new("$NetBSD$")));
 
-        di.set_rcsid(OsString::from("$NetBSD: test $"));
-        assert_eq!(di.rcsid(), Some(&OsString::from("$NetBSD: test $")));
+        let prev = di.set_rcsid(OsString::from("$NetBSD: test $"));
+        assert_eq!(prev, Some(OsString::from("$NetBSD$")));
+        assert_eq!(di.rcsid(), Some(OsStr::new("$NetBSD: test $")));
     }
 
     #[test]
-    fn test_entry_as_bytes() {
+    fn test_entry_to_bytes() {
         let entry = Entry::new(
             "foo-1.0.tar.gz",
             "/distfiles/foo-1.0.tar.gz",
@@ -997,29 +1011,27 @@ mod tests {
             ],
             Some(12345),
         );
-        let bytes = entry.as_bytes();
-        let s = String::from_utf8(bytes).expect("valid utf8");
+        let s = String::from_utf8(entry.to_bytes()).expect("valid utf8");
         assert!(s.contains("BLAKE2s (foo-1.0.tar.gz) = abc123\n"));
         assert!(s.contains("SHA512 (foo-1.0.tar.gz) = def456\n"));
         assert!(s.contains("Size (foo-1.0.tar.gz) = 12345 bytes\n"));
     }
 
     #[test]
-    fn test_entry_as_bytes_no_size() {
+    fn test_entry_to_bytes_no_size() {
         let entry = Entry::new(
             "patch-Makefile",
             "patches/patch-Makefile",
             vec![Checksum::new(Digest::SHA1, "abc123".to_string())],
             None,
         );
-        let bytes = entry.as_bytes();
-        let s = String::from_utf8(bytes).expect("valid utf8");
+        let s = String::from_utf8(entry.to_bytes()).expect("valid utf8");
         assert!(s.contains("SHA1 (patch-Makefile) = abc123\n"));
         assert!(!s.contains("Size"));
     }
 
     #[test]
-    fn test_distinfo_as_bytes() {
+    fn test_distinfo_to_bytes() {
         let input = concat!(
             "$NetBSD: distinfo,v 1.1 2024/01/01 00:00:00 user Exp $\n",
             "\n",
@@ -1029,8 +1041,7 @@ mod tests {
             "SHA1 (patch-Makefile) = fedcba\n",
         );
         let di = Distinfo::from_bytes(input.as_bytes());
-        let output = di.as_bytes();
-        let s = String::from_utf8(output).expect("valid utf8");
+        let s = String::from_utf8(di.to_bytes()).expect("valid utf8");
         assert!(s.starts_with("$NetBSD: distinfo,v 1.1"));
         assert!(s.contains("BLAKE2s (foo-1.0.tar.gz) = abc123\n"));
         assert!(s.contains("SHA512 (foo-1.0.tar.gz) = def456\n"));
@@ -1084,7 +1095,7 @@ mod tests {
     }
 
     #[test]
-    fn test_distinfo_as_bytes_no_rcsid() {
+    fn test_distinfo_to_bytes_no_rcsid() {
         let mut di = Distinfo::new();
         di.insert(Entry::new(
             "foo-1.0.tar.gz",
@@ -1092,9 +1103,63 @@ mod tests {
             vec![Checksum::new(Digest::SHA1, "abc".to_string())],
             None,
         ));
-        let output = di.as_bytes();
-        let s = String::from_utf8(output).expect("valid utf8");
+        let s = String::from_utf8(di.to_bytes()).expect("valid utf8");
         assert!(s.starts_with("$NetBSD$\n\n"));
         assert!(s.contains("SHA1 (foo-1.0.tar.gz) = abc\n"));
+    }
+
+    #[test]
+    fn test_classify_stored_dist_subdir() {
+        /*
+         * Anything stored with a directory component is a distfile under
+         * DIST_SUBDIR, regardless of how the basename looks.  This is the
+         * stricter rule applied during parsing and Entry::new.
+         */
+        assert_eq!(
+            classify_stored(Path::new("mush/patch-7.2.6-alpha-1")),
+            EntryType::Distfile,
+        );
+        assert_eq!(
+            classify_stored(Path::new("foo/patch-Makefile")),
+            EntryType::Distfile,
+        );
+        assert_eq!(
+            classify_stored(Path::new("patch-Makefile")),
+            EntryType::Patchfile,
+        );
+    }
+
+    #[test]
+    fn test_find_with_patches_prefix() {
+        let mut di = Distinfo::new();
+        di.insert(Entry::new(
+            "patch-aa",
+            "patches/patch-aa",
+            vec![Checksum::new(Digest::SHA1, "abc".to_string())],
+            None,
+        ));
+        /*
+         * Callers commonly hand a full filesystem path; find() must walk up
+         * components to match the basename-only patch entry.
+         */
+        let found = di.find("patches/patch-aa").expect("entry resolves");
+        assert_eq!(found.filetype(), EntryType::Patchfile);
+    }
+
+    #[test]
+    fn test_subdir_patchlike_distfile() {
+        let input = concat!(
+            "$NetBSD$\n\n",
+            "BLAKE2s (mush/patch-7.2.6-alpha-1) = abc\n",
+            "Size (mush/patch-7.2.6-alpha-1) = 42 bytes\n",
+        );
+        let di = Distinfo::from_bytes(input.as_bytes());
+        let entry = di
+            .distfile("mush/patch-7.2.6-alpha-1")
+            .expect("classified as distfile");
+        assert_eq!(entry.filetype(), EntryType::Distfile);
+        assert_eq!(entry.size(), Some(42));
+        /* Round-trip preserves the Size line. */
+        assert_eq!(di.to_bytes(), input.as_bytes());
     }
 }

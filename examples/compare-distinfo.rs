@@ -31,7 +31,7 @@ fn main() {
             }
         };
         let distinfo = Distinfo::from_bytes(&input);
-        let output = distinfo.as_bytes();
+        let output = distinfo.to_bytes();
         if input != output {
             eprintln!("ERROR: {}: contents differ!", arg);
             for (bi, bo) in input
