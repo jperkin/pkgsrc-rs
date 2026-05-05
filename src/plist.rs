@@ -813,64 +813,56 @@ impl Plist {
     }
 
     /**
-     * Return a vector containing a list of PlistEntry entries that are used
-     * during an install procedure.  It is up to the caller to keep track of
-     * file metadata.
+     * Return an iterator over the [`PlistEntry`] entries used during an
+     * install procedure.  It is up to the caller to keep track of file
+     * metadata.
      */
-    #[must_use]
-    pub fn install_cmds(&self) -> Vec<&PlistEntry> {
+    pub fn install_cmds(&self) -> impl Iterator<Item = &PlistEntry> + '_ {
         let mut ignore = false;
-        self.entries
-            .iter()
-            .filter(|entry| match entry {
-                /*
-                 * Ignore the next file, usually (always?) a +METADATA file.
-                 */
-                PlistEntry::Ignore => {
-                    ignore = true;
-                    false
-                }
-                PlistEntry::File(_) => !std::mem::take(&mut ignore),
-                PlistEntry::Cwd(_)
-                | PlistEntry::Exec(_)
-                | PlistEntry::Mode(_)
-                | PlistEntry::Owner(_)
-                | PlistEntry::Group(_)
-                | PlistEntry::PkgDir(_) => true,
-                _ => false,
-            })
-            .collect()
+        self.entries.iter().filter(move |entry| match entry {
+            /*
+             * Ignore the next file, usually (always?) a +METADATA file.
+             */
+            PlistEntry::Ignore => {
+                ignore = true;
+                false
+            }
+            PlistEntry::File(_) => !std::mem::take(&mut ignore),
+            PlistEntry::Cwd(_)
+            | PlistEntry::Exec(_)
+            | PlistEntry::Mode(_)
+            | PlistEntry::Owner(_)
+            | PlistEntry::Group(_)
+            | PlistEntry::PkgDir(_) => true,
+            _ => false,
+        })
     }
 
     /**
-     * Return a vector containing a list of PlistEntry entries that are used
-     * during an uninstall procedure.  It is up to the caller to keep track of
-     * file metadata.
+     * Return an iterator over the [`PlistEntry`] entries used during an
+     * uninstall procedure.  It is up to the caller to keep track of file
+     * metadata.
      */
-    #[must_use]
-    pub fn uninstall_cmds(&self) -> Vec<&PlistEntry> {
+    pub fn uninstall_cmds(&self) -> impl Iterator<Item = &PlistEntry> + '_ {
         let mut ignore = false;
-        self.entries
-            .iter()
-            .filter(|entry| match entry {
-                /*
-                 * Ignore the next file, usually (always?) a +METADATA file.
-                 */
-                PlistEntry::Ignore => {
-                    ignore = true;
-                    false
-                }
-                PlistEntry::File(_) => !std::mem::take(&mut ignore),
-                PlistEntry::Cwd(_)
-                | PlistEntry::UnExec(_)
-                | PlistEntry::Mode(_)
-                | PlistEntry::Owner(_)
-                | PlistEntry::Group(_)
-                | PlistEntry::PkgDir(_)
-                | PlistEntry::DirRm(_) => true,
-                _ => false,
-            })
-            .collect()
+        self.entries.iter().filter(move |entry| match entry {
+            /*
+             * Ignore the next file, usually (always?) a +METADATA file.
+             */
+            PlistEntry::Ignore => {
+                ignore = true;
+                false
+            }
+            PlistEntry::File(_) => !std::mem::take(&mut ignore),
+            PlistEntry::Cwd(_)
+            | PlistEntry::UnExec(_)
+            | PlistEntry::Mode(_)
+            | PlistEntry::Owner(_)
+            | PlistEntry::Group(_)
+            | PlistEntry::PkgDir(_)
+            | PlistEntry::DirRm(_) => true,
+            _ => false,
+        })
     }
 
     /**
