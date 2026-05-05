@@ -400,6 +400,29 @@ pub struct ExtractedFile {
     pub mode: Option<u32>,
 }
 
+/// A single failure reported by [`BinaryPackage::verify_checksums`].
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+pub struct ChecksumFailure {
+    /// Path of the file that failed verification.
+    pub path: PathBuf,
+    /// Expected MD5 checksum recorded in the packing list.
+    pub expected: String,
+    /// Why verification failed.
+    pub kind: ChecksumFailureKind,
+}
+
+/// Reason a file failed checksum verification.
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+pub enum ChecksumFailureKind {
+    /// The file was not present at the expected path.
+    Missing,
+    /// The file was present but its checksum did not match.
+    Mismatch {
+        /// Checksum computed from the file on disk.
+        actual: String,
+    },
+}
+
 // ============================================================================
 // PkgHash
 // ============================================================================
@@ -1313,57 +1336,50 @@ impl BinaryPackage {
 
     /// Verify checksums of extracted files against plist MD5 values.
     ///
-    /// This method checks that files in the destination directory match
-    /// the MD5 checksums recorded in the packing list.
-    ///
-    /// # Arguments
-    ///
-    /// * `dest` - Directory where files were extracted
-    ///
-    /// # Returns
-    ///
-    /// A vector of tuples containing (file_path, expected_hash, actual_hash)
-    /// for files that failed verification. Empty vector means all passed.
+    /// Checks that files under `dest` match the MD5 checksums recorded in
+    /// the packing list.  Returns a [`ChecksumFailure`] for each file that
+    /// is missing or whose checksum does not match; an empty vector means
+    /// everything passed.
     pub fn verify_checksums(
         &self,
         dest: impl AsRef<Path>,
-    ) -> Result<Vec<(PathBuf, String, String)>> {
+    ) -> Result<Vec<ChecksumFailure>> {
         use md5::{Digest, Md5};
 
         let dest = dest.as_ref();
         let mut failures = Vec::new();
 
         for info in self.plist.files_with_info() {
-            // Skip files without checksums
-            let Some(expected) = &info.checksum else {
+            let Some(expected) = info.checksum else {
                 continue;
             };
 
-            // Skip symlinks (they have Symlink: comments instead of MD5:)
             if info.symlink_target.is_some() {
                 continue;
             }
 
-            let file_path = dest.join(&info.path);
+            let path = dest.join(&info.path);
 
-            if !file_path.exists() {
-                failures.push((
-                    file_path,
-                    expected.clone(),
-                    "FILE_NOT_FOUND".to_string(),
-                ));
+            if !path.exists() {
+                failures.push(ChecksumFailure {
+                    path,
+                    expected,
+                    kind: ChecksumFailureKind::Missing,
+                });
                 continue;
             }
 
-            // Compute MD5 of the file
-            let mut file = File::open(&file_path)?;
+            let mut file = File::open(&path)?;
             let mut hasher = Md5::new();
             io::copy(&mut file, &mut hasher)?;
-            let result = hasher.finalize();
-            let actual = format!("{:032x}", result);
+            let actual = format!("{:032x}", hasher.finalize());
 
-            if actual != *expected {
-                failures.push((file_path, expected.clone(), actual));
+            if actual != expected {
+                failures.push(ChecksumFailure {
+                    path,
+                    expected,
+                    kind: ChecksumFailureKind::Mismatch { actual },
+                });
             }
         }
 
