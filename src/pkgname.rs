@@ -190,15 +190,13 @@ pub fn pkgrevision(pkgversion: &str) -> Option<i64> {
 
 impl PkgName {
     /**
-     * Create a new [`PkgName`] from a [`str`] reference.
+     * Create a new [`PkgName`] from any string-like input.
      */
     #[must_use]
-    pub fn new(pkgname: &str) -> Self {
+    pub fn new(pkgname: impl Into<String>) -> Self {
+        let pkgname = pkgname.into();
         let split = pkgname.rfind('-').unwrap_or(pkgname.len());
-        Self {
-            pkgname: pkgname.to_string(),
-            split,
-        }
+        Self { pkgname, split }
     }
 
     /**
@@ -263,12 +261,6 @@ impl From<&str> for PkgName {
 
 impl From<String> for PkgName {
     fn from(s: String) -> Self {
-        Self::new(&s)
-    }
-}
-
-impl From<&String> for PkgName {
-    fn from(s: &String) -> Self {
         Self::new(s)
     }
 }
@@ -368,7 +360,7 @@ mod tests {
         let pkg = PkgName::from(String::from("mktool-1.3.2nb2"));
         assert_eq!(pkg.pkgname(), "mktool-1.3.2nb2");
         let s = String::from("mktool-1.3.2nb2");
-        let pkg = PkgName::from(&s);
+        let pkg = PkgName::from(s.as_str());
         assert_eq!(pkg.pkgname(), "mktool-1.3.2nb2");
     }
 
