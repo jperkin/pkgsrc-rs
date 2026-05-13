@@ -12,7 +12,7 @@ license = "ISC"
 repository = "https://github.com/jperkin/pkgsrc-rs"
 homepage = "https://github.com/jperkin/pkgsrc-rs"
 documentation = "https://docs.rs/pkgsrc"
-rust-version = "1.85.1"
+rust-version = "1.87"
 edition = "2024"
 
 [dependencies]
@@ -36,6 +36,7 @@ zstd = "0.13"
 
 [dev-dependencies]
 anyhow = "1.0"
+db185 = "0.3.0"
 indoc = "2"
 rayon = "1.10"
 regex = "1.11.2"
@@ -45,3 +46,8 @@ structopt = "0.3.26"
 [features]
 default = []
 serde = ["dep:serde", "dep:serde_with"]
+
+[profile.profiling]
+inherits = "release"
+debug = 2
+strip = "none"
