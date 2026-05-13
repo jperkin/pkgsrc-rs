@@ -99,7 +99,6 @@
  */
 
 use std::collections::HashMap;
-use std::ffi::OsString;
 use std::fmt;
 use std::fmt::Write as FmtWrite;
 use std::fs::{self, File, Permissions};
@@ -1280,10 +1279,9 @@ impl BinaryPackage {
         }
 
         // Build a map of file paths to their plist metadata
-        let file_infos: HashMap<OsString, FileInfo> = self
+        let file_infos: HashMap<PathBuf, FileInfo> = self
             .plist
             .files_with_info()
-            .into_iter()
             .map(|info| (info.path.clone(), info))
             .collect();
 
@@ -1302,7 +1300,7 @@ impl BinaryPackage {
             let full_path = dest.join(&entry_path);
 
             // Look up plist metadata for this file
-            let file_info = file_infos.get(entry_path.as_os_str());
+            let file_info = file_infos.get(&entry_path);
 
             let mut applied_mode = None;
 

@@ -18,24 +18,28 @@
  * Packing list parsing and generation.
  *
  * Packing lists, commonly referred to as plists and named `PLIST` in pkgsrc
- * package directories, contain a list of files contents that are installed by
- * a package.  They also support a limited number of commands that configure
- * additional package metadata, as well as setting file permissions and
- * performing install and deinstall commands for extracted files.
- *
- * As plists can contain data that is not UTF-8 clean (for example ISO-8859
- * filenames), the primary interfaces for parsing input are the `from_bytes()`
- * functions for both [`PlistEntry`] and [`Plist`].
- *
- * Where possible, [`PlistEntry`] types are represented by [`String`] for
- * simpler handling (and enforced UTF-8 correctness), otherwise [`OsString`]
- * is used.
+ * package directories, contain a list of files installed by a package.  They
+ * also support a limited number of commands that configure additional package
+ * metadata, as well as setting file permissions and performing install and
+ * deinstall commands for extracted files.
  *
  * A [`PlistEntry`] is an enum representing a single line in a plist, and a
  * [`Plist`] is a collection of [`PlistEntry`] making up a complete plist.
- *
- * Once a [`Plist`] has been configured, various functions allow examination of
+ * Once a [`Plist`] has been parsed, various functions allow examination of
  * the parsed data.
+ *
+ * As plists can contain data that is not UTF-8 clean (for example ISO-8859
+ * filenames), the primary interfaces for parsing input are byte oriented.
+ *
+ * Two parser styles are available:
+ *
+ * * [`Plist::from_bytes`] parses the entire byte slice eagerly into an
+ *   owning [`Plist`], a `Vec<PlistEntry<'static>>` with named query methods.
+ *   Use this when you want to interrogate the plist multiple times.
+ *
+ * * [`parse`] returns a lazy iterator of [`PlistEntry<'_>`] borrowing
+ *   directly from the source bytes.  Use this when you only need to walk
+ *   the plist once: it avoids per-entry allocation.
  *
  * ## Examples
  *
@@ -110,7 +114,7 @@
  *
  *     for entry in &plist {
  *         if let PlistEntry::File(path) = entry {
- *             println!("File: {}", path.to_string_lossy());
+ *             println!("File: {}", path.display());
  *         }
  *     }
  *
@@ -118,9 +122,11 @@
  * }
  * ```
  */
+use std::borrow::Cow;
 use std::ffi::{OsStr, OsString};
 use std::os::unix::ffi::OsStrExt;
-use std::string::FromUtf8Error;
+use std::path::{Path, PathBuf};
+use std::str::Utf8Error;
 use thiserror::Error;
 
 #[cfg(test)]
@@ -128,7 +134,7 @@ use indoc::indoc;
 
 /**
  * A type alias for the result from the creation of either a [`PlistEntry`] or
- * a [`Plist`], with [`Error`] returned in [`Err`] variants.
+ * a [`Plist`], with [`PlistError`] returned in [`Err`] variants.
  */
 pub type Result<T> = std::result::Result<T, PlistError>;
 
@@ -150,84 +156,78 @@ pub enum PlistError {
     #[error("incorrect command arguments: {args}", args = .0.to_string_lossy())]
     IncorrectArguments(OsString),
     /**
-     * Wrapped [`FromUtf8Error`] error when failing to parse valid UTF-8.
+     * Wrapped [`Utf8Error`] when failing to parse valid UTF-8.
      */
-    #[error("invalid UTF-8 sequence: {}", .0.utf8_error())]
-    Utf8(#[from] FromUtf8Error),
+    #[error("invalid UTF-8 sequence: {0}")]
+    Utf8(#[from] Utf8Error),
 }
 
 /**
  * A single plist entry.
  *
- * Entries can be constructed either by using [`from_bytes()`] to parse an
- * array of bytes from a plist, or by constructing one of the entries manually.
+ * Entries can be constructed either by using [`PlistEntry::from_bytes`] to
+ * parse an array of bytes from a plist, or by constructing one of the
+ * variants manually.
  *
  * ## Examples
  *
  * ```
- * use pkgsrc::plist::{Result,PlistEntry};
- * use std::ffi::OsString;
+ * use pkgsrc::plist::{PlistEntry, Result};
+ * use std::borrow::Cow;
+ * use std::ffi::OsStr;
  *
  * fn main() -> Result<()> {
- *     /*
- *      * Entries differ in whether they take String or OsString arguments and
- *      * whether or not they are wrapped in Option, check the documentation!
- *      */
- *     let p1 = PlistEntry::from_bytes(String::from("@comment hi").as_bytes())?;
- *     let p2 = PlistEntry::Comment(Some(OsString::from("hi")));
- *
+ *     let p1 = PlistEntry::from_bytes(b"@comment hi")?;
+ *     let p2 = PlistEntry::Comment(Some(Cow::Borrowed(OsStr::new("hi"))));
  *     assert_eq!(p1, p2);
- *
  *     Ok(())
  * }
  * ```
- *
- * [`from_bytes()`]: PlistEntry::from_bytes
  */
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-pub enum PlistEntry {
+pub enum PlistEntry<'a> {
     /**
      * Filename to extract relative to the current working directory.
      */
-    File(OsString),
+    File(Cow<'a, Path>),
     /**
      * Set the internal directory pointer.  All subsequent filenames will be
      * assumed relative to this directory.
      */
-    Cwd(OsString),
+    Cwd(Cow<'a, Path>),
     /**
      * Execute command as part of the unpacking process.
      */
-    Exec(OsString),
+    Exec(Cow<'a, OsStr>),
     /**
      * Execute command as part of the deinstallation process.
      */
-    UnExec(OsString),
+    UnExec(Cow<'a, OsStr>),
     /**
      * Set default permission for all subsequently extracted files.
      */
-    Mode(Option<String>),
+    Mode(Option<Cow<'a, str>>),
     /**
-     * Set internal package options.  Named Opt to avoid conflict with Rust
-     * "Option".
+     * Set internal package options.  Named PkgOpt to avoid conflict with
+     * Rust "Option".
      */
     PkgOpt(PlistOption),
     /**
      * Set default ownership for all subsequently extracted files to specified
      * user.
      */
-    Owner(Option<String>),
+    Owner(Option<Cow<'a, str>>),
     /**
      * Set default group ownership for all subsequently extracted files to
      * specified group.
      */
-    Group(Option<String>),
+    Group(Option<Cow<'a, str>>),
     /**
      * Embed a comment in the packing list.  While specified as mandatory in
      * the manual page, in practise it is not (e.g. `print-PLIST`).
      */
-    Comment(Option<OsString>),
+    Comment(Option<Cow<'a, OsStr>>),
     /**
      * Used internally to tell extraction to ignore the next file.
      */
@@ -235,41 +235,41 @@ pub enum PlistEntry {
     /**
      * Set the name of the package.
      */
-    Name(String),
+    Name(Cow<'a, str>),
     /**
      * Declare directory name as managed.
      */
-    PkgDir(OsString),
+    PkgDir(Cow<'a, Path>),
     /**
      * If directory name exists, it will be deleted at deinstall time.
      */
-    DirRm(OsString),
+    DirRm(Cow<'a, Path>),
     /**
      * Declare name as the file to be displayed at install time.
      */
-    Display(OsString),
+    Display(Cow<'a, Path>),
     /**
      * Declare a dependency on the pkgname package.
      */
-    PkgDep(String),
+    PkgDep(Cow<'a, str>),
     /**
      * Declare that this package was built with the exact version of pkgname.
      */
-    BldDep(String),
+    BldDep(Cow<'a, str>),
     /**
      * Declare a conflict with the pkgcflname package.
      */
-    PkgCfl(String),
+    PkgCfl(Cow<'a, str>),
     /**
      * MD5 checksum of the preceding file entry.
      * Parsed from `@comment MD5:<32-char-hex>`.
      */
-    FileChecksum(String),
+    FileChecksum(Cow<'a, str>),
     /**
      * Symlink target for the preceding file entry.
      * Parsed from `@comment Symlink:<target>`.
      */
-    SymlinkTarget(OsString),
+    SymlinkTarget(Cow<'a, Path>),
 }
 
 /**
@@ -287,186 +287,288 @@ pub enum PlistOption {
     Preserve,
 }
 
-macro_rules! plist_args_str {
-    ($s:ident, $p:path, $l:ident) => {
-        match $s {
-            Some(s) => Ok($p(String::from_utf8(s.as_bytes().to_vec())?)),
-            None => Err(PlistError::IncorrectArguments(OsString::from($l))),
-        }
-    };
-}
-
-macro_rules! plist_args_osstr {
-    ($s:ident, $p:path, $l:ident) => {
-        match $s {
-            Some(dir) => Ok($p(OsString::from(dir))),
-            None => Err(PlistError::IncorrectArguments(OsString::from($l))),
-        }
-    };
-}
-
-macro_rules! plist_args_str_opt {
-    ($s:ident, $p:path) => {
-        match $s {
-            Some(s) => Ok($p(Some(String::from_utf8(s.as_bytes().to_vec())?))),
-            None => Ok($p(None)),
-        }
-    };
-}
-
-macro_rules! plist_args_osstr_opt {
-    ($s:ident, $p:path) => {
-        match $s {
-            Some(s) => Ok($p(Some(OsString::from(s)))),
-            None => Ok($p(None)),
-        }
-    };
-}
-
-impl PlistEntry {
+impl<'a> PlistEntry<'a> {
     /**
      * Construct a new [`PlistEntry`] from a stream of bytes representing a
-     * line from a package list.
+     * line from a package list.  Validates UTF-8 for variants that are
+     * semantically `String`.
      */
-    pub fn from_bytes(bytes: &[u8]) -> Result<PlistEntry> {
-        let line = OsStr::from_bytes(bytes);
-        let end = bytes.len();
+    pub fn from_bytes(bytes: &'a [u8]) -> Result<Self> {
+        parse_line(bytes)
+    }
 
-        /*
-         * Look for the first space character to split on, then convert the
-         * first part to UTF-8 to simplify processing.  We ensure non-UTF-8
-         * characters are handled correctly later.  If there are no spaces then
-         * use the entire line.
-         */
-        let bytes = &bytes[0..end];
-        let (mut idx, cmd) = match bytes.iter().position(|&c| c == b' ') {
-            Some(i) => (i, String::from_utf8_lossy(&bytes[0..i]).into_owned()),
-            None => (0, String::from_utf8_lossy(bytes).into_owned()),
-        };
-
-        /*
-         * Set optional arguments if anything exists after the first space,
-         * after first removing any leading whitespace.
-         */
-        let args = if idx == 0 || idx + 1 >= end {
-            None
-        } else {
-            for c in &bytes[idx..end] {
-                if (*c as char).is_whitespace() {
-                    idx += 1;
-                    continue;
-                }
-                break;
-            }
-            if idx == end {
-                None
-            } else {
-                Some(OsStr::from_bytes(&bytes[idx..end]))
-            }
-        };
-
-        if cmd.starts_with('@') {
-            match cmd.as_str() {
-                /*
-                 * @src and @cd are effectively aliases for @cwd.
-                 */
-                "@cwd" | "@src" | "@cd" => {
-                    plist_args_osstr!(args, PlistEntry::Cwd, line)
-                }
-                "@exec" => plist_args_osstr!(args, PlistEntry::Exec, line),
-                "@unexec" => plist_args_osstr!(args, PlistEntry::UnExec, line),
-
-                /*
-                 * Currently "preserve" is the only valid option.
-                 */
-                "@option" => match args.and_then(OsStr::to_str) {
-                    Some("preserve") => {
-                        Ok(PlistEntry::PkgOpt(PlistOption::Preserve))
-                    }
-                    Some(_) => {
-                        Err(PlistError::UnsupportedCommand(OsString::from(cmd)))
-                    }
-                    None => Err(PlistError::IncorrectArguments(
-                        OsString::from(line),
-                    )),
-                },
-
-                /*
-                 * File ownership and permissions are allowed to be unset,
-                 * indicating that they return to their respective defaults.
-                 */
-                "@mode" => plist_args_str_opt!(args, PlistEntry::Mode),
-                "@owner" => plist_args_str_opt!(args, PlistEntry::Owner),
-                "@group" => plist_args_str_opt!(args, PlistEntry::Group),
-
-                /*
-                 * Whilst the manual page specifies that @comment takes an
-                 * argument, it's too pedantic to insist that it must, so we
-                 * handle it as an optional argument.
-                 *
-                 * Must be an OsString as often contains filenames.
-                 *
-                 * Special cases:
-                 * - "@comment MD5:<hash>" -> FileChecksum (32-char hex MD5)
-                 * - "@comment Symlink:<target>" -> SymlinkTarget
-                 */
-                "@comment" => {
-                    match args.and_then(OsStr::to_str) {
-                        Some(s) if s.starts_with("MD5:") => {
-                            let hash = &s[4..];
-                            // MD5 hashes are 32 hex characters
-                            if hash.len() == 32
-                                && hash.chars().all(|c| c.is_ascii_hexdigit())
-                            {
-                                Ok(PlistEntry::FileChecksum(hash.to_string()))
-                            } else {
-                                // Invalid MD5 format, treat as regular comment
-                                plist_args_osstr_opt!(args, PlistEntry::Comment)
-                            }
-                        }
-                        Some(s) if s.starts_with("Symlink:") => {
-                            let target = &s[8..];
-                            Ok(PlistEntry::SymlinkTarget(OsString::from(
-                                target,
-                            )))
-                        }
-                        _ => plist_args_osstr_opt!(args, PlistEntry::Comment),
-                    }
-                }
-
-                /*
-                 * For now be strict that "@ignore" must not take arguments.
-                 */
-                "@ignore" => match args {
-                    Some(_) => Err(PlistError::IncorrectArguments(
-                        OsString::from(line),
-                    )),
-                    None => Ok(PlistEntry::Ignore),
-                },
-
-                /*
-                 * Contain strict package names so must be UTF-8 clean.
-                 */
-                "@name" => plist_args_str!(args, PlistEntry::Name, line),
-                "@pkgdep" => plist_args_str!(args, PlistEntry::PkgDep, line),
-                "@blddep" => plist_args_str!(args, PlistEntry::BldDep, line),
-                "@pkgcfl" => plist_args_str!(args, PlistEntry::PkgCfl, line),
-
-                /*
-                 * Contain files/directories so need to support OsString.
-                 */
-                "@pkgdir" => plist_args_osstr!(args, PlistEntry::PkgDir, line),
-                "@dirrm" => plist_args_osstr!(args, PlistEntry::DirRm, line),
-                "@display" => {
-                    plist_args_osstr!(args, PlistEntry::Display, line)
-                }
-
-                _ => Err(PlistError::UnsupportedCommand(OsString::from(cmd))),
-            }
-        } else {
-            Ok(PlistEntry::File(OsString::from(OsStr::from_bytes(bytes))))
+    /**
+     * Convert into a `'static` (fully owned) entry by cloning any borrowed
+     * payloads.
+     */
+    #[must_use]
+    pub fn into_owned(self) -> PlistEntry<'static> {
+        use PlistEntry as P;
+        match self {
+            P::File(p) => P::File(own_path(p)),
+            P::Cwd(p) => P::Cwd(own_path(p)),
+            P::Exec(o) => P::Exec(own_osstr(o)),
+            P::UnExec(o) => P::UnExec(own_osstr(o)),
+            P::Mode(s) => P::Mode(own_opt_str(s)),
+            P::PkgOpt(o) => P::PkgOpt(o),
+            P::Owner(s) => P::Owner(own_opt_str(s)),
+            P::Group(s) => P::Group(own_opt_str(s)),
+            P::Comment(o) => P::Comment(own_opt_osstr(o)),
+            P::Ignore => P::Ignore,
+            P::Name(s) => P::Name(own_str(s)),
+            P::PkgDir(p) => P::PkgDir(own_path(p)),
+            P::DirRm(p) => P::DirRm(own_path(p)),
+            P::Display(p) => P::Display(own_path(p)),
+            P::PkgDep(s) => P::PkgDep(own_str(s)),
+            P::BldDep(s) => P::BldDep(own_str(s)),
+            P::PkgCfl(s) => P::PkgCfl(own_str(s)),
+            P::FileChecksum(s) => P::FileChecksum(own_str(s)),
+            P::SymlinkTarget(p) => P::SymlinkTarget(own_path(p)),
         }
     }
+}
+
+/**
+ * A lazy iterator over a plist's entries, borrowing from the source bytes.
+ *
+ * Returned by [`parse`].  Yields `Result<PlistEntry<'_>>`: each item is a
+ * parsed entry or a [`PlistError`] for that line.  Blank and
+ * whitespace-only lines are skipped.  UTF-8 validation is performed
+ * inline for variants whose payloads are typed as [`Cow<str>`] (see
+ * [`PlistEntry`]); a bad-UTF-8 payload on those variants yields a
+ * [`PlistError::Utf8`].
+ */
+pub struct Parser<'a> {
+    rest: &'a [u8],
+}
+
+impl<'a> Iterator for Parser<'a> {
+    type Item = Result<PlistEntry<'a>>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        loop {
+            let line = next_line(&mut self.rest)?;
+            if line.iter().all(u8::is_ascii_whitespace) {
+                continue;
+            }
+            return Some(parse_line(line));
+        }
+    }
+}
+
+/**
+ * Lazily parse `bytes` into a stream of [`PlistEntry`] values.
+ *
+ * Payloads borrow directly from `bytes` and the call itself does no work.
+ * Intended for one-pass walks over large plists where allocating owned
+ * payloads per line is wasteful.
+ *
+ * UTF-8 is validated inline for variants whose payloads are typed as
+ * [`Cow<str>`].  The cost is byte-level scanning over those payloads
+ * only (typically a small fraction of plist content) and produces an
+ * `Err` for malformed input rather than silently lossy data.
+ */
+#[must_use]
+pub fn parse(bytes: &[u8]) -> Parser<'_> {
+    Parser { rest: bytes }
+}
+
+fn next_line<'a>(rest: &mut &'a [u8]) -> Option<&'a [u8]> {
+    if rest.is_empty() {
+        return None;
+    }
+    match rest.iter().position(|&b| b == b'\n') {
+        Some(i) => {
+            let line = &rest[..i];
+            *rest = &rest[i + 1..];
+            Some(line)
+        }
+        None => {
+            let line = *rest;
+            *rest = &[];
+            Some(line)
+        }
+    }
+}
+
+fn parse_line(line: &[u8]) -> Result<PlistEntry<'_>> {
+    let (cmd, args) = split_cmd_args(line);
+
+    if !cmd.starts_with(b"@") {
+        return Ok(PlistEntry::File(borrow_path(line)));
+    }
+
+    match cmd {
+        /*
+         * @src and @cd are effectively aliases for @cwd.
+         */
+        b"@cwd" | b"@src" | b"@cd" => {
+            required_path(args, line, PlistEntry::Cwd)
+        }
+        b"@exec" => required_osstr(args, line, PlistEntry::Exec),
+        b"@unexec" => required_osstr(args, line, PlistEntry::UnExec),
+
+        /*
+         * File ownership and permissions are allowed to be unset,
+         * indicating that they return to their respective defaults.
+         */
+        b"@mode" => Ok(PlistEntry::Mode(optional_str(args)?)),
+        b"@owner" => Ok(PlistEntry::Owner(optional_str(args)?)),
+        b"@group" => Ok(PlistEntry::Group(optional_str(args)?)),
+
+        /*
+         * Currently "preserve" is the only valid option.
+         */
+        b"@option" => match args {
+            Some(b"preserve") => Ok(PlistEntry::PkgOpt(PlistOption::Preserve)),
+            Some(_) => Err(PlistError::UnsupportedCommand(os(cmd))),
+            None => Err(PlistError::IncorrectArguments(os(line))),
+        },
+
+        /*
+         * Whilst the manual page specifies that @comment takes an
+         * argument, it's too pedantic to insist that it must, so we
+         * handle it as an optional argument.  Comments often carry
+         * non-UTF-8 filenames so the payload is typed as OsStr.
+         *
+         * Special cases:
+         * - "@comment MD5:<hash>"      -> FileChecksum (32-char hex MD5)
+         * - "@comment Symlink:<target>" -> SymlinkTarget
+         */
+        b"@comment" => parse_comment(args),
+
+        /*
+         * For now be strict that @ignore must not take arguments.
+         */
+        b"@ignore" => match args {
+            None => Ok(PlistEntry::Ignore),
+            Some(_) => Err(PlistError::IncorrectArguments(os(line))),
+        },
+
+        b"@name" => required_str(args, line, PlistEntry::Name),
+        b"@pkgdep" => required_str(args, line, PlistEntry::PkgDep),
+        b"@blddep" => required_str(args, line, PlistEntry::BldDep),
+        b"@pkgcfl" => required_str(args, line, PlistEntry::PkgCfl),
+
+        b"@pkgdir" => required_path(args, line, PlistEntry::PkgDir),
+        b"@dirrm" => required_path(args, line, PlistEntry::DirRm),
+        b"@display" => required_path(args, line, PlistEntry::Display),
+
+        _ => Err(PlistError::UnsupportedCommand(os(cmd))),
+    }
+}
+
+fn split_cmd_args(line: &[u8]) -> (&[u8], Option<&[u8]>) {
+    let Some(i) = line.iter().position(|&b| b == b' ') else {
+        return (line, None);
+    };
+    let cmd = &line[..i];
+    let mut j = i + 1;
+    while j < line.len() && line[j].is_ascii_whitespace() {
+        j += 1;
+    }
+    if j >= line.len() {
+        (cmd, None)
+    } else {
+        (cmd, Some(&line[j..]))
+    }
+}
+
+fn required_path<'a>(
+    args: Option<&'a [u8]>,
+    line: &[u8],
+    ctor: fn(Cow<'a, Path>) -> PlistEntry<'a>,
+) -> Result<PlistEntry<'a>> {
+    match args {
+        Some(a) => Ok(ctor(borrow_path(a))),
+        None => Err(PlistError::IncorrectArguments(os(line))),
+    }
+}
+
+fn required_osstr<'a>(
+    args: Option<&'a [u8]>,
+    line: &[u8],
+    ctor: fn(Cow<'a, OsStr>) -> PlistEntry<'a>,
+) -> Result<PlistEntry<'a>> {
+    match args {
+        Some(a) => Ok(ctor(borrow_osstr(a))),
+        None => Err(PlistError::IncorrectArguments(os(line))),
+    }
+}
+
+fn required_str<'a>(
+    args: Option<&'a [u8]>,
+    line: &[u8],
+    ctor: fn(Cow<'a, str>) -> PlistEntry<'a>,
+) -> Result<PlistEntry<'a>> {
+    match args {
+        Some(a) => Ok(ctor(Cow::Borrowed(std::str::from_utf8(a)?))),
+        None => Err(PlistError::IncorrectArguments(os(line))),
+    }
+}
+
+fn optional_str(args: Option<&[u8]>) -> Result<Option<Cow<'_, str>>> {
+    Ok(args
+        .map(|a| std::str::from_utf8(a).map(Cow::Borrowed))
+        .transpose()?)
+}
+
+fn parse_comment(args: Option<&[u8]>) -> Result<PlistEntry<'_>> {
+    let Some(a) = args else {
+        return Ok(PlistEntry::Comment(None));
+    };
+    if let Some(rest) = a.strip_prefix(b"MD5:") {
+        if rest.len() == 32 && rest.iter().all(u8::is_ascii_hexdigit) {
+            return Ok(PlistEntry::FileChecksum(Cow::Borrowed(
+                std::str::from_utf8(rest)?,
+            )));
+        }
+        return Ok(PlistEntry::Comment(Some(borrow_osstr(a))));
+    }
+    if let Some(rest) = a.strip_prefix(b"Symlink:") {
+        return Ok(PlistEntry::SymlinkTarget(borrow_path(rest)));
+    }
+    Ok(PlistEntry::Comment(Some(borrow_osstr(a))))
+}
+
+#[inline]
+fn borrow_osstr(bytes: &[u8]) -> Cow<'_, OsStr> {
+    Cow::Borrowed(OsStr::from_bytes(bytes))
+}
+
+#[inline]
+fn borrow_path(bytes: &[u8]) -> Cow<'_, Path> {
+    Cow::Borrowed(Path::new(OsStr::from_bytes(bytes)))
+}
+
+#[inline]
+fn os(bytes: &[u8]) -> OsString {
+    OsStr::from_bytes(bytes).to_os_string()
+}
+
+#[inline]
+fn own_path(c: Cow<'_, Path>) -> Cow<'static, Path> {
+    Cow::Owned(c.into_owned())
+}
+
+#[inline]
+fn own_osstr(c: Cow<'_, OsStr>) -> Cow<'static, OsStr> {
+    Cow::Owned(c.into_owned())
+}
+
+#[inline]
+fn own_str(c: Cow<'_, str>) -> Cow<'static, str> {
+    Cow::Owned(c.into_owned())
+}
+
+#[inline]
+fn own_opt_osstr(c: Option<Cow<'_, OsStr>>) -> Option<Cow<'static, OsStr>> {
+    c.map(own_osstr)
+}
+
+#[inline]
+fn own_opt_str(c: Option<Cow<'_, str>>) -> Option<Cow<'static, str>> {
+    c.map(own_str)
 }
 
 /**
@@ -482,11 +584,11 @@ impl PlistEntry {
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct FileInfo {
     /// The file path relative to the current working directory.
-    pub path: OsString,
+    pub path: PathBuf,
     /// MD5 checksum as 32-character hex string, if present.
     pub checksum: Option<String>,
     /// Symlink target path, if this entry represents a symlink.
-    pub symlink_target: Option<OsString>,
+    pub symlink_target: Option<PathBuf>,
     /// File mode (e.g., "0644", "755"), if set.
     pub mode: Option<String>,
     /// File owner username, if set.
@@ -498,65 +600,28 @@ pub struct FileInfo {
 /**
  * A complete list of [`PlistEntry`] entries.
  *
- * Entries are parsed using [`from_bytes()`].
+ * Entries are parsed eagerly using [`Plist::from_bytes`].  For one-pass
+ * streaming parsing without per-entry allocation use [`parse`], which
+ * yields [`PlistEntry<'_>`] borrowed from the source.
  *
- * See the top for a full example.
+ * See the top of the module for a full example.
  *
  * ## Examples
  *
  * ```
- * use pkgsrc::plist::{Result,Plist};
- * use std::ffi::OsString;
+ * use pkgsrc::plist::{Plist, Result};
  *
  * fn main() -> Result<()> {
- *     let p1 = Plist::from_bytes(String::from("@name pkg-1.0").as_bytes())?;
- *     assert_eq!(p1.pkgname(), Some("pkg-1.0"));
+ *     let plist = Plist::from_bytes(b"@name pkg-1.0")?;
+ *     assert_eq!(plist.pkgname(), Some("pkg-1.0"));
  *     Ok(())
  * }
  * ```
- *
- * [`from_bytes()`]: Plist::from_bytes
  */
 #[derive(Clone, Debug, Default, Eq, Hash, PartialEq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct Plist {
-    entries: Vec<PlistEntry>,
-}
-
-macro_rules! plist_match_filter_str {
-    ($s:ident, $p:path) => {
-        $s.entries.iter().filter_map(|entry| match entry {
-            $p(s) => Some(s.as_str()),
-            _ => None,
-        })
-    };
-}
-
-macro_rules! plist_match_filter_osstr {
-    ($s:ident, $p:path) => {
-        $s.entries.iter().filter_map(|entry| match entry {
-            $p(s) => Some(s.as_os_str()),
-            _ => None,
-        })
-    };
-}
-
-macro_rules! plist_find_first_str {
-    ($s:ident, $p:path) => {
-        $s.entries.iter().find_map(|entry| match entry {
-            $p(s) => Some(s.as_str()),
-            _ => None,
-        })
-    };
-}
-
-macro_rules! plist_find_first_osstr {
-    ($s:ident, $p:path) => {
-        $s.entries.iter().find_map(|entry| match entry {
-            $p(s) => Some(s.as_os_str()),
-            _ => None,
-        })
-    };
+    entries: Vec<PlistEntry<'static>>,
 }
 
 impl Plist {
@@ -573,61 +638,11 @@ impl Plist {
      * from a package list.
      */
     pub fn from_bytes(bytes: &[u8]) -> Result<Self> {
-        let mut plist = Self::new();
-
-        /*
-         * Look through the byte stream, splitting entries on newlines, and
-         * account for leading whitespace in order to skip any blank lines.
-         */
-        let mut lines: Vec<(usize, usize)> = Vec::new();
-        let mut start = 0;
-        let mut tstart = 0;
-        let mut trim = true;
-        let mut end = 0;
-        for (idx, ch) in bytes.iter().enumerate() {
-            if *ch == b'\n' {
-                /*
-                 * Valid line containing non-whitespace characters.
-                 */
-                if start < idx && tstart + 1 < idx {
-                    lines.push((start, idx));
-                }
-                /*
-                 * Reset for next line.
-                 */
-                start = idx + 1;
-                end = start;
-                tstart = start;
-                trim = true;
-            } else if trim && (*ch as char).is_whitespace() {
-                /*
-                 * Account for leading whitespace.
-                 */
-                tstart += 1;
-            } else {
-                /*
-                 * Stop on first non-whitespace character.
-                 */
-                trim = false;
-            }
+        let mut entries = Vec::new();
+        for r in parse(bytes) {
+            entries.push(r?.into_owned());
         }
-        /*
-         * Handle any trailing lines that do not contain newlines.
-         */
-        if end < bytes.len() && tstart < bytes.len() {
-            lines.push((start, bytes.len()));
-        }
-
-        /*
-         * Parse all valid entries that we've found.
-         */
-        for (start, end) in lines {
-            plist
-                .entries
-                .push(PlistEntry::from_bytes(&bytes[start..end])?);
-        }
-
-        Ok(plist)
+        Ok(Self { entries })
     }
 
     /**
@@ -638,7 +653,10 @@ impl Plist {
      */
     #[must_use]
     pub fn pkgname(&self) -> Option<&str> {
-        plist_find_first_str!(self, PlistEntry::Name)
+        self.entries.iter().find_map(|e| match e {
+            PlistEntry::Name(s) => Some(s.as_ref()),
+            _ => None,
+        })
     }
 
     /**
@@ -647,50 +665,68 @@ impl Plist {
      * returned.
      */
     #[must_use]
-    pub fn display(&self) -> Option<&OsStr> {
-        plist_find_first_osstr!(self, PlistEntry::Display)
+    pub fn display(&self) -> Option<&Path> {
+        self.entries.iter().find_map(|e| match e {
+            PlistEntry::Display(p) => Some(p.as_ref()),
+            _ => None,
+        })
     }
 
     /**
      * Return an iterator over `@pkgdep` entries as string slices.
      */
     pub fn depends(&self) -> impl Iterator<Item = &str> + '_ {
-        plist_match_filter_str!(self, PlistEntry::PkgDep)
+        self.entries.iter().filter_map(|e| match e {
+            PlistEntry::PkgDep(s) => Some(s.as_ref()),
+            _ => None,
+        })
     }
 
     /**
      * Return an iterator over `@blddep` entries as string slices.
      */
     pub fn build_depends(&self) -> impl Iterator<Item = &str> + '_ {
-        plist_match_filter_str!(self, PlistEntry::BldDep)
+        self.entries.iter().filter_map(|e| match e {
+            PlistEntry::BldDep(s) => Some(s.as_ref()),
+            _ => None,
+        })
     }
 
     /**
      * Return an iterator over `@pkgcfl` entries as string slices.
      */
     pub fn conflicts(&self) -> impl Iterator<Item = &str> + '_ {
-        plist_match_filter_str!(self, PlistEntry::PkgCfl)
+        self.entries.iter().filter_map(|e| match e {
+            PlistEntry::PkgCfl(s) => Some(s.as_ref()),
+            _ => None,
+        })
     }
 
     /**
-     * Return an iterator over `@pkgdir` entries as os-string slices.
+     * Return an iterator over `@pkgdir` entries as path slices.
      */
-    pub fn pkgdirs(&self) -> impl Iterator<Item = &OsStr> + '_ {
-        plist_match_filter_osstr!(self, PlistEntry::PkgDir)
+    pub fn pkgdirs(&self) -> impl Iterator<Item = &Path> + '_ {
+        self.entries.iter().filter_map(|e| match e {
+            PlistEntry::PkgDir(p) => Some(p.as_ref()),
+            _ => None,
+        })
     }
 
     /**
-     * Return an iterator over `@dirrm` entries as os-string slices.
+     * Return an iterator over `@dirrm` entries as path slices.
      */
-    pub fn pkgrmdirs(&self) -> impl Iterator<Item = &OsStr> + '_ {
-        plist_match_filter_osstr!(self, PlistEntry::DirRm)
+    pub fn pkgrmdirs(&self) -> impl Iterator<Item = &Path> + '_ {
+        self.entries.iter().filter_map(|e| match e {
+            PlistEntry::DirRm(p) => Some(p.as_ref()),
+            _ => None,
+        })
     }
 
     /**
-     * Return an iterator over file entries as os-string slices.  Any files
+     * Return an iterator over file entries as path slices.  Any files
      * that come after an `@ignore` command are not listed.
      */
-    pub fn files(&self) -> impl Iterator<Item = &OsStr> + '_ {
+    pub fn files(&self) -> impl Iterator<Item = &Path> + '_ {
         let mut ignore = false;
         self.entries.iter().filter_map(move |entry| match entry {
             PlistEntry::Ignore => {
@@ -698,11 +734,10 @@ impl Plist {
                 None
             }
             PlistEntry::File(file) => {
-                if ignore {
-                    ignore = false;
+                if std::mem::take(&mut ignore) {
                     None
                 } else {
-                    Some(file.as_os_str())
+                    Some(file.as_ref())
                 }
             }
             _ => None,
@@ -710,16 +745,16 @@ impl Plist {
     }
 
     /**
-     * Return an iterator over file entries including their prefix (as set by
-     * `@cwd`).  Any files that come after an `@ignore` command are not
-     * listed.
+     * Return an iterator over file entries joined with their preceding
+     * `@cwd` prefix as owned [`PathBuf`] values.  Any files that come
+     * after an `@ignore` command are not listed.
      */
-    pub fn files_prefixed(&self) -> impl Iterator<Item = OsString> + '_ {
+    pub fn files_prefixed(&self) -> impl Iterator<Item = PathBuf> + '_ {
         let mut ignore = false;
-        let mut prefix: Option<OsString> = None;
+        let mut prefix: Option<&Path> = None;
         self.entries.iter().filter_map(move |entry| match entry {
             PlistEntry::Cwd(dir) => {
-                prefix = Some(dir.to_os_string());
+                prefix = Some(dir.as_ref());
                 None
             }
             PlistEntry::Ignore => {
@@ -727,89 +762,33 @@ impl Plist {
                 None
             }
             PlistEntry::File(file) => {
-                if ignore {
-                    ignore = false;
-                    None
-                } else {
-                    let mut path = OsString::new();
-                    if let Some(pfx) = &prefix {
-                        path.push(pfx);
-                        if !pfx.as_os_str().as_bytes().ends_with(b"/") {
-                            path.push("/");
-                        }
-                    }
-                    path.push(file);
-                    Some(path)
+                if std::mem::take(&mut ignore) {
+                    return None;
                 }
+                let file: &Path = file.as_ref();
+                Some(match prefix {
+                    Some(pfx) => pfx.join(file),
+                    None => file.to_path_buf(),
+                })
             }
             _ => None,
         })
     }
 
     /**
-     * Return a vector containing file entries with their associated metadata.
+     * Return an iterator over file entries with their associated metadata.
      *
-     * This method iterates through the packing list and collects file entries
-     * along with their associated metadata:
-     * - MD5 checksum (from following `@comment MD5:...`)
-     * - Symlink target (from following `@comment Symlink:...`)
-     * - Current mode, owner, group (from preceding `@mode`, `@owner`, `@group`)
+     * For each non-`@ignore`d file directive, the iterator yields a
+     * [`FileInfo`] carrying:
+     * - the file path,
+     * - the most recent `@mode` / `@owner` / `@group` settings,
+     * - an optional MD5 checksum (from a following `@comment MD5:...`),
+     * - an optional symlink target (from a following `@comment Symlink:...`).
      *
-     * Files marked with `@ignore` are not included.
+     * Call `.collect()` if a `Vec<FileInfo>` is needed.
      */
-    #[must_use]
-    pub fn files_with_info(&self) -> Vec<FileInfo> {
-        let mut result = Vec::new();
-        let mut ignore = false;
-        let mut current_mode: Option<String> = None;
-        let mut current_owner: Option<String> = None;
-        let mut current_group: Option<String> = None;
-
-        let mut i = 0;
-        while i < self.entries.len() {
-            match &self.entries[i] {
-                PlistEntry::Mode(m) => current_mode = m.clone(),
-                PlistEntry::Owner(o) => current_owner = o.clone(),
-                PlistEntry::Group(g) => current_group = g.clone(),
-                PlistEntry::Ignore => ignore = true,
-                PlistEntry::File(path) => {
-                    if ignore {
-                        ignore = false;
-                    } else {
-                        let mut info = FileInfo {
-                            path: path.clone(),
-                            checksum: None,
-                            symlink_target: None,
-                            mode: current_mode.clone(),
-                            owner: current_owner.clone(),
-                            group: current_group.clone(),
-                        };
-
-                        // Look ahead for checksum or symlink target
-                        let mut j = i + 1;
-                        while j < self.entries.len() {
-                            match &self.entries[j] {
-                                PlistEntry::FileChecksum(hash) => {
-                                    info.checksum = Some(hash.clone());
-                                    j += 1;
-                                }
-                                PlistEntry::SymlinkTarget(target) => {
-                                    info.symlink_target = Some(target.clone());
-                                    j += 1;
-                                }
-                                _ => break,
-                            }
-                        }
-
-                        result.push(info);
-                    }
-                }
-                _ => {}
-            }
-            i += 1;
-        }
-
-        result
+    pub fn files_with_info(&self) -> impl Iterator<Item = FileInfo> + '_ {
+        FilesWithInfo::new(&self.entries)
     }
 
     /**
@@ -817,7 +796,9 @@ impl Plist {
      * install procedure.  It is up to the caller to keep track of file
      * metadata.
      */
-    pub fn install_cmds(&self) -> impl Iterator<Item = &PlistEntry> + '_ {
+    pub fn install_cmds(
+        &self,
+    ) -> impl Iterator<Item = &PlistEntry<'static>> + '_ {
         let mut ignore = false;
         self.entries.iter().filter(move |entry| match entry {
             /*
@@ -843,7 +824,9 @@ impl Plist {
      * uninstall procedure.  It is up to the caller to keep track of file
      * metadata.
      */
-    pub fn uninstall_cmds(&self) -> impl Iterator<Item = &PlistEntry> + '_ {
+    pub fn uninstall_cmds(
+        &self,
+    ) -> impl Iterator<Item = &PlistEntry<'static>> + '_ {
         let mut ignore = false;
         self.entries.iter().filter(move |entry| match entry {
             /*
@@ -872,17 +855,88 @@ impl Plist {
     pub fn is_preserve(&self) -> bool {
         self.entries
             .iter()
-            .filter(|entry| {
-                matches!(entry, PlistEntry::PkgOpt(PlistOption::Preserve))
-            })
-            .count()
-            > 0
+            .any(|e| matches!(e, PlistEntry::PkgOpt(PlistOption::Preserve)))
+    }
+}
+
+struct FilesWithInfo<'a> {
+    entries: &'a [PlistEntry<'static>],
+    i: usize,
+    ignore: bool,
+    mode: Option<String>,
+    owner: Option<String>,
+    group: Option<String>,
+}
+
+impl<'a> FilesWithInfo<'a> {
+    fn new(entries: &'a [PlistEntry<'static>]) -> Self {
+        Self {
+            entries,
+            i: 0,
+            ignore: false,
+            mode: None,
+            owner: None,
+            group: None,
+        }
+    }
+}
+
+impl Iterator for FilesWithInfo<'_> {
+    type Item = FileInfo;
+
+    fn next(&mut self) -> Option<FileInfo> {
+        while self.i < self.entries.len() {
+            match &self.entries[self.i] {
+                PlistEntry::Mode(m) => {
+                    self.mode = m.as_deref().map(str::to_owned);
+                }
+                PlistEntry::Owner(o) => {
+                    self.owner = o.as_deref().map(str::to_owned);
+                }
+                PlistEntry::Group(g) => {
+                    self.group = g.as_deref().map(str::to_owned);
+                }
+                PlistEntry::Ignore => self.ignore = true,
+                PlistEntry::File(path) => {
+                    self.i += 1;
+                    if std::mem::take(&mut self.ignore) {
+                        continue;
+                    }
+                    let mut info = FileInfo {
+                        path: path.as_ref().to_path_buf(),
+                        checksum: None,
+                        symlink_target: None,
+                        mode: self.mode.clone(),
+                        owner: self.owner.clone(),
+                        group: self.group.clone(),
+                    };
+                    while self.i < self.entries.len() {
+                        match &self.entries[self.i] {
+                            PlistEntry::FileChecksum(hash) => {
+                                info.checksum = Some(hash.as_ref().to_owned());
+                                self.i += 1;
+                            }
+                            PlistEntry::SymlinkTarget(target) => {
+                                info.symlink_target =
+                                    Some(target.as_ref().to_path_buf());
+                                self.i += 1;
+                            }
+                            _ => break,
+                        }
+                    }
+                    return Some(info);
+                }
+                _ => {}
+            }
+            self.i += 1;
+        }
+        None
     }
 }
 
 impl IntoIterator for Plist {
-    type Item = PlistEntry;
-    type IntoIter = std::vec::IntoIter<PlistEntry>;
+    type Item = PlistEntry<'static>;
+    type IntoIter = std::vec::IntoIter<PlistEntry<'static>>;
 
     fn into_iter(self) -> Self::IntoIter {
         self.entries.into_iter()
@@ -890,8 +944,8 @@ impl IntoIterator for Plist {
 }
 
 impl<'a> IntoIterator for &'a Plist {
-    type Item = &'a PlistEntry;
-    type IntoIter = std::slice::Iter<'a, PlistEntry>;
+    type Item = &'a PlistEntry<'static>;
+    type IntoIter = std::slice::Iter<'a, PlistEntry<'static>>;
 
     fn into_iter(self) -> Self::IntoIter {
         self.entries.iter()
@@ -913,6 +967,7 @@ mod tests {
     macro_rules! plist_entry {
         ($s:expr) => {
             PlistEntry::from_bytes(String::from($s).as_bytes())
+                .map(PlistEntry::into_owned)
         };
     }
     macro_rules! plist_match_ok {
@@ -945,7 +1000,7 @@ mod tests {
     }
 
     /*
-     * Plist commands that only accept strict UTF-8 Strings.
+     * Plist commands that only accept strict UTF-8 input.
      */
     macro_rules! valid_utf8 {
         ($s:expr, $p:path) => {
@@ -961,7 +1016,7 @@ mod tests {
              */
             let mut t = String::from($s).into_bytes();
             t.extend_from_slice(&heart);
-            assert_eq!(PlistEntry::from_bytes(&t)?, $p(String::from("💖")));
+            assert_eq!(PlistEntry::from_bytes(&t)?, $p(Cow::Borrowed("💖")));
 
             /*
              * Unsupported ISO-8859 byte sequence.
@@ -987,7 +1042,7 @@ mod tests {
     }
 
     /*
-     * Plist commands that only accept optional strict UTF-8 Strings.
+     * Plist commands that only accept optional strict UTF-8 input.
      */
     macro_rules! valid_utf8_opt {
         ($s:expr, $p:path) => {
@@ -1005,7 +1060,7 @@ mod tests {
             t.extend_from_slice(&heart);
             assert_eq!(
                 PlistEntry::from_bytes(&t)?,
-                $p(Some(String::from("💖")))
+                $p(Some(Cow::Borrowed("💖")))
             );
 
             /*
@@ -1032,9 +1087,9 @@ mod tests {
     }
 
     /*
-     * Plist commands that accept ISO-8859 input.
+     * Plist commands that accept ISO-8859 input as a Path payload.
      */
-    macro_rules! valid_8859 {
+    macro_rules! valid_path {
         ($s:expr, $p:path) => {
             /*
              * A UTF-8 sparkle heart as used in the Rust documentation, and a
@@ -1045,7 +1100,10 @@ mod tests {
 
             let mut t = String::from($s).into_bytes();
             t.extend_from_slice(&heart);
-            assert_eq!(PlistEntry::from_bytes(&t)?, $p(OsString::from("💖")));
+            assert_eq!(
+                PlistEntry::from_bytes(&t)?,
+                $p(Cow::Borrowed(Path::new("💖")))
+            );
             let mut t = String::from($s).into_bytes();
             t.extend_from_slice(&oe);
             match PlistEntry::from_bytes(&t) {
@@ -1059,9 +1117,9 @@ mod tests {
     }
 
     /*
-     * Plist commands that accept optional ISO-8859 input.
+     * Plist commands that accept ISO-8859 input as an OsStr payload.
      */
-    macro_rules! valid_8859_opt {
+    macro_rules! valid_osstr {
         ($s:expr, $p:path) => {
             /*
              * A UTF-8 sparkle heart as used in the Rust documentation, and a
@@ -1074,7 +1132,37 @@ mod tests {
             t.extend_from_slice(&heart);
             assert_eq!(
                 PlistEntry::from_bytes(&t)?,
-                $p(Some(OsString::from("💖")))
+                $p(Cow::Borrowed(OsStr::new("💖")))
+            );
+            let mut t = String::from($s).into_bytes();
+            t.extend_from_slice(&oe);
+            match PlistEntry::from_bytes(&t) {
+                Ok(e) => match e {
+                    $p(_) => {}
+                    _ => panic!("should be a valid {} entry", stringify!($p)),
+                },
+                Err(_) => panic!("should be a valid {} entry", stringify!($p)),
+            }
+        };
+    }
+
+    /*
+     * Plist commands that accept optional ISO-8859 input as an OsStr.
+     */
+    macro_rules! valid_osstr_opt {
+        ($s:expr, $p:path) => {
+            /*
+             * A UTF-8 sparkle heart as used in the Rust documentation, and a
+             * Norwegian "ø" in non-UTF-8 compatible ISO-8859 format.
+             */
+            let heart = vec![240, 159, 146, 150];
+            let oe = vec![0xf8];
+
+            let mut t = String::from($s).into_bytes();
+            t.extend_from_slice(&heart);
+            assert_eq!(
+                PlistEntry::from_bytes(&t)?,
+                $p(Some(Cow::Borrowed(OsStr::new("💖"))))
             );
             let mut t = String::from($s).into_bytes();
             t.extend_from_slice(&oe);
@@ -1154,22 +1242,21 @@ mod tests {
          * Strip leading whitespace from a valid argument.
          */
         let p1 = plist_entry!("@comment  hi")?;
-        let p2 = PlistEntry::Comment(Some(OsString::from("hi")));
+        let p2 = PlistEntry::Comment(Some(Cow::Borrowed(OsStr::new("hi"))));
         assert_eq!(p1, p2);
 
         /*
          * Any leading whitespace means the line is treated as a filename.
          */
         let p1 = plist_entry!(" @comment ")?;
-        let p2 = PlistEntry::File(OsString::from(" @comment "));
+        let p2 = PlistEntry::File(Cow::Borrowed(Path::new(" @comment ")));
         assert_eq!(p1, p2);
 
         Ok(())
     }
 
     /*
-     * Plist commands that only support strict UTF-8 input and are stored as
-     * String types.
+     * Plist commands that only support strict UTF-8 input.
      */
     #[test]
     fn test_utf8() -> Result<()> {
@@ -1192,14 +1279,14 @@ mod tests {
      */
     #[test]
     fn test_8859() -> Result<()> {
-        valid_8859!("", PlistEntry::File);
-        valid_8859!("@cwd ", PlistEntry::Cwd);
-        valid_8859!("@exec ", PlistEntry::Exec);
-        valid_8859!("@unexec ", PlistEntry::UnExec);
-        valid_8859!("@pkgdir ", PlistEntry::PkgDir);
-        valid_8859!("@dirrm ", PlistEntry::DirRm);
-        valid_8859!("@display ", PlistEntry::Display);
-        valid_8859_opt!("@comment ", PlistEntry::Comment);
+        valid_path!("", PlistEntry::File);
+        valid_path!("@cwd ", PlistEntry::Cwd);
+        valid_osstr!("@exec ", PlistEntry::Exec);
+        valid_osstr!("@unexec ", PlistEntry::UnExec);
+        valid_path!("@pkgdir ", PlistEntry::PkgDir);
+        valid_path!("@dirrm ", PlistEntry::DirRm);
+        valid_path!("@display ", PlistEntry::Display);
+        valid_osstr_opt!("@comment ", PlistEntry::Comment);
 
         Ok(())
     }
@@ -1320,21 +1407,33 @@ mod tests {
             bin/ok
         "};
         let plist = Plist::from_bytes(input.as_bytes())?;
-        let files: Vec<&OsStr> = plist.files().collect();
-        assert_eq!(files, ["bin/good", "bin/evil", "bin/ok"]);
-        let prefixed: Vec<OsString> = plist.files_prefixed().collect();
+        let files: Vec<&Path> = plist.files().collect();
+        assert_eq!(
+            files,
+            [
+                Path::new("bin/good"),
+                Path::new("bin/evil"),
+                Path::new("bin/ok")
+            ]
+        );
+        let prefixed: Vec<PathBuf> = plist.files_prefixed().collect();
         assert_eq!(
             prefixed,
-            ["/opt/pkg/bin/good", "/bin/evil", "/opt/pkg/bin/ok"]
+            [
+                PathBuf::from("/opt/pkg/bin/good"),
+                PathBuf::from("/bin/evil"),
+                PathBuf::from("/opt/pkg/bin/ok")
+            ]
         );
 
         let plist = Plist::from_bytes(b"bin/relative\n")?;
-        let files: Vec<&OsStr> = plist.files().collect();
-        assert_eq!(files, ["bin/relative"]);
-        let prefixed: Vec<OsString> = plist.files_prefixed().collect();
-        assert_eq!(prefixed, ["bin/relative"]);
+        let files: Vec<&Path> = plist.files().collect();
+        assert_eq!(files, [Path::new("bin/relative")]);
+        let prefixed: Vec<PathBuf> = plist.files_prefixed().collect();
+        assert_eq!(prefixed, [PathBuf::from("bin/relative")]);
         Ok(())
     }
+
     /*
      * Test functions that return only the first match.
      */
@@ -1350,7 +1449,7 @@ mod tests {
         assert_eq!(plist.display(), None);
 
         let plist = plist!("@display one\n@display two\n@display three")?;
-        assert_eq!(plist.display(), Some(OsString::from("one").as_os_str()));
+        assert_eq!(plist.display(), Some(Path::new("one")));
 
         Ok(())
     }
@@ -1376,9 +1475,9 @@ mod tests {
             plist_entry!("@comment MD5:d41d8cd98f00b204e9800998ecf8427e")?;
         assert_eq!(
             entry,
-            PlistEntry::FileChecksum(
-                "d41d8cd98f00b204e9800998ecf8427e".to_string()
-            )
+            PlistEntry::FileChecksum(Cow::Borrowed(
+                "d41d8cd98f00b204e9800998ecf8427e"
+            ))
         );
 
         // Invalid MD5 (too short) - treated as regular comment
@@ -1405,12 +1504,17 @@ mod tests {
         let entry = plist_entry!("@comment Symlink:/usr/bin/target")?;
         assert_eq!(
             entry,
-            PlistEntry::SymlinkTarget(OsString::from("/usr/bin/target"))
+            PlistEntry::SymlinkTarget(Cow::Borrowed(Path::new(
+                "/usr/bin/target"
+            )))
         );
 
         // Empty symlink target
         let entry = plist_entry!("@comment Symlink:")?;
-        assert_eq!(entry, PlistEntry::SymlinkTarget(OsString::from("")));
+        assert_eq!(
+            entry,
+            PlistEntry::SymlinkTarget(Cow::Borrowed(Path::new("")))
+        );
 
         Ok(())
     }
@@ -1436,12 +1540,12 @@ mod tests {
         "};
 
         let plist = Plist::from_bytes(input.as_bytes())?;
-        let files = plist.files_with_info();
+        let files: Vec<FileInfo> = plist.files_with_info().collect();
 
         assert_eq!(files.len(), 3);
 
         // First file: bin/myapp with mode 0755, owner root, group wheel
-        assert_eq!(files[0].path, OsString::from("bin/myapp"));
+        assert_eq!(files[0].path, PathBuf::from("bin/myapp"));
         assert_eq!(
             files[0].checksum,
             Some("d41d8cd98f00b204e9800998ecf8427e".to_string())
@@ -1452,7 +1556,7 @@ mod tests {
         assert_eq!(files[0].group, Some("wheel".to_string()));
 
         // Second file: etc/myapp.conf with mode 0644
-        assert_eq!(files[1].path, OsString::from("etc/myapp.conf"));
+        assert_eq!(files[1].path, PathBuf::from("etc/myapp.conf"));
         assert_eq!(
             files[1].checksum,
             Some("098f6bcd4621d373cade4e832627b4f6".to_string())
@@ -1460,12 +1564,9 @@ mod tests {
         assert_eq!(files[1].mode, Some("0644".to_string()));
 
         // Third file: lib/libfoo.so is a symlink
-        assert_eq!(files[2].path, OsString::from("lib/libfoo.so"));
+        assert_eq!(files[2].path, PathBuf::from("lib/libfoo.so"));
         assert_eq!(files[2].checksum, None);
-        assert_eq!(
-            files[2].symlink_target,
-            Some(OsString::from("libfoo.so.1"))
-        );
+        assert_eq!(files[2].symlink_target, Some(PathBuf::from("libfoo.so.1")));
 
         Ok(())
     }
@@ -1498,6 +1599,95 @@ mod tests {
         // plist is still usable after iteration by reference
         assert_eq!(plist.pkgname(), Some("pkg-1.0"));
 
+        Ok(())
+    }
+
+    /*
+     * Lazy parser tests: parse() yields borrowed entries, validating
+     * UTF-8 inline for variants whose payloads are typed as Cow<str>.
+     */
+    #[test]
+    fn test_parse_iter() -> Result<()> {
+        let input = b"@name pkg-1.0\nbin/foo\n@pkgdir /var/db/x\n";
+        let entries: Vec<_> = parse(input).collect::<Result<Vec<_>>>()?;
+        assert_eq!(entries.len(), 3);
+        assert_eq!(entries[0], PlistEntry::Name(Cow::Borrowed("pkg-1.0")));
+        assert_eq!(
+            entries[1],
+            PlistEntry::File(Cow::Borrowed(Path::new("bin/foo")))
+        );
+        assert_eq!(
+            entries[2],
+            PlistEntry::PkgDir(Cow::Borrowed(Path::new("/var/db/x")))
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn test_parse_iter_no_trailing_newline() -> Result<()> {
+        let input = b"@name pkg-1.0\nbin/foo";
+        let entries: Vec<_> = parse(input).collect::<Result<Vec<_>>>()?;
+        assert_eq!(entries.len(), 2);
+        Ok(())
+    }
+
+    #[test]
+    fn test_parse_iter_skips_blanks() -> Result<()> {
+        let input = b"@name pkg-1.0\n\n   \nbin/foo\n";
+        let entries: Vec<_> = parse(input).collect::<Result<Vec<_>>>()?;
+        assert_eq!(entries.len(), 2);
+        Ok(())
+    }
+
+    #[test]
+    fn test_parse_comment_special_forms() -> Result<()> {
+        let entries: Vec<_> = parse(
+            b"@comment MD5:d41d8cd98f00b204e9800998ecf8427e\n\
+              @comment Symlink:/usr/bin/target\n\
+              @comment plain comment\n",
+        )
+        .collect::<Result<Vec<_>>>()?;
+        assert_eq!(
+            entries[0],
+            PlistEntry::FileChecksum(Cow::Borrowed(
+                "d41d8cd98f00b204e9800998ecf8427e"
+            ))
+        );
+        assert_eq!(
+            entries[1],
+            PlistEntry::SymlinkTarget(Cow::Borrowed(Path::new(
+                "/usr/bin/target"
+            )))
+        );
+        assert!(matches!(entries[2], PlistEntry::Comment(Some(_))));
+        Ok(())
+    }
+
+    /*
+     * parse() validates UTF-8 inline for the Cow<str>-typed variants;
+     * malformed input yields PlistError::Utf8 immediately rather than
+     * propagating bad bytes downstream.
+     */
+    #[test]
+    fn test_parse_validates_utf8() -> Result<()> {
+        let input = b"@name \xff-bad\nbin/foo\n";
+        match parse(input).next() {
+            Some(Err(PlistError::Utf8(_))) => Ok(()),
+            other => panic!("expected Utf8 error from parse(), got {other:?}"),
+        }
+    }
+
+    /*
+     * into_owned() turns a borrowed entry into a 'static one, suitable
+     * for storing past the lifetime of the source bytes.
+     */
+    #[test]
+    fn test_into_owned() -> Result<()> {
+        let owned: PlistEntry<'static> = {
+            let bytes: Vec<u8> = b"@name pkg-1.0".to_vec();
+            PlistEntry::from_bytes(&bytes)?.into_owned()
+        };
+        assert_eq!(owned, PlistEntry::Name(Cow::Owned("pkg-1.0".to_owned())));
         Ok(())
     }
 }
