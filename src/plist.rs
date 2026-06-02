@@ -15,7 +15,7 @@
  */
 
 /*!
- * Packing list parsing and generation.
+ * Packing list parsing.
  *
  * Packing lists, commonly referred to as plists and named `PLIST` in pkgsrc
  * package directories, contain a list of files installed by a package.  They
