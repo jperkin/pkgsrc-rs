@@ -338,6 +338,7 @@ impl<'a> PlistEntry<'a> {
  * [`PlistEntry`]); a bad-UTF-8 payload on those variants yields a
  * [`PlistError::Utf8`].
  */
+#[derive(Clone, Debug)]
 pub struct Parser<'a> {
     rest: &'a [u8],
 }
@@ -355,6 +356,8 @@ impl<'a> Iterator for Parser<'a> {
         }
     }
 }
+
+impl std::iter::FusedIterator for Parser<'_> {}
 
 /**
  * Lazily parse `bytes` into a stream of [`PlistEntry`] values.
