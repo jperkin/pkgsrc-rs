@@ -621,6 +621,12 @@ impl Plist {
     /**
      * Construct a new [`Plist`] from a stream of bytes representing lines
      * from a package list.
+     *
+     * Parsing is strict: the first malformed line (an unsupported command,
+     * a bad argument, or invalid UTF-8 in a text field) aborts with that
+     * [`PlistError`].  Callers that prefer to skip past bad lines and
+     * continue (as `pkg_install` does) should drive [`parse`] directly and
+     * filter the per-line `Result`s.
      */
     pub fn from_bytes(bytes: &[u8]) -> Result<Self> {
         let mut entries = Vec::new();
