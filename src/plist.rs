@@ -392,6 +392,7 @@ fn next_line<'a>(rest: &mut &'a [u8]) -> Option<&'a [u8]> {
 }
 
 fn parse_line(line: &[u8]) -> Result<PlistEntry<'_>> {
+    let line = line.trim_ascii_end();
     let (cmd, args) = split_cmd_args(line);
 
     if !cmd.starts_with(b"@") {
@@ -1249,7 +1250,7 @@ mod tests {
          * Any leading whitespace means the line is treated as a filename.
          */
         let p1 = plist_entry!(" @comment ")?;
-        let p2 = PlistEntry::File(Cow::Borrowed(Path::new(" @comment ")));
+        let p2 = PlistEntry::File(Cow::Borrowed(Path::new(" @comment")));
         assert_eq!(p1, p2);
 
         Ok(())
