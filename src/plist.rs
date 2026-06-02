@@ -305,25 +305,25 @@ impl<'a> PlistEntry<'a> {
     pub fn into_owned(self) -> PlistEntry<'static> {
         use PlistEntry as P;
         match self {
-            P::File(p) => P::File(own_path(p)),
-            P::Cwd(p) => P::Cwd(own_path(p)),
-            P::Exec(o) => P::Exec(own_osstr(o)),
-            P::UnExec(o) => P::UnExec(own_osstr(o)),
-            P::Mode(s) => P::Mode(own_opt_str(s)),
+            P::File(p) => P::File(own(p)),
+            P::Cwd(p) => P::Cwd(own(p)),
+            P::Exec(o) => P::Exec(own(o)),
+            P::UnExec(o) => P::UnExec(own(o)),
+            P::Mode(s) => P::Mode(own_opt(s)),
             P::PkgOpt(o) => P::PkgOpt(o),
-            P::Owner(s) => P::Owner(own_opt_str(s)),
-            P::Group(s) => P::Group(own_opt_str(s)),
-            P::Comment(o) => P::Comment(own_opt_osstr(o)),
+            P::Owner(s) => P::Owner(own_opt(s)),
+            P::Group(s) => P::Group(own_opt(s)),
+            P::Comment(o) => P::Comment(own_opt(o)),
             P::Ignore => P::Ignore,
-            P::Name(s) => P::Name(own_str(s)),
-            P::PkgDir(p) => P::PkgDir(own_path(p)),
-            P::DirRm(p) => P::DirRm(own_path(p)),
-            P::Display(p) => P::Display(own_path(p)),
-            P::PkgDep(s) => P::PkgDep(own_str(s)),
-            P::BldDep(s) => P::BldDep(own_str(s)),
-            P::PkgCfl(s) => P::PkgCfl(own_str(s)),
-            P::FileChecksum(s) => P::FileChecksum(own_str(s)),
-            P::SymlinkTarget(p) => P::SymlinkTarget(own_path(p)),
+            P::Name(s) => P::Name(own(s)),
+            P::PkgDir(p) => P::PkgDir(own(p)),
+            P::DirRm(p) => P::DirRm(own(p)),
+            P::Display(p) => P::Display(own(p)),
+            P::PkgDep(s) => P::PkgDep(own(s)),
+            P::BldDep(s) => P::BldDep(own(s)),
+            P::PkgCfl(s) => P::PkgCfl(own(s)),
+            P::FileChecksum(s) => P::FileChecksum(own(s)),
+            P::SymlinkTarget(p) => P::SymlinkTarget(own(p)),
         }
     }
 }
@@ -548,28 +548,15 @@ fn os(bytes: &[u8]) -> OsString {
 }
 
 #[inline]
-fn own_path(c: Cow<'_, Path>) -> Cow<'static, Path> {
+fn own<T: ToOwned + ?Sized + 'static>(c: Cow<'_, T>) -> Cow<'static, T> {
     Cow::Owned(c.into_owned())
 }
 
 #[inline]
-fn own_osstr(c: Cow<'_, OsStr>) -> Cow<'static, OsStr> {
-    Cow::Owned(c.into_owned())
-}
-
-#[inline]
-fn own_str(c: Cow<'_, str>) -> Cow<'static, str> {
-    Cow::Owned(c.into_owned())
-}
-
-#[inline]
-fn own_opt_osstr(c: Option<Cow<'_, OsStr>>) -> Option<Cow<'static, OsStr>> {
-    c.map(own_osstr)
-}
-
-#[inline]
-fn own_opt_str(c: Option<Cow<'_, str>>) -> Option<Cow<'static, str>> {
-    c.map(own_str)
+fn own_opt<T: ToOwned + ?Sized + 'static>(
+    c: Option<Cow<'_, T>>,
+) -> Option<Cow<'static, T>> {
+    c.map(own)
 }
 
 /**
