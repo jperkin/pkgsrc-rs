@@ -460,18 +460,12 @@ fn parse_line(line: &[u8]) -> Result<PlistEntry<'_>> {
 }
 
 fn split_cmd_args(line: &[u8]) -> (&[u8], Option<&[u8]>) {
-    let Some(i) = line.iter().position(|&b| b == b' ') else {
-        return (line, None);
-    };
-    let cmd = &line[..i];
-    let mut j = i + 1;
-    while j < line.len() && line[j].is_ascii_whitespace() {
-        j += 1;
-    }
-    if j >= line.len() {
-        (cmd, None)
-    } else {
-        (cmd, Some(&line[j..]))
+    match line.iter().position(|&b| b == b' ') {
+        None => (line, None),
+        Some(i) => {
+            let args = line[i + 1..].trim_ascii_start();
+            (&line[..i], (!args.is_empty()).then_some(args))
+        }
     }
 }
 
