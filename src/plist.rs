@@ -422,7 +422,7 @@ fn parse_line(line: &[u8]) -> Result<PlistEntry<'_>> {
          */
         b"@option" => match args {
             Some(b"preserve") => Ok(PlistEntry::PkgOpt(PlistOption::Preserve)),
-            Some(_) => Err(PlistError::UnsupportedCommand(os(cmd))),
+            Some(_) => Err(PlistError::UnsupportedCommand(os(line))),
             None => Err(PlistError::IncorrectArguments(os(line))),
         },
 
