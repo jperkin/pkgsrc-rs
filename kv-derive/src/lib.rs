@@ -36,6 +36,8 @@
 //! # Container Attributes
 //!
 //! - `#[kv(allow_unknown)]` - Ignore unknown keys instead of returning an error
+//! - `#[kv(serde)]` - Emit `serde::Serialize`/`Deserialize` impls for the struct
+//! - `#[kv(crate = "path")]` - Override the path used to reach the `pkgsrc-kv` runtime
 //!
 //! # Field Attributes
 //!
@@ -203,7 +205,11 @@ fn generate_impl(input: &DeriveInput) -> syn::Result<TokenStream2> {
         parsed_fields.iter().map(|f| f.extract_expr(&kv)).collect();
     let field_names: Vec<_> = parsed_fields.iter().map(|f| &f.ident).collect();
 
-    let serde_impl = generate_serde_impl(name, &parsed_fields);
+    let serde_impl = if container_attrs.serde {
+        generate_serde_impl(name, &parsed_fields)
+    } else {
+        TokenStream2::new()
+    };
 
     Ok(quote! {
         impl #name {
@@ -389,7 +395,8 @@ fn generate_unknown_handling(
 
 /// Generates serde Serialize/Deserialize implementations.
 ///
-/// These are feature-gated with `#[cfg(feature = "serde")]`.
+/// Only called when the struct carries `#[kv(serde)]`; the caller decides
+/// whether to emit these, so the generated impls are not themselves cfg-gated.
 fn generate_serde_impl(name: &Ident, fields: &[ParsedField]) -> TokenStream2 {
     // The warnings sink is a parse-time diagnostic, not part of the data
     // model, so it is excluded from the serde helper and defaulted on
@@ -512,7 +519,6 @@ fn generate_serde_impl(name: &Ident, fields: &[ParsedField]) -> TokenStream2 {
         .collect();
 
     quote! {
-        #[cfg(feature = "serde")]
         impl serde::Serialize for #name {
             fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
             where
@@ -530,7 +536,6 @@ fn generate_serde_impl(name: &Ident, fields: &[ParsedField]) -> TokenStream2 {
             }
         }
 
-        #[cfg(feature = "serde")]
         impl<'de> serde::Deserialize<'de> for #name {
             fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
             where
@@ -557,6 +562,8 @@ struct ContainerAttrs {
     allow_unknown: bool,
     /** Override for the path to the `pkgsrc-kv` crate. */
     crate_path: Option<Path>,
+    /** If true, emit `serde::Serialize`/`Deserialize` implementations. */
+    serde: bool,
 }
 
 impl ContainerAttrs {
@@ -577,9 +584,12 @@ impl ContainerAttrs {
                     let lit: syn::LitStr = meta.value()?.parse()?;
                     result.crate_path = Some(lit.parse()?);
                     Ok(())
+                } else if meta.path.is_ident("serde") {
+                    result.serde = true;
+                    Ok(())
                 } else {
                     Err(meta.error(
-                        "unknown container attribute; expected `allow_unknown` or `crate`",
+                        "unknown container attribute; expected `allow_unknown`, `crate`, or `serde`",
                     ))
                 }
             })?;
