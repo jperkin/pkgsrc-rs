@@ -25,11 +25,13 @@
 //! |-----------|-----------|----------|
 //! | `T` | | Required single value |
 //! | `Option<T>` | | Optional single value |
+//! | `Option<T>` | `#[kv(lenient)]` | Optional single value; an unparseable value becomes `None` instead of erroring |
 //! | `Vec<T>` | | Whitespace-separated values on single line |
 //! | `Option<Vec<T>>` | | Optional whitespace-separated values |
 //! | `Vec<T>` | `#[kv(multiline)]` | Multiple lines collected into Vec |
 //! | `Option<Vec<T>>` | `#[kv(multiline)]` | Optional multiple lines |
 //! | `HashMap<String, String>` | `#[kv(collect)]` | Collects unhandled keys |
+//! | `Vec<KvWarning>` | `#[kv(warnings)]` | Collects parse failures from `lenient` fields |
 //!
 //! # Container Attributes
 //!
@@ -40,6 +42,8 @@
 //! - `#[kv(variable = "KEY")]` - Use custom key name instead of uppercased field name
 //! - `#[kv(multiline)]` - Collect multiple lines with the same key into a `Vec`
 //! - `#[kv(collect)]` - Collect all unhandled keys into this `HashMap<String, String>`
+//! - `#[kv(lenient)]` - For an `Option<T>` field, treat a value that fails to parse as `None` rather than erroring (recorded in a `#[kv(warnings)]` field if one is present)
+//! - `#[kv(warnings)]` - Collect parse failures from `lenient` fields into this `Vec<KvWarning>`
 //!
 //! # Duplicate Key Behavior
 //!
@@ -151,13 +155,18 @@ fn generate_impl(input: &DeriveInput) -> syn::Result<TokenStream2> {
 
     let collect_field =
         parsed_fields.iter().find(|f| f.kind == FieldKind::Collect);
+    let warnings_field =
+        parsed_fields.iter().find(|f| f.kind == FieldKind::Warnings);
     let regular_fields: Vec<_> = parsed_fields
         .iter()
-        .filter(|f| f.kind != FieldKind::Collect)
+        .filter(|f| {
+            f.kind != FieldKind::Collect && f.kind != FieldKind::Warnings
+        })
         .collect();
 
     let field_decls = generate_field_declarations(&parsed_fields);
-    let match_arms = generate_match_arms(&regular_fields);
+    let warnings_ident = warnings_field.map(|f| &f.ident);
+    let match_arms = generate_match_arms(&regular_fields, warnings_ident);
     let unknown_handling =
         generate_unknown_handling(&container_attrs, collect_field);
     let field_extracts: Vec<_> = parsed_fields
@@ -177,7 +186,8 @@ fn generate_impl(input: &DeriveInput) -> syn::Result<TokenStream2> {
             /// Returns an error if:
             /// - A line doesn't contain `=`
             /// - A required field is missing
-            /// - A value fails to parse into its target type
+            /// - A value fails to parse into its target type (unless the
+            ///   field is marked `#[kv(lenient)]`)
             /// - An unknown key is encountered (unless `allow_unknown` is set)
             pub fn parse(input: &str) -> std::result::Result<Self, ::pkgsrc::kv::KvError> {
                 use ::pkgsrc::kv::FromKv;
@@ -255,26 +265,59 @@ fn generate_field_declarations(fields: &[ParsedField]) -> Vec<TokenStream2> {
         .map(|f| {
             let ident = &f.ident;
             let state_ty = f.state_type();
-            if f.kind == FieldKind::Collect {
-                quote! { let mut #ident: #state_ty = std::collections::HashMap::new(); }
-            } else {
-                quote! { let mut #ident: #state_ty = None; }
+            match f.kind {
+                FieldKind::Collect => {
+                    quote! { let mut #ident: #state_ty = std::collections::HashMap::new(); }
+                }
+                FieldKind::Warnings => {
+                    quote! { let mut #ident: #state_ty = Vec::new(); }
+                }
+                _ => quote! { let mut #ident: #state_ty = None; },
             }
         })
         .collect()
 }
 
 /// Generates match arms for known keys.
-fn generate_match_arms(fields: &[&ParsedField]) -> Vec<TokenStream2> {
+fn generate_match_arms(
+    fields: &[&ParsedField],
+    warnings_ident: Option<&Ident>,
+) -> Vec<TokenStream2> {
     fields
         .iter()
         .map(|f| {
             let ident = &f.ident;
             let key_name = &f.key_name;
-            let merge_expr = f.merge_expr();
-            quote! {
-                #key_name => {
-                    #ident = Some(#merge_expr);
+            if f.lenient {
+                let inner = &f.inner_type;
+                match warnings_ident {
+                    Some(warnings) => quote! {
+                        #key_name => {
+                            match <#inner as FromKv>::from_kv(value, value_span) {
+                                Ok(parsed) => #ident = Some(parsed),
+                                Err(_) => {
+                                    #ident = None;
+                                    #warnings.push(::pkgsrc::kv::KvWarning {
+                                        variable: key.to_string(),
+                                        value: value.to_string(),
+                                        span: value_span,
+                                    });
+                                }
+                            }
+                        }
+                    },
+                    None => quote! {
+                        #key_name => {
+                            #ident = <#inner as FromKv>::from_kv(value, value_span).ok();
+                        }
+                    },
+                }
+            } else {
+                let merge_expr = f.merge_expr();
+                quote! {
+                    #key_name => {
+                        #ident = Some(#merge_expr);
+                    }
                 }
             }
         })
@@ -318,7 +361,15 @@ fn generate_unknown_handling(
 ///
 /// These are feature-gated with `#[cfg(feature = "serde")]`.
 fn generate_serde_impl(name: &Ident, fields: &[ParsedField]) -> TokenStream2 {
-    let field_defs: Vec<_> = fields
+    // The warnings sink is a parse-time diagnostic, not part of the data
+    // model, so it is excluded from the serde helper and defaulted on
+    // deserialize.
+    let helper_fields: Vec<&ParsedField> = fields
+        .iter()
+        .filter(|f| f.kind != FieldKind::Warnings)
+        .collect();
+
+    let field_defs: Vec<_> = helper_fields
         .iter()
         .map(|f| {
             let ident = &f.ident;
@@ -341,6 +392,7 @@ fn generate_serde_impl(name: &Ident, fields: &[ParsedField]) -> TokenStream2 {
                         #[serde(flatten)]
                     }
                 }
+                FieldKind::Warnings => quote! {},
             };
 
             quote! {
@@ -350,13 +402,23 @@ fn generate_serde_impl(name: &Ident, fields: &[ParsedField]) -> TokenStream2 {
         })
         .collect();
 
-    let field_names: Vec<_> = fields.iter().map(|f| &f.ident).collect();
-
-    let to_fields: Vec<_> = fields
+    let to_fields: Vec<_> = helper_fields
         .iter()
         .map(|f| {
             let ident = &f.ident;
             quote! { #ident: self.#ident.clone() }
+        })
+        .collect();
+
+    let from_fields: Vec<_> = fields
+        .iter()
+        .map(|f| {
+            let ident = &f.ident;
+            if f.kind == FieldKind::Warnings {
+                quote! { #ident: Default::default() }
+            } else {
+                quote! { #ident: helper.#ident }
+            }
         })
         .collect();
 
@@ -392,7 +454,7 @@ fn generate_serde_impl(name: &Ident, fields: &[ParsedField]) -> TokenStream2 {
 
                 let helper = Helper::deserialize(deserializer)?;
                 Ok(Self {
-                    #(#field_names: helper.#field_names,)*
+                    #(#from_fields,)*
                 })
             }
         }
@@ -441,6 +503,10 @@ struct FieldAttrs {
     multiline: bool,
     /// Whether this field collects unhandled keys.
     collect: bool,
+    /// Whether an unparseable value becomes `None` instead of erroring.
+    lenient: bool,
+    /// Whether this field collects parse warnings from `lenient` fields.
+    warnings: bool,
 }
 
 impl FieldAttrs {
@@ -464,9 +530,15 @@ impl FieldAttrs {
                 } else if meta.path.is_ident("collect") {
                     result.collect = true;
                     Ok(())
+                } else if meta.path.is_ident("lenient") {
+                    result.lenient = true;
+                    Ok(())
+                } else if meta.path.is_ident("warnings") {
+                    result.warnings = true;
+                    Ok(())
                 } else {
                     Err(meta.error(
-                        "unknown field attribute; expected `variable`, `multiline`, or `collect`",
+                        "unknown field attribute; expected `variable`, `multiline`, `collect`, `lenient`, or `warnings`",
                     ))
                 }
             })?;
@@ -493,6 +565,8 @@ enum FieldKind {
     OptionMultiLine,
     /// `HashMap<String, String>` with `collect` - collects unhandled keys.
     Collect,
+    /// `Vec<KvWarning>` with `warnings` - collects `lenient` parse failures.
+    Warnings,
 }
 
 /// A parsed and analyzed struct field.
@@ -507,6 +581,8 @@ struct ParsedField {
     inner_type: Type,
     /// The original declared type.
     original_type: Type,
+    /// Whether an unparseable value becomes `None` instead of erroring.
+    lenient: bool,
 }
 
 impl ParsedField {
@@ -518,6 +594,17 @@ impl ParsedField {
 
         let attrs = FieldAttrs::parse(&field.attrs)?;
 
+        // `lenient` only applies to optional single-value fields.
+        if attrs.lenient
+            && (extract_type_param(&field.ty, "Option").is_none()
+                || extract_option_vec_inner(&field.ty).is_some())
+        {
+            return Err(syn::Error::new_spanned(
+                &field.ty,
+                "`lenient` attribute requires an `Option<T>` field",
+            ));
+        }
+
         // Validate collect field type
         if attrs.collect {
             validate_collect_type(&field.ty, field)?;
@@ -527,6 +614,20 @@ impl ParsedField {
                 kind: FieldKind::Collect,
                 inner_type: field.ty.clone(),
                 original_type: field.ty.clone(),
+                lenient: false,
+            });
+        }
+
+        // Validate warnings sink field type
+        if attrs.warnings {
+            validate_warnings_type(&field.ty, field)?;
+            return Ok(Self {
+                ident,
+                key_name: String::new(),
+                kind: FieldKind::Warnings,
+                inner_type: field.ty.clone(),
+                original_type: field.ty.clone(),
+                lenient: false,
             });
         }
 
@@ -553,6 +654,7 @@ impl ParsedField {
             kind,
             inner_type,
             original_type: field.ty.clone(),
+            lenient: attrs.lenient,
         })
     }
 
@@ -571,6 +673,10 @@ impl ParsedField {
             }
             FieldKind::Collect => {
                 quote! { std::collections::HashMap<String, String> }
+            }
+            FieldKind::Warnings => {
+                let ty = &self.original_type;
+                quote! { #ty }
             }
         }
     }
@@ -630,6 +736,10 @@ impl ParsedField {
                 // Handled separately in unknown_handling
                 quote! { unreachable!() }
             }
+            FieldKind::Warnings => {
+                // Handled separately in generate_match_arms
+                quote! { unreachable!() }
+            }
         }
     }
 
@@ -647,7 +757,8 @@ impl ParsedField {
             FieldKind::Optional
             | FieldKind::OptionVec
             | FieldKind::OptionMultiLine
-            | FieldKind::Collect => {
+            | FieldKind::Collect
+            | FieldKind::Warnings => {
                 quote! { #ident }
             }
         }
@@ -684,6 +795,26 @@ fn validate_collect_type(ty: &Type, field: &Field) -> syn::Result<()> {
         ) if k.path.is_ident("String") && v.path.is_ident("String")
     );
     if is_valid { Ok(()) } else { Err(err()) }
+}
+
+/// Validates that a warnings sink field is a `Vec<KvWarning>`.
+fn validate_warnings_type(ty: &Type, field: &Field) -> syn::Result<()> {
+    let err = || {
+        syn::Error::new_spanned(
+            field,
+            "`warnings` attribute requires a `Vec<KvWarning>` type",
+        )
+    };
+    let Some(inner) = extract_type_param(ty, "Vec") else {
+        return Err(err());
+    };
+    let Type::Path(type_path) = &inner else {
+        return Err(err());
+    };
+    match type_path.path.segments.last() {
+        Some(segment) if segment.ident == "KvWarning" => Ok(()),
+        _ => Err(err()),
+    }
 }
 
 /// Analyzes a type to determine its field kind and inner type.
