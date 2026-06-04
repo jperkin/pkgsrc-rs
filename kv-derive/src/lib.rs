@@ -185,6 +185,9 @@ fn generate_impl(input: &DeriveInput) -> syn::Result<TokenStream2> {
         .map(ParsedField::from_field)
         .collect::<syn::Result<_>>()?;
 
+    ensure_at_most_one(&parsed_fields, FieldKind::Collect, "collect")?;
+    ensure_at_most_one(&parsed_fields, FieldKind::Warnings, "warnings")?;
+
     let collect_field =
         parsed_fields.iter().find(|f| f.kind == FieldKind::Collect);
     let warnings_field =
@@ -292,6 +295,25 @@ fn extract_named_fields(
     Ok(&fields.named)
 }
 
+/**
+ * Rejects more than one field of a sink `kind` (e.g. `collect`, `warnings`),
+ * which would otherwise leave the extra fields silently empty.
+ */
+fn ensure_at_most_one(
+    fields: &[ParsedField],
+    kind: FieldKind,
+    attr: &str,
+) -> syn::Result<()> {
+    let mut dups = fields.iter().filter(|f| f.kind == kind).skip(1);
+    if let Some(dup) = dups.next() {
+        return Err(syn::Error::new(
+            dup.ident.span(),
+            format!("only one `#[kv({attr})]` field is allowed"),
+        ));
+    }
+    Ok(())
+}
+
 /// Generates variable declarations for parsing state.
 fn generate_field_declarations(fields: &[ParsedField]) -> Vec<TokenStream2> {
     fields
@@ -393,10 +415,12 @@ fn generate_unknown_handling(
     }
 }
 
-/// Generates serde Serialize/Deserialize implementations.
-///
-/// Only called when the struct carries `#[kv(serde)]`; the caller decides
-/// whether to emit these, so the generated impls are not themselves cfg-gated.
+/**
+ * Generates serde Serialize/Deserialize implementations.
+ *
+ * Only called when the struct carries `#[kv(serde)]`; the caller decides
+ * whether to emit these, so the generated impls are not themselves cfg-gated.
+ */
 fn generate_serde_impl(name: &Ident, fields: &[ParsedField]) -> TokenStream2 {
     // The warnings sink is a parse-time diagnostic, not part of the data
     // model, so it is excluded from the serde helper and defaulted on
