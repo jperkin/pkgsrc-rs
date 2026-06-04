@@ -461,7 +461,10 @@ mod tests {
         /* Sanity-check the parsed value before round-tripping it. */
         assert_eq!(pkg.homepage, None);
         assert_eq!(pkg.description.len(), 2);
-        assert_eq!(pkg.extra.get("PKGPATH").map(String::as_str), Some("pkgtools/mktool"));
+        assert_eq!(
+            pkg.extra.get("PKGPATH").map(String::as_str),
+            Some("pkgtools/mktool")
+        );
 
         let json = serde_json::to_string(&pkg)?;
         let back: SerdePackage = serde_json::from_str(&json)?;
@@ -471,9 +474,18 @@ mod tests {
          * The absent Option must be skipped, and the collected key must be
          * flattened to the top level rather than nested under `extra`.
          */
-        assert!(!json.contains("homepage"), "absent Option should be skipped: {json}");
-        assert!(json.contains("PKGPATH"), "collected key should be flattened: {json}");
-        assert!(!json.contains("extra"), "collect field should flatten, not nest: {json}");
+        assert!(
+            !json.contains("homepage"),
+            "absent Option should be skipped: {json}"
+        );
+        assert!(
+            json.contains("PKGPATH"),
+            "collected key should be flattened: {json}"
+        );
+        assert!(
+            !json.contains("extra"),
+            "collect field should flatten, not nest: {json}"
+        );
         Ok(())
     }
 }

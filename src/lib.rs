@@ -143,7 +143,7 @@ pub use crate::pkgname::PkgName;
 pub use crate::pkgpath::{PkgPath, PkgPathError};
 pub use crate::plist::Plist;
 pub use crate::scanindex::{
-    AllDepends, Presolve, Pscan, RawDepend, Report, ScanDepends, ScanIndex,
-    ScanIndexIter,
+    AllDepends, BootstrapPkg, MakeJobsSafe, Presolve, Pscan, RawDepend, Report,
+    ScanDepends, ScanIndex, ScanIndexIter,
 };
 pub use crate::summary::{Summary, SummaryError};

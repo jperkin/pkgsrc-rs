@@ -63,8 +63,9 @@
  * ```
  */
 
-use pkgsrc_kv::Kv;
+use crate::kv::KvWarning;
 use crate::{Depend, DependError, PkgName, PkgPath};
+use pkgsrc_kv::Kv;
 use std::fmt;
 use std::io::{self, BufRead};
 use std::path::Path;
@@ -354,6 +355,57 @@ impl fmt::Display for RawDepend<'_> {
 }
 
 /**
+ * `MAKE_JOBS_SAFE` flag.
+ *
+ * Per pkgsrc's `mk/build/build.mk`, a package is treated as not parallel-safe
+ * only when the value matches `[nN][oO]`; any other value, or the variable
+ * being unset, means safe.
+ */
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "serde", serde(transparent))]
+pub struct MakeJobsSafe(bool);
+
+impl MakeJobsSafe {
+    /** Whether the package supports parallel builds (`make -j`). */
+    #[must_use]
+    pub fn is_safe(&self) -> bool {
+        self.0
+    }
+}
+
+impl crate::kv::FromKv for MakeJobsSafe {
+    fn from_kv(value: &str, _span: crate::kv::Span) -> crate::kv::Result<Self> {
+        Ok(MakeJobsSafe(!value.eq_ignore_ascii_case("no")))
+    }
+}
+
+/**
+ * `BOOTSTRAP_PKG` flag.
+ *
+ * The value is either `yes` for a package that is part of the pkgsrc
+ * bootstrap, or empty for one that is not.
+ */
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "serde", serde(transparent))]
+pub struct BootstrapPkg(bool);
+
+impl BootstrapPkg {
+    /** Whether this package is used during pkgsrc bootstrap. */
+    #[must_use]
+    pub fn is_bootstrap(&self) -> bool {
+        self.0
+    }
+}
+
+impl crate::kv::FromKv for BootstrapPkg {
+    fn from_kv(value: &str, _span: crate::kv::Span) -> crate::kv::Result<Self> {
+        Ok(BootstrapPkg(value == "yes"))
+    }
+}
+
+/**
  * Parse the output of `make pbulk-index` into individual records.
  *
  * See [pbulk-index.mk] and [pbulk-build(1)].
@@ -414,7 +466,7 @@ pub struct ScanIndex {
     /// `DESTDIR` method this package supports (almost always `user-destdir`).
     pub use_destdir: Option<String>,
     /// If this package is used during pkgsrc bootstrap.
-    pub bootstrap_pkg: Option<String>,
+    pub bootstrap_pkg: Option<BootstrapPkg>,
     /// The phase of the build process during which the user and/or group
     /// needed by this package need to be available.
     pub usergroup_phase: Option<String>,
@@ -422,10 +474,11 @@ pub struct ScanIndex {
     pub scan_depends: Option<ScanDepends>,
     /// Whether this package supports parallel builds (`make -j`). Packages
     /// that do not support parallel builds set `MAKE_JOBS_SAFE=no`.
-    pub make_jobs_safe: Option<String>,
-    /// Numeric build priority of the package. If not set, a value of 100 is
-    /// assumed.
-    pub pbulk_weight: Option<String>,
+    pub make_jobs_safe: Option<MakeJobsSafe>,
+    /// Numeric build priority of the package. If not set, or if an invalid
+    /// value is supplied, a value of 100 is assumed.
+    #[kv(lenient)]
+    pub pbulk_weight: Option<u32>,
     /// List of variables to be set when building this specific `PKGNAME` from
     /// a common `PKGPATH`.
     pub multi_version: Option<Vec<String>>,
@@ -444,6 +497,11 @@ pub struct ScanIndex {
     /// [`all_depends`]: ScanIndex::all_depends
     #[kv(variable = "DEPENDS")]
     pub resolved_depends: Option<Vec<PkgName>>,
+    /// Non-fatal problems encountered while parsing, such as a `PBULK_WEIGHT`
+    /// that is not a valid integer.  Empty for well-formed input.  Not part
+    /// of the record format, so it is never emitted when formatting.
+    #[kv(warnings)]
+    pub warnings: Vec<KvWarning>,
 }
 
 impl FromStr for ScanIndex {
@@ -538,15 +596,21 @@ impl ScanIndex {
         writeln!(f, "CATEGORIES={}", opt_str(&self.categories))?;
         writeln!(f, "MAINTAINER={}", opt_str(&self.maintainer))?;
         writeln!(f, "USE_DESTDIR={}", opt_str(&self.use_destdir))?;
-        writeln!(f, "BOOTSTRAP_PKG={}", opt_str(&self.bootstrap_pkg))?;
+        let bootstrap_pkg = match &self.bootstrap_pkg {
+            Some(b) if b.is_bootstrap() => "yes",
+            _ => "",
+        };
+        writeln!(f, "BOOTSTRAP_PKG={bootstrap_pkg}")?;
         writeln!(f, "USERGROUP_PHASE={}", opt_str(&self.usergroup_phase))?;
         write!(f, "SCAN_DEPENDS=")?;
         if let Some(ref deps) = self.scan_depends {
             write!(f, "{deps}")?;
         }
         writeln!(f)?;
-        if let Some(ref v) = self.make_jobs_safe {
-            writeln!(f, "MAKE_JOBS_SAFE={v}")?;
+        if let Some(ref v) = self.make_jobs_safe
+            && !v.is_safe()
+        {
+            writeln!(f, "MAKE_JOBS_SAFE=no")?;
         }
         if !matches!(mode, FormatMode::Report)
             && let Some(ref v) = self.pbulk_weight
