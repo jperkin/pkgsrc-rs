@@ -124,12 +124,12 @@
 #![deny(unsafe_code)]
 
 use proc_macro::TokenStream;
-use proc_macro2::TokenStream as TokenStream2;
 use proc_macro_crate::{FoundCrate, crate_name};
+use proc_macro2::TokenStream as TokenStream2;
 use quote::{format_ident, quote};
 use syn::{
-    Attribute, Data, DeriveInput, Field, Fields, GenericArgument, Ident,
-    Path, PathArguments, Type, parse_macro_input,
+    Attribute, Data, DeriveInput, Field, Fields, GenericArgument, Ident, Path,
+    PathArguments, Type, parse_macro_input,
 };
 
 /*
@@ -199,10 +199,8 @@ fn generate_impl(input: &DeriveInput) -> syn::Result<TokenStream2> {
     let match_arms = generate_match_arms(&regular_fields, warnings_ident, &kv);
     let unknown_handling =
         generate_unknown_handling(&container_attrs, collect_field, &kv);
-    let field_extracts: Vec<_> = parsed_fields
-        .iter()
-        .map(|f| f.extract_expr(&kv))
-        .collect();
+    let field_extracts: Vec<_> =
+        parsed_fields.iter().map(|f| f.extract_expr(&kv)).collect();
     let field_names: Vec<_> = parsed_fields.iter().map(|f| &f.ident).collect();
 
     let serde_impl = generate_serde_impl(name, &parsed_fields);
