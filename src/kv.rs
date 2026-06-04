@@ -431,6 +431,7 @@ mod tests {
      */
     #[cfg(feature = "serde")]
     #[derive(Kv, Debug, PartialEq)]
+    #[kv(serde)]
     struct SerdePackage {
         pkgname: String,
         #[kv(variable = "SIZE_PKG")]

@@ -442,6 +442,7 @@ impl crate::kv::FromKv for BootstrapPkg {
  * ```
  */
 #[derive(Clone, Debug, Default, Eq, Hash, Kv, PartialEq)]
+#[cfg_attr(feature = "serde", kv(serde))]
 pub struct ScanIndex {
     /// Name of the package including the version number.
     pub pkgname: PkgName,
