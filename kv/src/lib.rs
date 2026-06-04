@@ -276,7 +276,10 @@ pub fn words_with_spans(
          * its byte offset within `value`; add `base` for the absolute offset.
          */
         let offset = base + (word.as_ptr() as usize - value_start);
-        let span = Span { offset, len: word.len() };
+        let span = Span {
+            offset,
+            len: word.len(),
+        };
         (word, span)
     })
 }
