@@ -202,8 +202,11 @@ fn generate_impl(input: &DeriveInput) -> syn::Result<TokenStream2> {
     let field_decls = generate_field_declarations(&parsed_fields);
     let warnings_ident = warnings_field.map(|f| &f.ident);
     let match_arms = generate_match_arms(&regular_fields, warnings_ident, &kv);
-    let unknown_handling =
-        generate_unknown_handling(&container_attrs, collect_field, &kv);
+    let unknown_handling = generate_unknown_handling(
+        container_attrs.allow_unknown,
+        collect_field,
+        &kv,
+    );
     let field_extracts: Vec<_> =
         parsed_fields.iter().map(|f| f.extract_expr(&kv)).collect();
     let field_names: Vec<_> = parsed_fields.iter().map(|f| &f.ident).collect();
@@ -383,7 +386,7 @@ fn generate_match_arms(
 
 /// Generates the fallback arm for unknown keys.
 fn generate_unknown_handling(
-    container_attrs: &ContainerAttrs,
+    allow_unknown: bool,
     collect_field: Option<&ParsedField>,
     kv: &TokenStream2,
 ) -> TokenStream2 {
@@ -396,7 +399,7 @@ fn generate_unknown_handling(
                 }
             }
         }
-        None if container_attrs.allow_unknown => {
+        None if allow_unknown => {
             quote! { _ => {} }
         }
         None => {
@@ -841,13 +844,11 @@ impl ParsedField {
                     }
                 }
             }
-            FieldKind::Collect => {
-                // Handled separately in unknown_handling
-                quote! { unreachable!() }
-            }
-            FieldKind::Warnings => {
-                // Handled separately in generate_match_arms
-                quote! { unreachable!() }
+            FieldKind::Collect | FieldKind::Warnings => {
+                unreachable!(
+                    "merge_expr is not called for {:?} fields",
+                    self.kind
+                )
             }
         }
     }
