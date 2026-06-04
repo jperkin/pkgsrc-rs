@@ -17,8 +17,9 @@
 /*!
  * Type-safe `KEY=VALUE` parsing for various pkgsrc formats.
  *
- * This module provides the [`Kv`] derive macro and supporting types for
- * parsing various pkgsrc formats that use `KEY=VALUE` pairs, including:
+ * This module re-exports the runtime types from the [`pkgsrc-kv`] crate —
+ * [`Span`], [`KvError`], [`KvWarning`], and the [`FromKv`] trait — which power
+ * parsing of pkgsrc formats that use `KEY=VALUE` pairs, including:
  *
  * - [`pkg_summary(5)`] via [`Summary`]
  * - [`pbulk-index`] via [`ScanIndex`]
@@ -26,18 +27,18 @@
  * Types such as [`PkgName`] only need to implement the [`FromKv`] trait to
  * be used directly.
  *
- * Multi-line variables such as `DESCRIPTION` in [`pkg_summary(5)`] are
- * supported by adding the `#[kv(multiline)]` attribute which will append each
- * line to a [`Vec`].
- *
- * Single-line variables where it makes sense to split the input such as
- * `CATEGORIES` can do so easily by declaring themselves as [`Vec`].
+ * The `Kv` derive macro itself lives in [`pkgsrc-kv`] and is not re-exported
+ * here; add that crate as a dependency to derive `Kv` for your own structs.
+ * Multi-line variables such as `DESCRIPTION` are collected into a [`Vec`] with
+ * `#[kv(multiline)]`, and single-line lists such as `CATEGORIES` by declaring
+ * the field as [`Vec`].
  *
  * # Example
  *
  * ```
  * use indoc::indoc;
- * use pkgsrc::{PkgName, kv::Kv};
+ * use pkgsrc::PkgName;
+ * use pkgsrc_kv::Kv;
  *
  * #[derive(Kv, Debug, PartialEq)]
  * #[kv(allow_unknown)]
@@ -47,9 +48,11 @@
  *     categories: Vec<String>,
  *     #[kv(variable = "DESCRIPTION", multiline)]
  *     desc: Vec<String>,
- *     // There is no known multi-line variable that also contains multiple
- *     // values per line, this is purely to show how one might be handled if
- *     // necessary, though it would be strongly recommended against.
+ *     /*
+ *      * There is no known multi-line variable that also contains multiple
+ *      * values per line, this is purely to show how one might be handled if
+ *      * necessary, though it would be strongly recommended against.
+ *      */
  *     #[kv(multiline)]
  *     all_depends: Vec<Vec<String>>,
  * }
@@ -76,6 +79,7 @@
  * # Ok::<(), pkgsrc::kv::KvError>(())
  * ```
  *
+ * [`pkgsrc-kv`]: https://docs.rs/pkgsrc-kv
  * [`PkgName`]: crate::PkgName
  * [`ScanIndex`]: crate::ScanIndex
  * [`Summary`]: crate::summary::Summary
@@ -83,198 +87,16 @@
  * [`pbulk-index`]: https://man.netbsd.org/pbulk-build.1
  */
 
-use std::num::ParseIntError;
-use std::path::PathBuf;
-use thiserror::Error;
-
-pub use pkgsrc_kv_derive::Kv;
-
-/**
- * A byte offset and length in the input, for error reporting.
- *
- * `Span` tracks the location of errors within the original input string,
- * enabling precise error messages for diagnostic tools.
- *
- * ```
- * use pkgsrc::kv::Span;
- *
- * let span = Span { offset: 10, len: 5 };
- * let range: std::ops::Range<usize> = span.into();
- * assert_eq!(range, 10..15);
- * ```
- */
-#[derive(Clone, Copy, Debug, Default, Eq, Hash, PartialEq)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-pub struct Span {
-    /** Byte offset where this span starts. */
-    pub offset: usize,
-    /** Length in bytes. */
-    pub len: usize,
-}
-
-impl From<Span> for std::ops::Range<usize> {
-    fn from(span: Span) -> Self {
-        span.offset..span.offset + span.len
-    }
-}
-
-/** Errors that can occur during parsing. */
-#[derive(Debug, Error)]
-pub enum KvError {
-    /** A line was not in `KEY=VALUE` format. */
-    #[error("line is not in KEY=VALUE format")]
-    ParseLine(Span),
-
-    /** A required field was missing from the input. */
-    #[error("missing required field '{0}'")]
-    Incomplete(String),
-
-    /** An unknown variable was encountered. */
-    #[error("unknown variable '{variable}'")]
-    UnknownVariable {
-        /** The name of the unknown variable. */
-        variable: String,
-        /** Location of the variable name in the input. */
-        span: Span,
-    },
-
-    /** Failed to parse an integer value. */
-    #[error("failed to parse integer")]
-    ParseInt {
-        /** The underlying parse error. */
-        #[source]
-        source: ParseIntError,
-        /** Location of the invalid value in the input. */
-        span: Span,
-    },
-
-    /** Failed to parse a value. */
-    #[error("{message}")]
-    Parse {
-        /** Description of the parse error. */
-        message: String,
-        /** Location of the invalid value in the input. */
-        span: Span,
-    },
-}
-
-impl KvError {
-    /** Returns the [`Span`] for this error, if available. */
-    #[must_use]
-    pub const fn span(&self) -> Option<Span> {
-        match self {
-            Self::ParseLine(span)
-            | Self::UnknownVariable { span, .. }
-            | Self::ParseInt { span, .. }
-            | Self::Parse { span, .. } => Some(*span),
-            Self::Incomplete(_) => None,
-        }
-    }
-}
-
-/** A [`Result`](std::result::Result) type alias using [`KvError`]. */
-pub type Result<T> = std::result::Result<T, KvError>;
-
-/**
- * Trait for types that can be parsed from a KEY=VALUE string.
- *
- * This is the extension point for custom types. Implement this trait to
- * allow your type to be used in a `#[derive(Kv)]` struct.
- *
- * The `span` parameter indicates where in the input the value is located,
- * for error reporting.
- *
- * # Example
- *
- * ```
- * use pkgsrc::kv::{FromKv, KvError, Span};
- *
- * struct MyId(u32);
- *
- * impl FromKv for MyId {
- *     fn from_kv(value: &str, span: Span) -> Result<Self, KvError> {
- *         value.parse::<u32>()
- *             .map(MyId)
- *             .map_err(|e| KvError::Parse {
- *                 message: e.to_string(),
- *                 span,
- *             })
- *     }
- * }
- * ```
- */
-pub trait FromKv: Sized {
-    /**
-     * Parse a value from a string.
-     *
-     * # Errors
-     *
-     * Returns an error if the value cannot be parsed into the target type.
-     */
-    fn from_kv(value: &str, span: Span) -> Result<Self>;
-}
-
-// Implementation for String - always succeeds
-impl FromKv for String {
-    fn from_kv(value: &str, _span: Span) -> Result<Self> {
-        Ok(value.to_string())
-    }
-}
-
-// Implementation for numeric types
-macro_rules! impl_fromkv_for_int {
-    ($($t:ty),*) => {
-        $(
-            impl FromKv for $t {
-                fn from_kv(value: &str, span: Span) -> Result<Self> {
-                    value.parse().map_err(|source: ParseIntError| KvError::ParseInt {
-                        source,
-                        span,
-                    })
-                }
-            }
-        )*
-    };
-}
-
-impl_fromkv_for_int!(u8, u16, u32, u64, usize, i8, i16, i32, i64, isize);
-
-// Implementation for PathBuf
-impl FromKv for PathBuf {
-    fn from_kv(value: &str, _span: Span) -> Result<Self> {
-        Ok(Self::from(value))
-    }
-}
-
-// Implementation for bool (common patterns: yes/no, true/false, 1/0)
-impl FromKv for bool {
-    fn from_kv(value: &str, span: Span) -> Result<Self> {
-        match value.to_lowercase().as_str() {
-            "true" | "yes" | "1" => Ok(true),
-            "false" | "no" | "0" => Ok(false),
-            _ => Err(KvError::Parse {
-                message: format!("invalid boolean: {value}"),
-                span,
-            }),
-        }
-    }
-}
-
-impl<T: FromKv> FromKv for Vec<T> {
-    fn from_kv(value: &str, span: Span) -> Result<Self> {
-        value
-            .split_whitespace()
-            .map(|word| T::from_kv(word, span))
-            .collect()
-    }
-}
+pub use pkgsrc_kv::{FromKv, KvError, KvWarning, Result, Span};
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::{Depend, PkgName};
     use indoc::indoc;
+    use pkgsrc_kv::Kv;
     use std::collections::HashMap;
+    use std::path::PathBuf;
 
     // Standard mktool test data matching pkg_summary.gz
     const MKTOOL_INPUT: &str = indoc! {"
@@ -412,6 +234,70 @@ mod tests {
     }
 
     #[derive(Kv, Debug, PartialEq)]
+    struct LenientPackage {
+        pkgname: String,
+        #[kv(lenient)]
+        weight: Option<u32>,
+    }
+
+    #[test]
+    fn derive_lenient_valid() -> Result<()> {
+        let pkg = LenientPackage::parse("PKGNAME=foo-1.0\nWEIGHT=200\n")?;
+        assert_eq!(pkg.weight, Some(200));
+        Ok(())
+    }
+
+    #[test]
+    fn derive_lenient_invalid_is_none() -> Result<()> {
+        let pkg = LenientPackage::parse("PKGNAME=foo-1.0\nWEIGHT=bad\n")?;
+        assert_eq!(pkg.weight, None);
+        Ok(())
+    }
+
+    #[test]
+    fn derive_lenient_absent() -> Result<()> {
+        let pkg = LenientPackage::parse("PKGNAME=foo-1.0\n")?;
+        assert_eq!(pkg.weight, None);
+        Ok(())
+    }
+
+    #[derive(Kv, Debug, PartialEq)]
+    struct WarnPackage {
+        pkgname: String,
+        #[kv(lenient)]
+        weight: Option<u32>,
+        #[kv(warnings)]
+        warnings: Vec<KvWarning>,
+    }
+
+    #[test]
+    fn derive_warnings_records_invalid() -> Result<()> {
+        let pkg = WarnPackage::parse("PKGNAME=foo-1.0\nWEIGHT=bad\n")?;
+        assert_eq!(pkg.weight, None);
+        assert_eq!(pkg.warnings.len(), 1);
+        assert_eq!(pkg.warnings[0].variable, "WEIGHT");
+        assert_eq!(pkg.warnings[0].value, "bad");
+        Ok(())
+    }
+
+    #[test]
+    fn derive_warnings_empty_when_valid() -> Result<()> {
+        let pkg = WarnPackage::parse("PKGNAME=foo-1.0\nWEIGHT=5\n")?;
+        assert_eq!(pkg.weight, Some(5));
+        assert!(pkg.warnings.is_empty());
+        Ok(())
+    }
+
+    #[test]
+    fn derive_warnings_invalid_overwrites_valid() -> Result<()> {
+        let pkg =
+            WarnPackage::parse("PKGNAME=foo-1.0\nWEIGHT=5\nWEIGHT=bad\n")?;
+        assert_eq!(pkg.weight, None);
+        assert_eq!(pkg.warnings.len(), 1);
+        Ok(())
+    }
+
+    #[derive(Kv, Debug, PartialEq)]
     struct MultiLinePackage {
         pkgname: String,
         #[kv(multiline)]
@@ -533,6 +419,61 @@ mod tests {
         let pkg = WithExtras::parse(input)?;
         assert_eq!(pkg.pkgname, "mktool-1.4.2");
         assert!(pkg.extra.is_empty());
+        Ok(())
+    }
+
+    /*
+     * Exercises the generated serde impls across every field kind: a
+     * required value, a present and an absent `Option`, a single-line `Vec`,
+     * a `multiline` `Vec`, and a `collect` `HashMap` (serialized via
+     * `flatten`). The serialize path borrows rather than clones; this proves
+     * it produces output the deserialize path reads back identically.
+     */
+    #[cfg(feature = "serde")]
+    #[derive(Kv, Debug, PartialEq)]
+    struct SerdePackage {
+        pkgname: String,
+        #[kv(variable = "SIZE_PKG")]
+        size: u64,
+        comment: Option<String>,
+        homepage: Option<String>,
+        categories: Vec<String>,
+        #[kv(multiline)]
+        description: Vec<String>,
+        #[kv(collect)]
+        extra: HashMap<String, String>,
+    }
+
+    #[test]
+    #[cfg(feature = "serde")]
+    fn derive_serde_roundtrip() -> std::result::Result<(), serde_json::Error> {
+        let input = indoc! {"
+            PKGNAME=mktool-1.4.2
+            SIZE_PKG=6999600
+            COMMENT=High performance alternatives for pkgsrc/mk
+            CATEGORIES=pkgtools devel
+            DESCRIPTION=First line of the description.
+            DESCRIPTION=Second line of the description.
+            PKGPATH=pkgtools/mktool
+        "};
+        let pkg = SerdePackage::parse(input).expect("parse");
+
+        /* Sanity-check the parsed value before round-tripping it. */
+        assert_eq!(pkg.homepage, None);
+        assert_eq!(pkg.description.len(), 2);
+        assert_eq!(pkg.extra.get("PKGPATH").map(String::as_str), Some("pkgtools/mktool"));
+
+        let json = serde_json::to_string(&pkg)?;
+        let back: SerdePackage = serde_json::from_str(&json)?;
+        assert_eq!(pkg, back);
+
+        /*
+         * The absent Option must be skipped, and the collected key must be
+         * flattened to the top level rather than nested under `extra`.
+         */
+        assert!(!json.contains("homepage"), "absent Option should be skipped: {json}");
+        assert!(json.contains("PKGPATH"), "collected key should be flattened: {json}");
+        assert!(!json.contains("extra"), "collect field should flatten, not nest: {json}");
         Ok(())
     }
 }

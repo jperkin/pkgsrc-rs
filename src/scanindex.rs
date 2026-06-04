@@ -63,7 +63,7 @@
  * ```
  */
 
-use crate::kv::Kv;
+use pkgsrc_kv::Kv;
 use crate::{Depend, DependError, PkgName, PkgPath};
 use std::fmt;
 use std::io::{self, BufRead};

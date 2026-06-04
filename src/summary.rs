@@ -121,7 +121,7 @@ use std::num::ParseIntError;
 use std::str::FromStr;
 
 use crate::PkgName;
-use crate::kv::Kv;
+use pkgsrc_kv::Kv;
 
 pub use crate::kv::Span;
 
