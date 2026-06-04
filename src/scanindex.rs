@@ -548,19 +548,19 @@ impl ScanIndex {
         if let Some(ref v) = self.make_jobs_safe {
             writeln!(f, "MAKE_JOBS_SAFE={v}")?;
         }
-        if !matches!(mode, FormatMode::Report) {
-            if let Some(ref v) = self.pbulk_weight {
-                writeln!(f, "PBULK_WEIGHT={v}")?;
-            }
+        if !matches!(mode, FormatMode::Report)
+            && let Some(ref v) = self.pbulk_weight
+        {
+            writeln!(f, "PBULK_WEIGHT={v}")?;
         }
-        if let Some(ref vars) = self.multi_version {
-            if !vars.is_empty() {
-                write!(f, "MULTI_VERSION=")?;
-                for v in vars {
-                    write!(f, " {v}")?;
-                }
-                writeln!(f)?;
+        if let Some(ref vars) = self.multi_version
+            && !vars.is_empty()
+        {
+            write!(f, "MULTI_VERSION=")?;
+            for v in vars {
+                write!(f, " {v}")?;
             }
+            writeln!(f)?;
         }
         if !matches!(mode, FormatMode::Pscan) {
             let deps = self.depends();

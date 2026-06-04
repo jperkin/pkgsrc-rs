@@ -1305,20 +1305,16 @@ impl BinaryPackage {
             let mut applied_mode = None;
 
             // Apply mode from plist if requested
-            if options.apply_mode && !is_metadata {
-                if let Some(info) = file_info {
-                    if let Some(mode_str) = &info.mode {
-                        if let Some(mode) = parse_mode(mode_str) {
-                            if full_path.exists() && !full_path.is_symlink() {
-                                fs::set_permissions(
-                                    &full_path,
-                                    Permissions::from_mode(mode),
-                                )?;
-                                applied_mode = Some(mode);
-                            }
-                        }
-                    }
-                }
+            if options.apply_mode
+                && !is_metadata
+                && let Some(info) = file_info
+                && let Some(mode_str) = &info.mode
+                && let Some(mode) = parse_mode(mode_str)
+                && full_path.exists()
+                && !full_path.is_symlink()
+            {
+                fs::set_permissions(&full_path, Permissions::from_mode(mode))?;
+                applied_mode = Some(mode);
             }
 
             extracted.push(ExtractedFile {

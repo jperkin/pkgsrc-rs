@@ -101,10 +101,10 @@ fn output_summary<P: FileRead>(pkg: &P) -> Result<()> {
     // BUILD_INFO variables (filtered, in file order)
     if let Some(build_info) = pkg.build_info()? {
         for line in build_info.lines() {
-            if let Some(var) = line.split('=').next() {
-                if SUMMARY_BUILD_VARS.contains(&var) {
-                    println!("{}", line);
-                }
+            if let Some(var) = line.split('=').next()
+                && SUMMARY_BUILD_VARS.contains(&var)
+            {
+                println!("{}", line);
             }
         }
     }
@@ -142,10 +142,10 @@ fn process_installed(cmd: &OptArgs) -> Result<()> {
     for pkg in pkgdb {
         let pkg = pkg?;
 
-        if let Some(m) = &pkgm {
-            if !m.is_match(pkg.pkgname()) {
-                continue;
-            }
+        if let Some(m) = &pkgm
+            && !m.is_match(pkg.pkgname())
+        {
+            continue;
         }
 
         if cmd.sumout {

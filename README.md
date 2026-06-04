@@ -75,7 +75,11 @@ for a more complete implementation.
 The current requirements are:
 
 * `edition = "2024"`
-* `rust-version = "1.85.1"`
+* `rust-version = "1.88.0"`
+
+The MSRV will be bumped whenever a version is considered widespread enough
+(approximately a year after release) and contains enough useful features to
+merit an increase.
 
 # License
 

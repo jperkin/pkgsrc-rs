@@ -126,11 +126,11 @@ fn resolve_full_scan() -> Result<(), ResolveError> {
      */
     for (i, pkg) in packages.iter_mut().enumerate() {
         pkg.resolved_depends = resolutions[i].take();
-        if pkg.pkg_fail_reason.as_deref().is_none_or(str::is_empty) {
-            if let Some(pat) = &first_unresolved[i] {
-                pkg.pkg_fail_reason =
-                    Some(format!("\"could not resolve dependency \"{pat}\"\""));
-            }
+        if pkg.pkg_fail_reason.as_deref().is_none_or(str::is_empty)
+            && let Some(pat) = &first_unresolved[i]
+        {
+            pkg.pkg_fail_reason =
+                Some(format!("\"could not resolve dependency \"{pat}\"\""));
         }
     }
 

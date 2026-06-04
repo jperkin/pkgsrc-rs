@@ -515,13 +515,13 @@ fn parse_comment(args: Option<&[u8]>) -> Result<PlistEntry<'_>> {
     let Some(a) = args else {
         return Ok(PlistEntry::Comment(None));
     };
-    if let Some(rest) = a.strip_prefix(b"MD5:") {
-        if rest.len() == 32 && rest.iter().all(u8::is_ascii_hexdigit) {
-            return Ok(PlistEntry::FileChecksum(Cow::Borrowed(
-                std::str::from_utf8(rest)?,
-            )));
-        }
-        return Ok(PlistEntry::Comment(Some(borrow_osstr(a))));
+    if let Some(rest) = a.strip_prefix(b"MD5:")
+        && rest.len() == 32
+        && rest.iter().all(u8::is_ascii_hexdigit)
+    {
+        return Ok(PlistEntry::FileChecksum(Cow::Borrowed(
+            std::str::from_utf8(rest)?,
+        )));
     }
     if let Some(rest) = a.strip_prefix(b"Symlink:") {
         return Ok(PlistEntry::SymlinkTarget(borrow_path(rest)));
@@ -1351,13 +1351,13 @@ mod tests {
         let plist = plist!("@pkgdir one\n@pkgdir two\n@pkgdir three")?;
         assert_eq!(
             plist.pkgdirs().collect::<Vec<_>>(),
-            ["one", "two", "three"]
+            ["one", "two", "three"].map(Path::new)
         );
 
         let plist = plist!("@dirrm one\n@dirrm two\n@dirrm three")?;
         assert_eq!(
             plist.pkgrmdirs().collect::<Vec<_>>(),
-            ["one", "two", "three"]
+            ["one", "two", "three"].map(Path::new)
         );
 
         let plist = plist!("@pkgdep one\n@pkgdep two\n@pkgdep three")?;
@@ -1399,22 +1399,12 @@ mod tests {
         "};
         let plist = Plist::from_bytes(input.as_bytes())?;
         let files: Vec<&Path> = plist.files().collect();
-        assert_eq!(
-            files,
-            [
-                Path::new("bin/good"),
-                Path::new("bin/evil"),
-                Path::new("bin/ok")
-            ]
-        );
+        assert_eq!(files, ["bin/good", "bin/evil", "bin/ok"].map(Path::new));
         let prefixed: Vec<PathBuf> = plist.files_prefixed().collect();
         assert_eq!(
             prefixed,
-            [
-                PathBuf::from("/opt/pkg/bin/good"),
-                PathBuf::from("/bin/evil"),
-                PathBuf::from("/opt/pkg/bin/ok")
-            ]
+            ["/opt/pkg/bin/good", "/bin/evil", "/opt/pkg/bin/ok"]
+                .map(PathBuf::from)
         );
 
         let plist = Plist::from_bytes(b"bin/relative\n")?;

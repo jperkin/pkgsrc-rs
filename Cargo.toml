@@ -12,7 +12,7 @@ license = "ISC"
 repository = "https://github.com/jperkin/pkgsrc-rs"
 homepage = "https://github.com/jperkin/pkgsrc-rs"
 documentation = "https://docs.rs/pkgsrc"
-rust-version = "1.87"
+rust-version = "1.88"
 edition = "2024"
 
 [dependencies]
