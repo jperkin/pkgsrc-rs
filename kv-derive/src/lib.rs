@@ -52,14 +52,20 @@
 //!
 //! # Examples
 //!
-//! ```
+//! These examples are written against the [`pkgsrc-kv`] crate, which
+//! re-exports this macro alongside the runtime it targets. They are marked
+//! `ignore` here only because this engine crate does not depend on the
+//! runtime; they run as written once `pkgsrc-kv` is a dependency.
+//!
+//! [`pkgsrc-kv`]: https://docs.rs/pkgsrc-kv
+//!
+//! ```ignore
 //! use indoc::indoc;
-//! use pkgsrc::kv::{KvError, Kv};
-//! use pkgsrc::PkgName;
+//! use pkgsrc_kv::{Kv, KvError};
 //!
 //! #[derive(Kv)]
 //! pub struct Package {
-//!     pkgname: PkgName,
+//!     pkgname: String,
 //!     #[kv(variable = "SIZE_PKG")]
 //!     size: u64,
 //!     #[kv(multiline)]
@@ -74,12 +80,12 @@
 //!     DESCRIPTION=many interesting things.
 //! "};
 //! let pkg = Package::parse(input)?;
-//! assert_eq!(pkg.pkgname.pkgbase(), "foo");
+//! assert_eq!(pkg.pkgname, "foo-1.0");
 //! assert_eq!(pkg.size, 1234);
 //! assert_eq!(pkg.description, vec!["A package that does", "many interesting things."]);
 //! assert_eq!(pkg.homepage, None);
 //!
-//! // Missing required fields return an error.
+//! /* Missing required fields return an error. */
 //! assert!(Package::parse("PKGNAME=bar-1.0\n").is_err());
 //! # Ok::<(), KvError>(())
 //! ```
@@ -87,10 +93,10 @@
 //! Use `collect` to collect unhandled keys into a `HashMap`, for example
 //! when parsing `+BUILD_INFO` where arbitrary variables will be present:
 //!
-//! ```
+//! ```ignore
 //! use indoc::indoc;
 //! use std::collections::HashMap;
-//! use pkgsrc::kv::{KvError, Kv};
+//! use pkgsrc_kv::{Kv, KvError};
 //!
 //! #[derive(Kv)]
 //! pub struct BuildInfo {
@@ -119,11 +125,34 @@
 
 use proc_macro::TokenStream;
 use proc_macro2::TokenStream as TokenStream2;
-use quote::quote;
+use proc_macro_crate::{FoundCrate, crate_name};
+use quote::{format_ident, quote};
 use syn::{
     Attribute, Data, DeriveInput, Field, Fields, GenericArgument, Ident,
-    PathArguments, Type, parse_macro_input,
+    Path, PathArguments, Type, parse_macro_input,
 };
+
+/*
+ * Resolve the path to the `pkgsrc-kv` crate as named in the consumer's
+ * dependency graph. Generated code references the runtime through this path
+ * rather than hardcoding a crate name, so a renamed dependency still works.
+ * Since `pkgsrc-kv` re-exports this macro, anything that can name the derive
+ * can also name the runtime. A `#[kv(crate = "...")]` container attribute
+ * overrides the lookup for unusual setups.
+ */
+fn kv_crate_path(container_attrs: &ContainerAttrs) -> TokenStream2 {
+    if let Some(path) = &container_attrs.crate_path {
+        return quote! { #path };
+    }
+    match crate_name("pkgsrc-kv") {
+        Ok(FoundCrate::Itself) => quote! { crate },
+        Ok(FoundCrate::Name(name)) => {
+            let ident = format_ident!("{}", name);
+            quote! { ::#ident }
+        }
+        Err(_) => quote! { ::pkgsrc_kv },
+    }
+}
 
 /// Derive macro for parsing `KEY=VALUE` formatted input.
 ///
@@ -145,6 +174,7 @@ pub fn derive_kv(input: TokenStream) -> TokenStream {
 fn generate_impl(input: &DeriveInput) -> syn::Result<TokenStream2> {
     let name = &input.ident;
     let container_attrs = ContainerAttrs::parse(&input.attrs)?;
+    let kv = kv_crate_path(&container_attrs);
 
     let fields = extract_named_fields(input)?;
 
@@ -166,12 +196,12 @@ fn generate_impl(input: &DeriveInput) -> syn::Result<TokenStream2> {
 
     let field_decls = generate_field_declarations(&parsed_fields);
     let warnings_ident = warnings_field.map(|f| &f.ident);
-    let match_arms = generate_match_arms(&regular_fields, warnings_ident);
+    let match_arms = generate_match_arms(&regular_fields, warnings_ident, &kv);
     let unknown_handling =
-        generate_unknown_handling(&container_attrs, collect_field);
+        generate_unknown_handling(&container_attrs, collect_field, &kv);
     let field_extracts: Vec<_> = parsed_fields
         .iter()
-        .map(ParsedField::extract_expr)
+        .map(|f| f.extract_expr(&kv))
         .collect();
     let field_names: Vec<_> = parsed_fields.iter().map(|f| &f.ident).collect();
 
@@ -189,8 +219,8 @@ fn generate_impl(input: &DeriveInput) -> syn::Result<TokenStream2> {
             /// - A value fails to parse into its target type (unless the
             ///   field is marked `#[kv(lenient)]`)
             /// - An unknown key is encountered (unless `allow_unknown` is set)
-            pub fn parse(input: &str) -> std::result::Result<Self, ::pkgsrc::kv::KvError> {
-                use ::pkgsrc::kv::FromKv;
+            pub fn parse(input: &str) -> std::result::Result<Self, #kv::KvError> {
+                use #kv::FromKv;
 
                 #(#field_decls)*
 
@@ -208,7 +238,7 @@ fn generate_impl(input: &DeriveInput) -> syn::Result<TokenStream2> {
                     let eq_pos = match line.find('=') {
                         Some(p) => p,
                         None => {
-                            return Err(::pkgsrc::kv::KvError::ParseLine(::pkgsrc::kv::Span {
+                            return Err(#kv::KvError::ParseLine(#kv::Span {
                                 offset: line_offset,
                                 len: line.len(),
                             }));
@@ -218,7 +248,7 @@ fn generate_impl(input: &DeriveInput) -> syn::Result<TokenStream2> {
                     let key = &line[..eq_pos];
                     let value = &line[eq_pos + 1..];
                     let value_offset = line_offset + eq_pos + 1;
-                    let value_span = ::pkgsrc::kv::Span {
+                    let value_span = #kv::Span {
                         offset: value_offset,
                         len: value.len(),
                     };
@@ -282,6 +312,7 @@ fn generate_field_declarations(fields: &[ParsedField]) -> Vec<TokenStream2> {
 fn generate_match_arms(
     fields: &[&ParsedField],
     warnings_ident: Option<&Ident>,
+    kv: &TokenStream2,
 ) -> Vec<TokenStream2> {
     fields
         .iter()
@@ -297,7 +328,7 @@ fn generate_match_arms(
                                 Ok(parsed) => #ident = Some(parsed),
                                 Err(_) => {
                                     #ident = None;
-                                    #warnings.push(::pkgsrc::kv::KvWarning {
+                                    #warnings.push(#kv::KvWarning {
                                         variable: key.to_string(),
                                         value: value.to_string(),
                                         span: value_span,
@@ -313,7 +344,7 @@ fn generate_match_arms(
                     },
                 }
             } else {
-                let merge_expr = f.merge_expr();
+                let merge_expr = f.merge_expr(kv);
                 quote! {
                     #key_name => {
                         #ident = Some(#merge_expr);
@@ -328,6 +359,7 @@ fn generate_match_arms(
 fn generate_unknown_handling(
     container_attrs: &ContainerAttrs,
     collect_field: Option<&ParsedField>,
+    kv: &TokenStream2,
 ) -> TokenStream2 {
     match collect_field {
         Some(field) => {
@@ -344,9 +376,9 @@ fn generate_unknown_handling(
         None => {
             quote! {
                 unknown => {
-                    return Err(::pkgsrc::kv::KvError::UnknownVariable {
+                    return Err(#kv::KvError::UnknownVariable {
                         variable: unknown.to_string(),
-                        span: ::pkgsrc::kv::Span {
+                        span: #kv::Span {
                             offset: line_offset,
                             len: unknown.len(),
                         },
@@ -525,6 +557,8 @@ fn generate_serde_impl(name: &Ident, fields: &[ParsedField]) -> TokenStream2 {
 struct ContainerAttrs {
     /// If true, unknown keys are silently ignored.
     allow_unknown: bool,
+    /** Override for the path to the `pkgsrc-kv` crate. */
+    crate_path: Option<Path>,
 }
 
 impl ContainerAttrs {
@@ -541,9 +575,13 @@ impl ContainerAttrs {
                 if meta.path.is_ident("allow_unknown") {
                     result.allow_unknown = true;
                     Ok(())
+                } else if meta.path.is_ident("crate") {
+                    let lit: syn::LitStr = meta.value()?.parse()?;
+                    result.crate_path = Some(lit.parse()?);
+                    Ok(())
                 } else {
                     Err(meta.error(
-                        "unknown container attribute; expected `allow_unknown`",
+                        "unknown container attribute; expected `allow_unknown` or `crate`",
                     ))
                 }
             })?;
@@ -741,7 +779,7 @@ impl ParsedField {
     }
 
     /// Generates an expression to merge a new value into the accumulator.
-    fn merge_expr(&self) -> TokenStream2 {
+    fn merge_expr(&self, kv: &TokenStream2) -> TokenStream2 {
         let inner = &self.inner_type;
         let ident = &self.ident;
 
@@ -803,14 +841,14 @@ impl ParsedField {
     }
 
     /// Generates an expression to extract the final value from the accumulator.
-    fn extract_expr(&self) -> TokenStream2 {
+    fn extract_expr(&self, kv: &TokenStream2) -> TokenStream2 {
         let ident = &self.ident;
         let key_name = &self.key_name;
 
         match self.kind {
             FieldKind::Required | FieldKind::Vec | FieldKind::MultiLine => {
                 quote! {
-                    #ident.ok_or_else(|| ::pkgsrc::kv::KvError::Incomplete(#key_name.to_string()))?
+                    #ident.ok_or_else(|| #kv::KvError::Incomplete(#key_name.to_string()))?
                 }
             }
             FieldKind::Optional
