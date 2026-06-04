@@ -402,13 +402,72 @@ fn generate_serde_impl(name: &Ident, fields: &[ParsedField]) -> TokenStream2 {
         })
         .collect();
 
-    let to_fields: Vec<_> = helper_fields
+    /*
+     * For serialization we build a helper of borrowed fields rather than
+     * cloning the whole struct. Optional fields become `Option<&T>` (not
+     * `&Option<T>`) so that `skip_serializing_if = "Option::is_none"` still
+     * resolves against `Option`.
+     */
+    let ser_field_defs: Vec<_> = helper_fields
         .iter()
         .map(|f| {
             let ident = &f.ident;
-            quote! { #ident: self.#ident.clone() }
+            let key_name = &f.key_name;
+            match f.kind {
+                FieldKind::Required | FieldKind::Vec | FieldKind::MultiLine => {
+                    let ty = &f.original_type;
+                    quote! {
+                        #[serde(rename = #key_name)]
+                        #ident: &'a #ty
+                    }
+                }
+                FieldKind::Optional
+                | FieldKind::OptionVec
+                | FieldKind::OptionMultiLine => {
+                    let inner = extract_type_param(&f.original_type, "Option")
+                        .expect("optional field always has an Option<...> type");
+                    quote! {
+                        #[serde(rename = #key_name, skip_serializing_if = "Option::is_none")]
+                        #ident: Option<&'a #inner>
+                    }
+                }
+                FieldKind::Collect => {
+                    let ty = &f.original_type;
+                    quote! {
+                        #[serde(flatten)]
+                        #ident: &'a #ty
+                    }
+                }
+                /* Filtered out of `helper_fields` above. */
+                FieldKind::Warnings => unreachable!(),
+            }
         })
         .collect();
+
+    let ser_to_fields: Vec<_> = helper_fields
+        .iter()
+        .map(|f| {
+            let ident = &f.ident;
+            match f.kind {
+                FieldKind::Optional
+                | FieldKind::OptionVec
+                | FieldKind::OptionMultiLine => {
+                    quote! { #ident: self.#ident.as_ref() }
+                }
+                _ => quote! { #ident: &self.#ident },
+            }
+        })
+        .collect();
+
+    /*
+     * The lifetime is only valid if the helper actually borrows something;
+     * a struct whose only field is the warnings sink has an empty helper.
+     */
+    let ser_lifetime = if helper_fields.is_empty() {
+        quote! {}
+    } else {
+        quote! { <'a> }
+    };
 
     let from_fields: Vec<_> = fields
         .iter()
@@ -430,12 +489,12 @@ fn generate_serde_impl(name: &Ident, fields: &[ParsedField]) -> TokenStream2 {
                 S: serde::Serializer,
             {
                 #[derive(serde::Serialize)]
-                struct Helper {
-                    #(#field_defs,)*
+                struct Helper #ser_lifetime {
+                    #(#ser_field_defs,)*
                 }
 
                 let helper = Helper {
-                    #(#to_fields,)*
+                    #(#ser_to_fields,)*
                 };
                 helper.serialize(serializer)
             }
