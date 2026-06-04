@@ -793,27 +793,7 @@ impl ParsedField {
                 quote! {
                     {
                         let mut items = Vec::new();
-                        let mut word_start = 0;
-                        let value_bytes = value.as_bytes();
-                        let mut in_word = false;
-
-                        for (i, &b) in value_bytes.iter().enumerate() {
-                            let is_ws = b == b' ' || b == b'\t';
-                            if is_ws && in_word {
-                                let word = &value[word_start..i];
-                                let word_offset = value_offset + word_start;
-                                let word_span = ::pkgsrc::kv::Span { offset: word_offset, len: word.len() };
-                                items.push(<#inner as FromKv>::from_kv(word, word_span)?);
-                                in_word = false;
-                            } else if !is_ws && !in_word {
-                                word_start = i;
-                                in_word = true;
-                            }
-                        }
-                        if in_word {
-                            let word = &value[word_start..];
-                            let word_offset = value_offset + word_start;
-                            let word_span = ::pkgsrc::kv::Span { offset: word_offset, len: word.len() };
+                        for (word, word_span) in #kv::words_with_spans(value, value_offset) {
                             items.push(<#inner as FromKv>::from_kv(word, word_span)?);
                         }
                         items
