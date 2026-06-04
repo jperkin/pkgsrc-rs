@@ -380,6 +380,12 @@ impl crate::kv::FromKv for MakeJobsSafe {
     }
 }
 
+impl From<bool> for MakeJobsSafe {
+    fn from(safe: bool) -> Self {
+        MakeJobsSafe(safe)
+    }
+}
+
 /**
  * `BOOTSTRAP_PKG` flag.
  *
@@ -402,6 +408,12 @@ impl BootstrapPkg {
 impl crate::kv::FromKv for BootstrapPkg {
     fn from_kv(value: &str, _span: crate::kv::Span) -> crate::kv::Result<Self> {
         Ok(BootstrapPkg(value == "yes"))
+    }
+}
+
+impl From<bool> for BootstrapPkg {
+    fn from(bootstrap: bool) -> Self {
+        BootstrapPkg(bootstrap)
     }
 }
 
