@@ -31,7 +31,6 @@
 //! | `Vec<T>` | `#[kv(multiline)]` | Multiple lines collected into Vec |
 //! | `Option<Vec<T>>` | `#[kv(multiline)]` | Optional multiple lines |
 //! | `HashMap<String, String>` | `#[kv(collect)]` | Collects unhandled keys |
-//! | `Vec<KvWarning>` | `#[kv(warnings)]` | Collects parse failures from `lenient` fields |
 //!
 //! # Container Attributes
 //!
@@ -44,8 +43,7 @@
 //! - `#[kv(variable = "KEY")]` - Use custom key name instead of uppercased field name
 //! - `#[kv(multiline)]` - Collect multiple lines with the same key into a `Vec`
 //! - `#[kv(collect)]` - Collect all unhandled keys into this `HashMap<String, String>`
-//! - `#[kv(lenient)]` - For an `Option<T>` field, treat a value that fails to parse as `None` rather than erroring (recorded in a `#[kv(warnings)]` field if one is present)
-//! - `#[kv(warnings)]` - Collect parse failures from `lenient` fields into this `Vec<KvWarning>`
+//! - `#[kv(lenient)]` - For an `Option<T>` field, treat a value that fails to parse as `None` rather than erroring. A struct with any `lenient` field also gains a generated `parse_with_warnings` method that appends the dropped values to a `Vec<KvWarning>`.
 //!
 //! # Duplicate Key Behavior
 //!
@@ -186,22 +184,30 @@ fn generate_impl(input: &DeriveInput) -> syn::Result<TokenStream2> {
         .collect::<syn::Result<_>>()?;
 
     ensure_at_most_one(&parsed_fields, FieldKind::Collect, "collect")?;
-    ensure_at_most_one(&parsed_fields, FieldKind::Warnings, "warnings")?;
 
     let collect_field =
         parsed_fields.iter().find(|f| f.kind == FieldKind::Collect);
-    let warnings_field =
-        parsed_fields.iter().find(|f| f.kind == FieldKind::Warnings);
     let regular_fields: Vec<_> = parsed_fields
         .iter()
-        .filter(|f| {
-            f.kind != FieldKind::Collect && f.kind != FieldKind::Warnings
-        })
+        .filter(|f| f.kind != FieldKind::Collect)
         .collect();
 
+    /*
+     * A `lenient` field can drop an unparseable value; those drops are
+     * appended to a caller-owned `Vec<KvWarning>` through a generated
+     * `parse_with_warnings` method rather than stored on the struct. When no
+     * field is `lenient` there is nothing to report, so only `parse` is
+     * emitted.
+     */
+    let has_lenient = parsed_fields.iter().any(|f| f.lenient);
+    let warnings_ident = format_ident!("__kv_warnings");
+
     let field_decls = generate_field_declarations(&parsed_fields);
-    let warnings_ident = warnings_field.map(|f| &f.ident);
-    let match_arms = generate_match_arms(&regular_fields, warnings_ident, &kv);
+    let match_arms = generate_match_arms(
+        &regular_fields,
+        has_lenient.then_some(&warnings_ident),
+        &kv,
+    );
     let unknown_handling = generate_unknown_handling(
         container_attrs.allow_unknown,
         collect_field,
@@ -217,9 +223,63 @@ fn generate_impl(input: &DeriveInput) -> syn::Result<TokenStream2> {
         TokenStream2::new()
     };
 
-    Ok(quote! {
-        impl #name {
-            /// Parses from `KEY=VALUE` formatted input.
+    /* The shared parsing loop, wrapped differently per entry point. */
+    let parse_body = quote! {
+        use #kv::FromKv;
+
+        #(#field_decls)*
+
+        let input_start = input.as_ptr() as usize;
+
+        for line in input.lines() {
+            if line.is_empty() {
+                continue;
+            }
+
+            /*
+             * Use pointer arithmetic to compute the line offset. This
+             * correctly handles both LF and CRLF line endings.
+             */
+            let line_offset = line.as_ptr() as usize - input_start;
+
+            let eq_pos = match line.find('=') {
+                Some(p) => p,
+                None => {
+                    return Err(#kv::KvError::ParseLine(#kv::Span {
+                        offset: line_offset,
+                        len: line.len(),
+                    }));
+                }
+            };
+
+            let key = &line[..eq_pos];
+            let value = &line[eq_pos + 1..];
+            let value_offset = line_offset + eq_pos + 1;
+            let value_span = #kv::Span {
+                offset: value_offset,
+                len: value.len(),
+            };
+
+            match key {
+                #(#match_arms)*
+                #unknown_handling
+            }
+        }
+    };
+
+    let construct = quote! {
+        #name {
+            #(#field_names: #field_extracts,)*
+        }
+    };
+
+    let parse_methods = if has_lenient {
+        quote! {
+            /// Parses from `KEY=VALUE` formatted input, discarding any
+            /// warnings produced by `#[kv(lenient)]` fields.
+            ///
+            /// Use [`parse_with_warnings`](Self::parse_with_warnings) to
+            /// collect the values that failed to parse.
             ///
             /// # Errors
             ///
@@ -230,49 +290,51 @@ fn generate_impl(input: &DeriveInput) -> syn::Result<TokenStream2> {
             ///   field is marked `#[kv(lenient)]`)
             /// - An unknown key is encountered (unless `allow_unknown` is set)
             pub fn parse(input: &str) -> std::result::Result<Self, #kv::KvError> {
-                use #kv::FromKv;
-
-                #(#field_decls)*
-
-                let input_start = input.as_ptr() as usize;
-
-                for line in input.lines() {
-                    if line.is_empty() {
-                        continue;
-                    }
-
-                    // Use pointer arithmetic to compute the line offset.
-                    // This correctly handles both LF and CRLF line endings.
-                    let line_offset = line.as_ptr() as usize - input_start;
-
-                    let eq_pos = match line.find('=') {
-                        Some(p) => p,
-                        None => {
-                            return Err(#kv::KvError::ParseLine(#kv::Span {
-                                offset: line_offset,
-                                len: line.len(),
-                            }));
-                        }
-                    };
-
-                    let key = &line[..eq_pos];
-                    let value = &line[eq_pos + 1..];
-                    let value_offset = line_offset + eq_pos + 1;
-                    let value_span = #kv::Span {
-                        offset: value_offset,
-                        len: value.len(),
-                    };
-
-                    match key {
-                        #(#match_arms)*
-                        #unknown_handling
-                    }
-                }
-
-                Ok(#name {
-                    #(#field_names: #field_extracts,)*
-                })
+                let mut #warnings_ident = Vec::new();
+                Self::parse_with_warnings(input, &mut #warnings_ident)
             }
+
+            /// Parses from `KEY=VALUE` formatted input, appending a
+            /// `KvWarning` to `warnings` for each value dropped by a
+            /// `#[kv(lenient)]` field.
+            ///
+            /// Like [`Read::read_to_string`](std::io::Read::read_to_string),
+            /// the buffer is appended to, not cleared.
+            ///
+            /// # Errors
+            ///
+            /// Returns an error under the same conditions as [`parse`](Self::parse).
+            pub fn parse_with_warnings(
+                input: &str,
+                #warnings_ident: &mut Vec<#kv::KvWarning>,
+            ) -> std::result::Result<Self, #kv::KvError> {
+                #parse_body
+
+                Ok(#construct)
+            }
+        }
+    } else {
+        quote! {
+            /// Parses from `KEY=VALUE` formatted input.
+            ///
+            /// # Errors
+            ///
+            /// Returns an error if:
+            /// - A line doesn't contain `=`
+            /// - A required field is missing
+            /// - A value fails to parse into its target type
+            /// - An unknown key is encountered (unless `allow_unknown` is set)
+            pub fn parse(input: &str) -> std::result::Result<Self, #kv::KvError> {
+                #parse_body
+
+                Ok(#construct)
+            }
+        }
+    };
+
+    Ok(quote! {
+        impl #name {
+            #parse_methods
         }
 
         #serde_impl
@@ -299,8 +361,8 @@ fn extract_named_fields(
 }
 
 /**
- * Rejects more than one field of a sink `kind` (e.g. `collect`, `warnings`),
- * which would otherwise leave the extra fields silently empty.
+ * Rejects more than one field of a sink `kind` (e.g. `collect`), which would
+ * otherwise leave the extra fields silently empty.
  */
 fn ensure_at_most_one(
     fields: &[ParsedField],
@@ -327,9 +389,6 @@ fn generate_field_declarations(fields: &[ParsedField]) -> Vec<TokenStream2> {
             match f.kind {
                 FieldKind::Collect => {
                     quote! { let mut #ident: #state_ty = std::collections::HashMap::new(); }
-                }
-                FieldKind::Warnings => {
-                    quote! { let mut #ident: #state_ty = Vec::new(); }
                 }
                 _ => quote! { let mut #ident: #state_ty = None; },
             }
@@ -425,15 +484,7 @@ fn generate_unknown_handling(
  * whether to emit these, so the generated impls are not themselves cfg-gated.
  */
 fn generate_serde_impl(name: &Ident, fields: &[ParsedField]) -> TokenStream2 {
-    // The warnings sink is a parse-time diagnostic, not part of the data
-    // model, so it is excluded from the serde helper and defaulted on
-    // deserialize.
-    let helper_fields: Vec<&ParsedField> = fields
-        .iter()
-        .filter(|f| f.kind != FieldKind::Warnings)
-        .collect();
-
-    let field_defs: Vec<_> = helper_fields
+    let field_defs: Vec<_> = fields
         .iter()
         .map(|f| {
             let ident = &f.ident;
@@ -456,7 +507,6 @@ fn generate_serde_impl(name: &Ident, fields: &[ParsedField]) -> TokenStream2 {
                         #[serde(flatten)]
                     }
                 }
-                FieldKind::Warnings => quote! {},
             };
 
             quote! {
@@ -472,7 +522,7 @@ fn generate_serde_impl(name: &Ident, fields: &[ParsedField]) -> TokenStream2 {
      * `&Option<T>`) so that `skip_serializing_if = "Option::is_none"` still
      * resolves against `Option`.
      */
-    let ser_field_defs: Vec<_> = helper_fields
+    let ser_field_defs: Vec<_> = fields
         .iter()
         .map(|f| {
             let ident = &f.ident;
@@ -502,13 +552,11 @@ fn generate_serde_impl(name: &Ident, fields: &[ParsedField]) -> TokenStream2 {
                         #ident: &'a #ty
                     }
                 }
-                /* Filtered out of `helper_fields` above. */
-                FieldKind::Warnings => unreachable!(),
             }
         })
         .collect();
 
-    let ser_to_fields: Vec<_> = helper_fields
+    let ser_to_fields: Vec<_> = fields
         .iter()
         .map(|f| {
             let ident = &f.ident;
@@ -525,9 +573,9 @@ fn generate_serde_impl(name: &Ident, fields: &[ParsedField]) -> TokenStream2 {
 
     /*
      * The lifetime is only valid if the helper actually borrows something;
-     * a struct whose only field is the warnings sink has an empty helper.
+     * a struct with no fields produces an empty helper.
      */
-    let ser_lifetime = if helper_fields.is_empty() {
+    let ser_lifetime = if fields.is_empty() {
         quote! {}
     } else {
         quote! { <'a> }
@@ -537,11 +585,7 @@ fn generate_serde_impl(name: &Ident, fields: &[ParsedField]) -> TokenStream2 {
         .iter()
         .map(|f| {
             let ident = &f.ident;
-            if f.kind == FieldKind::Warnings {
-                quote! { #ident: Default::default() }
-            } else {
-                quote! { #ident: helper.#ident }
-            }
+            quote! { #ident: helper.#ident }
         })
         .collect();
 
@@ -637,8 +681,6 @@ struct FieldAttrs {
     collect: bool,
     /// Whether an unparseable value becomes `None` instead of erroring.
     lenient: bool,
-    /// Whether this field collects parse warnings from `lenient` fields.
-    warnings: bool,
 }
 
 impl FieldAttrs {
@@ -665,12 +707,9 @@ impl FieldAttrs {
                 } else if meta.path.is_ident("lenient") {
                     result.lenient = true;
                     Ok(())
-                } else if meta.path.is_ident("warnings") {
-                    result.warnings = true;
-                    Ok(())
                 } else {
                     Err(meta.error(
-                        "unknown field attribute; expected `variable`, `multiline`, `collect`, `lenient`, or `warnings`",
+                        "unknown field attribute; expected `variable`, `multiline`, `collect`, or `lenient`",
                     ))
                 }
             })?;
@@ -697,8 +736,6 @@ enum FieldKind {
     OptionMultiLine,
     /// `HashMap<String, String>` with `collect` - collects unhandled keys.
     Collect,
-    /// `Vec<KvWarning>` with `warnings` - collects `lenient` parse failures.
-    Warnings,
 }
 
 /// A parsed and analyzed struct field.
@@ -750,19 +787,6 @@ impl ParsedField {
             });
         }
 
-        // Validate warnings sink field type
-        if attrs.warnings {
-            validate_warnings_type(&field.ty, field)?;
-            return Ok(Self {
-                ident,
-                key_name: String::new(),
-                kind: FieldKind::Warnings,
-                inner_type: field.ty.clone(),
-                original_type: field.ty.clone(),
-                lenient: false,
-            });
-        }
-
         // Validate multiline is only used with Vec types
         if attrs.multiline
             && extract_type_param(&field.ty, "Vec").is_none()
@@ -806,10 +830,6 @@ impl ParsedField {
             FieldKind::Collect => {
                 quote! { std::collections::HashMap<String, String> }
             }
-            FieldKind::Warnings => {
-                let ty = &self.original_type;
-                quote! { #ty }
-            }
         }
     }
 
@@ -844,7 +864,7 @@ impl ParsedField {
                     }
                 }
             }
-            FieldKind::Collect | FieldKind::Warnings => {
+            FieldKind::Collect => {
                 unreachable!(
                     "merge_expr is not called for {:?} fields",
                     self.kind
@@ -867,8 +887,7 @@ impl ParsedField {
             FieldKind::Optional
             | FieldKind::OptionVec
             | FieldKind::OptionMultiLine
-            | FieldKind::Collect
-            | FieldKind::Warnings => {
+            | FieldKind::Collect => {
                 quote! { #ident }
             }
         }
@@ -905,26 +924,6 @@ fn validate_collect_type(ty: &Type, field: &Field) -> syn::Result<()> {
         ) if k.path.is_ident("String") && v.path.is_ident("String")
     );
     if is_valid { Ok(()) } else { Err(err()) }
-}
-
-/// Validates that a warnings sink field is a `Vec<KvWarning>`.
-fn validate_warnings_type(ty: &Type, field: &Field) -> syn::Result<()> {
-    let err = || {
-        syn::Error::new_spanned(
-            field,
-            "`warnings` attribute requires a `Vec<KvWarning>` type",
-        )
-    };
-    let Some(inner) = extract_type_param(ty, "Vec") else {
-        return Err(err());
-    };
-    let Type::Path(type_path) = &inner else {
-        return Err(err());
-    };
-    match type_path.path.segments.last() {
-        Some(segment) if segment.ident == "KvWarning" => Ok(()),
-        _ => Err(err()),
-    }
 }
 
 /// Analyzes a type to determine its field kind and inner type.

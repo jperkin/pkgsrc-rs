@@ -94,8 +94,9 @@ impl From<Span> for std::ops::Range<usize> {
  * A non-fatal problem encountered while parsing.
  *
  * Produced for a `#[kv(lenient)]` field whose value failed to parse, and
- * collected into a struct's `#[kv(warnings)]` field so that a caller can
- * report the bad input without the whole record failing.
+ * appended to a caller-owned `Vec<KvWarning>` by the generated
+ * `parse_with_warnings` method so that a caller can record the bad input
+ * without the whole record failing.
  */
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub struct KvWarning {

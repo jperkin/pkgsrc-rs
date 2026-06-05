@@ -261,39 +261,52 @@ mod tests {
         Ok(())
     }
 
-    #[derive(Kv, Debug, PartialEq)]
-    struct WarnPackage {
-        pkgname: String,
-        #[kv(lenient)]
-        weight: Option<u32>,
-        #[kv(warnings)]
-        warnings: Vec<KvWarning>,
-    }
-
     #[test]
     fn derive_warnings_records_invalid() -> Result<()> {
-        let pkg = WarnPackage::parse("PKGNAME=foo-1.0\nWEIGHT=bad\n")?;
+        let mut warnings = Vec::new();
+        let pkg = LenientPackage::parse_with_warnings(
+            "PKGNAME=foo-1.0\nWEIGHT=bad\n",
+            &mut warnings,
+        )?;
         assert_eq!(pkg.weight, None);
-        assert_eq!(pkg.warnings.len(), 1);
-        assert_eq!(pkg.warnings[0].variable, "WEIGHT");
-        assert_eq!(pkg.warnings[0].value, "bad");
+        assert_eq!(warnings.len(), 1);
+        assert_eq!(warnings[0].variable, "WEIGHT");
+        assert_eq!(warnings[0].value, "bad");
         Ok(())
     }
 
     #[test]
     fn derive_warnings_empty_when_valid() -> Result<()> {
-        let pkg = WarnPackage::parse("PKGNAME=foo-1.0\nWEIGHT=5\n")?;
+        let mut warnings = Vec::new();
+        let pkg = LenientPackage::parse_with_warnings(
+            "PKGNAME=foo-1.0\nWEIGHT=5\n",
+            &mut warnings,
+        )?;
         assert_eq!(pkg.weight, Some(5));
-        assert!(pkg.warnings.is_empty());
+        assert!(warnings.is_empty());
         Ok(())
     }
 
     #[test]
     fn derive_warnings_invalid_overwrites_valid() -> Result<()> {
-        let pkg =
-            WarnPackage::parse("PKGNAME=foo-1.0\nWEIGHT=5\nWEIGHT=bad\n")?;
+        let mut warnings = Vec::new();
+        let pkg = LenientPackage::parse_with_warnings(
+            "PKGNAME=foo-1.0\nWEIGHT=5\nWEIGHT=bad\n",
+            &mut warnings,
+        )?;
         assert_eq!(pkg.weight, None);
-        assert_eq!(pkg.warnings.len(), 1);
+        assert_eq!(warnings.len(), 1);
+        Ok(())
+    }
+
+    #[test]
+    fn derive_parse_discards_warnings() -> Result<()> {
+        /*
+         * The plain `parse` entry point drops warnings; a bad lenient value
+         * still becomes `None` without failing the parse.
+         */
+        let pkg = LenientPackage::parse("PKGNAME=foo-1.0\nWEIGHT=bad\n")?;
+        assert_eq!(pkg.weight, None);
         Ok(())
     }
 

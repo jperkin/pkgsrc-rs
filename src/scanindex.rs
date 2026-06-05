@@ -510,11 +510,6 @@ pub struct ScanIndex {
     /// [`all_depends`]: ScanIndex::all_depends
     #[kv(variable = "DEPENDS")]
     pub resolved_depends: Option<Vec<PkgName>>,
-    /// Non-fatal problems encountered while parsing, such as a `PBULK_WEIGHT`
-    /// that is not a valid integer.  Empty for well-formed input.  Not part
-    /// of the record format, so it is never emitted when formatting.
-    #[kv(warnings)]
-    pub warnings: Vec<KvWarning>,
 }
 
 impl FromStr for ScanIndex {
@@ -703,7 +698,33 @@ impl ScanIndex {
     /**
      * Create an iterator that parses [`ScanIndex`] entries from a reader.
      *
-     * Records are delimited by lines starting with `PKGNAME=`.
+     * Records are delimited by lines starting with `PKGNAME=`.  Each item is
+     * an [`io::Result`], matching the convention of [`BufRead::lines`].
+     *
+     * Warnings from `#[kv(lenient)]` fields (such as an invalid
+     * `PBULK_WEIGHT`) do not fail a record; they accumulate as the iterator is
+     * consumed and can be read afterwards with
+     * [`warnings`](ScanIndexIter::warnings) or
+     * [`into_warnings`](ScanIndexIter::into_warnings).
+     *
+     * # Examples
+     *
+     * The warnings live on the iterator, so a plain `collect` that consumes it
+     * drops them.  To keep them, drive the iterator through [`by_ref`] (or a
+     * `for … in &mut iter` loop) so it outlives iteration:
+     *
+     * ```
+     * use pkgsrc::ScanIndex;
+     *
+     * let input = b"PKGNAME=foo-1.0\nPBULK_WEIGHT=oops\n" as &[u8];
+     * let mut scan = ScanIndex::from_reader(input);
+     * let records: Vec<_> = scan.by_ref().collect::<Result<_, _>>()?;
+     * assert_eq!(records.len(), 1);
+     * assert_eq!(scan.warnings().len(), 1); /* still available */
+     * # Ok::<(), std::io::Error>(())
+     * ```
+     *
+     * [`by_ref`]: Iterator::by_ref
      */
     pub fn from_reader<R: BufRead>(reader: R) -> ScanIndexIter<R> {
         ScanIndexIter {
@@ -711,6 +732,7 @@ impl ScanIndex {
             line_buf: String::new(),
             buffer: String::new(),
             done: false,
+            warnings: Vec::new(),
         }
     }
 }
@@ -718,13 +740,37 @@ impl ScanIndex {
 /**
  * Iterator that parses [`ScanIndex`] entries from a [`BufRead`] source.
  *
- * Created by [`ScanIndex::from_reader`].
+ * Created by [`ScanIndex::from_reader`].  The iterator owns the warnings
+ * accumulated from `#[kv(lenient)]` fields; read them once iteration is
+ * complete via [`warnings`](Self::warnings) or [`into_warnings`](Self::into_warnings).
  */
 pub struct ScanIndexIter<R> {
     reader: R,
     line_buf: String,
     buffer: String,
     done: bool,
+    warnings: Vec<KvWarning>,
+}
+
+impl<R> ScanIndexIter<R> {
+    /**
+     * The warnings accumulated so far, in the order encountered.
+     *
+     * A record's warnings are appended as it is yielded, so this is complete
+     * only once the iterator has been fully consumed.
+     */
+    #[must_use]
+    pub fn warnings(&self) -> &[KvWarning] {
+        &self.warnings
+    }
+
+    /**
+     * Consume the iterator and return the accumulated warnings.
+     */
+    #[must_use]
+    pub fn into_warnings(self) -> Vec<KvWarning> {
+        self.warnings
+    }
 }
 
 impl<R: BufRead> Iterator for ScanIndexIter<R> {
@@ -743,9 +789,8 @@ impl<R: BufRead> Iterator for ScanIndexIter<R> {
                     if self.buffer.is_empty() {
                         return None;
                     }
-                    return Some(parse_record(&std::mem::take(
-                        &mut self.buffer,
-                    )));
+                    let record = std::mem::take(&mut self.buffer);
+                    return Some(parse_record(&record, &mut self.warnings));
                 }
                 Ok(_) => {
                     if self.line_buf.starts_with("PKGNAME=")
@@ -753,7 +798,7 @@ impl<R: BufRead> Iterator for ScanIndexIter<R> {
                     {
                         let record = std::mem::take(&mut self.buffer);
                         self.buffer.push_str(&self.line_buf);
-                        return Some(parse_record(&record));
+                        return Some(parse_record(&record, &mut self.warnings));
                     }
                     self.buffer.push_str(&self.line_buf);
                 }
@@ -763,8 +808,11 @@ impl<R: BufRead> Iterator for ScanIndexIter<R> {
     }
 }
 
-fn parse_record(s: &str) -> io::Result<ScanIndex> {
-    s.parse()
+fn parse_record(
+    s: &str,
+    warnings: &mut Vec<KvWarning>,
+) -> io::Result<ScanIndex> {
+    ScanIndex::parse_with_warnings(s, warnings)
         .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))
 }
 
@@ -1056,6 +1104,25 @@ mod tests {
         let output = index.presolve().to_string();
         let reparsed = ScanIndex::from_str(&output)?;
         assert_eq!(index.resolved_depends, reparsed.resolved_depends);
+        Ok(())
+    }
+
+    #[test]
+    fn from_reader_accumulates_warnings() -> Result<(), io::Error> {
+        /*
+         * An invalid PBULK_WEIGHT is dropped to None without failing the
+         * record; the bad value accumulates on the iterator instead.
+         */
+        let input = "PKGNAME=foo-1.0\nPBULK_WEIGHT=bad\n";
+        let mut iter = ScanIndex::from_reader(input.as_bytes());
+        let index: Vec<_> = iter.by_ref().collect::<Result<_, _>>()?;
+        assert_eq!(index.len(), 1);
+        assert_eq!(index[0].pbulk_weight, None);
+
+        let warnings = iter.into_warnings();
+        assert_eq!(warnings.len(), 1);
+        assert_eq!(warnings[0].variable, "PBULK_WEIGHT");
+        assert_eq!(warnings[0].value, "bad");
         Ok(())
     }
 }
