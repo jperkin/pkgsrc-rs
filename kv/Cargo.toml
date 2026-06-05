@@ -1,6 +1,6 @@
 [package]
 name = "pkgsrc-kv"
-version = "0.2.0"
+version = "0.3.0"
 authors = ["Jonathan Perkin <jonathan@perkin.org.uk>"]
 license = "ISC"
 repository = "https://github.com/jperkin/pkgsrc-rs"
