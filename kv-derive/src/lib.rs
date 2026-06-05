@@ -14,111 +14,113 @@
  * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
  */
 
-//! Derive macro for parsing `KEY=VALUE` formats.
-//!
-//! This crate provides [`macro@Kv`] for automatically implementing parsers
-//! for structs from `KEY=VALUE` formatted input.
-//!
-//! # Field Types
-//!
-//! | Rust Type | Attribute | Behavior |
-//! |-----------|-----------|----------|
-//! | `T` | | Required single value |
-//! | `Option<T>` | | Optional single value |
-//! | `Option<T>` | `#[kv(lenient)]` | Optional single value; an unparseable value becomes `None` instead of erroring |
-//! | `Vec<T>` | | Whitespace-separated values on single line |
-//! | `Option<Vec<T>>` | | Optional whitespace-separated values |
-//! | `Vec<T>` | `#[kv(multiline)]` | Multiple lines collected into Vec |
-//! | `Option<Vec<T>>` | `#[kv(multiline)]` | Optional multiple lines |
-//! | `HashMap<String, String>` | `#[kv(collect)]` | Collects unhandled keys |
-//!
-//! # Container Attributes
-//!
-//! - `#[kv(allow_unknown)]` - Ignore unknown keys instead of returning an error
-//! - `#[kv(serde)]` - Emit `serde::Serialize`/`Deserialize` impls for the struct
-//! - `#[kv(crate = "path")]` - Override the path used to reach the `pkgsrc-kv` runtime
-//!
-//! # Field Attributes
-//!
-//! - `#[kv(variable = "KEY")]` - Use custom key name instead of uppercased field name
-//! - `#[kv(multiline)]` - Collect multiple lines with the same key into a `Vec`
-//! - `#[kv(collect)]` - Collect all unhandled keys into this `HashMap<String, String>`
-//! - `#[kv(lenient)]` - For an `Option<T>` field, treat a value that fails to parse as `None` rather than erroring. A struct with any `lenient` field also gains a generated `parse_with_warnings` method that appends the dropped values to a `Vec<KvWarning>`.
-//!
-//! # Duplicate Key Behavior
-//!
-//! For non-multiline fields, duplicate keys overwrite the previous value.
-//! For multiline fields, each occurrence appends to the `Vec`.
-//!
-//! # Examples
-//!
-//! These examples are written against the [`pkgsrc-kv`] crate, which
-//! re-exports this macro alongside the runtime it targets. They are marked
-//! `ignore` here only because this engine crate does not depend on the
-//! runtime; they run as written once `pkgsrc-kv` is a dependency.
-//!
-//! [`pkgsrc-kv`]: https://docs.rs/pkgsrc-kv
-//!
-//! ```ignore
-//! use indoc::indoc;
-//! use pkgsrc_kv::{Kv, KvError};
-//!
-//! #[derive(Kv)]
-//! pub struct Package {
-//!     pkgname: String,
-//!     #[kv(variable = "SIZE_PKG")]
-//!     size: u64,
-//!     #[kv(multiline)]
-//!     description: Vec<String>,
-//!     homepage: Option<String>,
-//! }
-//!
-//! let input = indoc! {"
-//!     PKGNAME=foo-1.0
-//!     SIZE_PKG=1234
-//!     DESCRIPTION=A package that does
-//!     DESCRIPTION=many interesting things.
-//! "};
-//! let pkg = Package::parse(input)?;
-//! assert_eq!(pkg.pkgname, "foo-1.0");
-//! assert_eq!(pkg.size, 1234);
-//! assert_eq!(pkg.description, vec!["A package that does", "many interesting things."]);
-//! assert_eq!(pkg.homepage, None);
-//!
-//! /* Missing required fields return an error. */
-//! assert!(Package::parse("PKGNAME=bar-1.0\n").is_err());
-//! # Ok::<(), KvError>(())
-//! ```
-//!
-//! Use `collect` to collect unhandled keys into a `HashMap`, for example
-//! when parsing `+BUILD_INFO` where arbitrary variables will be present:
-//!
-//! ```ignore
-//! use indoc::indoc;
-//! use std::collections::HashMap;
-//! use pkgsrc_kv::{Kv, KvError};
-//!
-//! #[derive(Kv)]
-//! pub struct BuildInfo {
-//!     build_host: Option<String>,
-//!     machine_arch: Option<String>,
-//!     #[kv(collect)]
-//!     vars: HashMap<String, String>,
-//! }
-//!
-//! let input = indoc! {"
-//!     BUILD_DATE=2025-01-15 10:30:00 +0000
-//!     BUILD_HOST=builder.example.com
-//!     MACHINE_ARCH=x86_64
-//!     PKGPATH=devel/example
-//! "};
-//! let info = BuildInfo::parse(input)?;
-//! assert_eq!(info.build_host, Some("builder.example.com".to_string()));
-//! assert_eq!(info.machine_arch, Some("x86_64".to_string()));
-//! assert_eq!(info.vars.get("PKGPATH"), Some(&"devel/example".to_string()));
-//! assert_eq!(info.vars.get("VARBASE"), None);
-//! # Ok::<(), KvError>(())
-//! ```
+/*!
+ * Derive macro for parsing `KEY=VALUE` formats.
+ *
+ * This crate provides [`macro@Kv`] for automatically implementing parsers
+ * for structs from `KEY=VALUE` formatted input.
+ *
+ * # Field Types
+ *
+ * | Rust Type | Attribute | Behavior |
+ * |-----------|-----------|----------|
+ * | `T` | | Required single value |
+ * | `Option<T>` | | Optional single value |
+ * | `Option<T>` | `#[kv(lenient)]` | Optional single value; an unparseable value becomes `None` instead of erroring |
+ * | `Vec<T>` | | Whitespace-separated values on single line |
+ * | `Option<Vec<T>>` | | Optional whitespace-separated values |
+ * | `Vec<T>` | `#[kv(multiline)]` | Multiple lines collected into Vec |
+ * | `Option<Vec<T>>` | `#[kv(multiline)]` | Optional multiple lines |
+ * | `HashMap<String, String>` | `#[kv(collect)]` | Collects unhandled keys |
+ *
+ * # Container Attributes
+ *
+ * - `#[kv(allow_unknown)]` - Ignore unknown keys instead of returning an error
+ * - `#[kv(serde)]` - Emit `serde::Serialize`/`Deserialize` impls for the struct
+ * - `#[kv(crate = "path")]` - Override the path used to reach the `pkgsrc-kv` runtime
+ *
+ * # Field Attributes
+ *
+ * - `#[kv(variable = "KEY")]` - Use custom key name instead of uppercased field name
+ * - `#[kv(multiline)]` - Collect multiple lines with the same key into a `Vec`
+ * - `#[kv(collect)]` - Collect all unhandled keys into this `HashMap<String, String>`
+ * - `#[kv(lenient)]` - For an `Option<T>` field, treat a value that fails to parse as `None` rather than erroring. A struct with any `lenient` field also gains a generated `parse_with_warnings` method that appends the dropped values to a `Vec<KvWarning>`.
+ *
+ * # Duplicate Key Behavior
+ *
+ * For non-multiline fields, duplicate keys overwrite the previous value.
+ * For multiline fields, each occurrence appends to the `Vec`.
+ *
+ * # Examples
+ *
+ * These examples are written against the [`pkgsrc-kv`] crate, which
+ * re-exports this macro alongside the runtime it targets. They are marked
+ * `ignore` here only because this engine crate does not depend on the
+ * runtime; they run as written once `pkgsrc-kv` is a dependency.
+ *
+ * [`pkgsrc-kv`]: https://docs.rs/pkgsrc-kv
+ *
+ * ```ignore
+ * use indoc::indoc;
+ * use pkgsrc_kv::{Kv, KvError};
+ *
+ * #[derive(Kv)]
+ * pub struct Package {
+ *     pkgname: String,
+ *     #[kv(variable = "SIZE_PKG")]
+ *     size: u64,
+ *     #[kv(multiline)]
+ *     description: Vec<String>,
+ *     homepage: Option<String>,
+ * }
+ *
+ * let input = indoc! {"
+ *     PKGNAME=foo-1.0
+ *     SIZE_PKG=1234
+ *     DESCRIPTION=A package that does
+ *     DESCRIPTION=many interesting things.
+ * "};
+ * let pkg = Package::parse(input)?;
+ * assert_eq!(pkg.pkgname, "foo-1.0");
+ * assert_eq!(pkg.size, 1234);
+ * assert_eq!(pkg.description, vec!["A package that does", "many interesting things."]);
+ * assert_eq!(pkg.homepage, None);
+ *
+ * /* Missing required fields return an error. */
+ * assert!(Package::parse("PKGNAME=bar-1.0\n").is_err());
+ * # Ok::<(), KvError>(())
+ * ```
+ *
+ * Use `collect` to collect unhandled keys into a `HashMap`, for example
+ * when parsing `+BUILD_INFO` where arbitrary variables will be present:
+ *
+ * ```ignore
+ * use indoc::indoc;
+ * use std::collections::HashMap;
+ * use pkgsrc_kv::{Kv, KvError};
+ *
+ * #[derive(Kv)]
+ * pub struct BuildInfo {
+ *     build_host: Option<String>,
+ *     machine_arch: Option<String>,
+ *     #[kv(collect)]
+ *     vars: HashMap<String, String>,
+ * }
+ *
+ * let input = indoc! {"
+ *     BUILD_DATE=2025-01-15 10:30:00 +0000
+ *     BUILD_HOST=builder.example.com
+ *     MACHINE_ARCH=x86_64
+ *     PKGPATH=devel/example
+ * "};
+ * let info = BuildInfo::parse(input)?;
+ * assert_eq!(info.build_host, Some("builder.example.com".to_string()));
+ * assert_eq!(info.machine_arch, Some("x86_64".to_string()));
+ * assert_eq!(info.vars.get("PKGPATH"), Some(&"devel/example".to_string()));
+ * assert_eq!(info.vars.get("VARBASE"), None);
+ * # Ok::<(), KvError>(())
+ * ```
+ */
 
 #![deny(missing_docs)]
 #![deny(unsafe_code)]
@@ -154,12 +156,14 @@ fn kv_crate_path(container_attrs: &ContainerAttrs) -> TokenStream2 {
     }
 }
 
-/// Derive macro for parsing `KEY=VALUE` formatted input.
-///
-/// Generates a `parse` method that parses the struct from a string
-/// containing `KEY=VALUE` pairs separated by newlines.
-///
-/// See the [module documentation](crate) for detailed usage.
+/**
+ * Derive macro for parsing `KEY=VALUE` formatted input.
+ *
+ * Generates a `parse` method that parses the struct from a string
+ * containing `KEY=VALUE` pairs separated by newlines.
+ *
+ * See the [module documentation](crate) for detailed usage.
+ */
 #[proc_macro_derive(Kv, attributes(kv))]
 pub fn derive_kv(input: TokenStream) -> TokenStream {
     let input = parse_macro_input!(input as DeriveInput);
@@ -170,7 +174,7 @@ pub fn derive_kv(input: TokenStream) -> TokenStream {
     }
 }
 
-/// Main implementation generator.
+/** Main implementation generator. */
 fn generate_impl(input: &DeriveInput) -> syn::Result<TokenStream2> {
     let name = &input.ident;
     let container_attrs = ContainerAttrs::parse(&input.attrs)?;
@@ -275,35 +279,39 @@ fn generate_impl(input: &DeriveInput) -> syn::Result<TokenStream2> {
 
     let parse_methods = if has_lenient {
         quote! {
-            /// Parses from `KEY=VALUE` formatted input, discarding any
-            /// warnings produced by `#[kv(lenient)]` fields.
-            ///
-            /// Use [`parse_with_warnings`](Self::parse_with_warnings) to
-            /// collect the values that failed to parse.
-            ///
-            /// # Errors
-            ///
-            /// Returns an error if:
-            /// - A line doesn't contain `=`
-            /// - A required field is missing
-            /// - A value fails to parse into its target type (unless the
-            ///   field is marked `#[kv(lenient)]`)
-            /// - An unknown key is encountered (unless `allow_unknown` is set)
+            /**
+             * Parses from `KEY=VALUE` formatted input, discarding any
+             * warnings produced by `#[kv(lenient)]` fields.
+             *
+             * Use [`parse_with_warnings`](Self::parse_with_warnings) to
+             * collect the values that failed to parse.
+             *
+             * # Errors
+             *
+             * Returns an error if:
+             * - A line doesn't contain `=`
+             * - A required field is missing
+             * - A value fails to parse into its target type (unless the
+             *   field is marked `#[kv(lenient)]`)
+             * - An unknown key is encountered (unless `allow_unknown` is set)
+             */
             pub fn parse(input: &str) -> std::result::Result<Self, #kv::KvError> {
                 let mut #warnings_ident = Vec::new();
                 Self::parse_with_warnings(input, &mut #warnings_ident)
             }
 
-            /// Parses from `KEY=VALUE` formatted input, appending a
-            /// `KvWarning` to `warnings` for each value dropped by a
-            /// `#[kv(lenient)]` field.
-            ///
-            /// Like [`Read::read_to_string`](std::io::Read::read_to_string),
-            /// the buffer is appended to, not cleared.
-            ///
-            /// # Errors
-            ///
-            /// Returns an error under the same conditions as [`parse`](Self::parse).
+            /**
+             * Parses from `KEY=VALUE` formatted input, appending a
+             * `KvWarning` to `warnings` for each value dropped by a
+             * `#[kv(lenient)]` field.
+             *
+             * Like [`Read::read_to_string`](std::io::Read::read_to_string),
+             * the buffer is appended to, not cleared.
+             *
+             * # Errors
+             *
+             * Returns an error under the same conditions as [`parse`](Self::parse).
+             */
             pub fn parse_with_warnings(
                 input: &str,
                 #warnings_ident: &mut Vec<#kv::KvWarning>,
@@ -315,15 +323,17 @@ fn generate_impl(input: &DeriveInput) -> syn::Result<TokenStream2> {
         }
     } else {
         quote! {
-            /// Parses from `KEY=VALUE` formatted input.
-            ///
-            /// # Errors
-            ///
-            /// Returns an error if:
-            /// - A line doesn't contain `=`
-            /// - A required field is missing
-            /// - A value fails to parse into its target type
-            /// - An unknown key is encountered (unless `allow_unknown` is set)
+            /**
+             * Parses from `KEY=VALUE` formatted input.
+             *
+             * # Errors
+             *
+             * Returns an error if:
+             * - A line doesn't contain `=`
+             * - A required field is missing
+             * - A value fails to parse into its target type
+             * - An unknown key is encountered (unless `allow_unknown` is set)
+             */
             pub fn parse(input: &str) -> std::result::Result<Self, #kv::KvError> {
                 #parse_body
 
@@ -341,7 +351,7 @@ fn generate_impl(input: &DeriveInput) -> syn::Result<TokenStream2> {
     })
 }
 
-/// Extracts named fields from a struct, returning an error for other types.
+/** Extracts named fields from a struct, returning an error for other types. */
 fn extract_named_fields(
     input: &DeriveInput,
 ) -> syn::Result<&syn::punctuated::Punctuated<Field, syn::token::Comma>> {
@@ -379,7 +389,7 @@ fn ensure_at_most_one(
     Ok(())
 }
 
-/// Generates variable declarations for parsing state.
+/** Generates variable declarations for parsing state. */
 fn generate_field_declarations(fields: &[ParsedField]) -> Vec<TokenStream2> {
     fields
         .iter()
@@ -396,7 +406,7 @@ fn generate_field_declarations(fields: &[ParsedField]) -> Vec<TokenStream2> {
         .collect()
 }
 
-/// Generates match arms for known keys.
+/** Generates match arms for known keys. */
 fn generate_match_arms(
     fields: &[&ParsedField],
     warnings_ident: Option<&Ident>,
@@ -443,7 +453,7 @@ fn generate_match_arms(
         .collect()
 }
 
-/// Generates the fallback arm for unknown keys.
+/** Generates the fallback arm for unknown keys. */
 fn generate_unknown_handling(
     allow_unknown: bool,
     collect_field: Option<&ParsedField>,
@@ -626,10 +636,10 @@ fn generate_serde_impl(name: &Ident, fields: &[ParsedField]) -> TokenStream2 {
     }
 }
 
-/// Container-level attributes parsed from `#[kv(...)]`.
+/** Container-level attributes parsed from `#[kv(...)]`. */
 #[derive(Default)]
 struct ContainerAttrs {
-    /// If true, unknown keys are silently ignored.
+    /** If true, unknown keys are silently ignored. */
     allow_unknown: bool,
     /** Override for the path to the `pkgsrc-kv` crate. */
     crate_path: Option<Path>,
@@ -638,7 +648,7 @@ struct ContainerAttrs {
 }
 
 impl ContainerAttrs {
-    /// Parses container attributes from a slice of attributes.
+    /** Parses container attributes from a slice of attributes. */
     fn parse(attrs: &[Attribute]) -> syn::Result<Self> {
         let mut result = Self::default();
 
@@ -670,21 +680,21 @@ impl ContainerAttrs {
     }
 }
 
-/// Field-level attributes parsed from `#[kv(...)]`.
+/** Field-level attributes parsed from `#[kv(...)]`. */
 #[derive(Default)]
 struct FieldAttrs {
-    /// Custom key name override.
+    /** Custom key name override. */
     variable: Option<String>,
-    /// Whether this field collects multiple lines.
+    /** Whether this field collects multiple lines. */
     multiline: bool,
-    /// Whether this field collects unhandled keys.
+    /** Whether this field collects unhandled keys. */
     collect: bool,
-    /// Whether an unparseable value becomes `None` instead of erroring.
+    /** Whether an unparseable value becomes `None` instead of erroring. */
     lenient: bool,
 }
 
 impl FieldAttrs {
-    /// Parses field attributes from a slice of attributes.
+    /** Parses field attributes from a slice of attributes. */
     fn parse(attrs: &[Attribute]) -> syn::Result<Self> {
         let mut result = Self::default();
 
@@ -719,43 +729,43 @@ impl FieldAttrs {
     }
 }
 
-/// Classification of how a field should be parsed.
+/** Classification of how a field should be parsed. */
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum FieldKind {
-    /// `T` - required single value.
+    /** `T` - required single value. */
     Required,
-    /// `Option<T>` - optional single value.
+    /** `Option<T>` - optional single value. */
     Optional,
-    /// `Vec<T>` - whitespace-separated values on one line.
+    /** `Vec<T>` - whitespace-separated values on one line. */
     Vec,
-    /// `Option<Vec<T>>` - optional whitespace-separated values.
+    /** `Option<Vec<T>>` - optional whitespace-separated values. */
     OptionVec,
-    /// `Vec<T>` with `multiline` - multiple lines appended.
+    /** `Vec<T>` with `multiline` - multiple lines appended. */
     MultiLine,
-    /// `Option<Vec<T>>` with `multiline` - optional multiple lines.
+    /** `Option<Vec<T>>` with `multiline` - optional multiple lines. */
     OptionMultiLine,
-    /// `HashMap<String, String>` with `collect` - collects unhandled keys.
+    /** `HashMap<String, String>` with `collect` - collects unhandled keys. */
     Collect,
 }
 
-/// A parsed and analyzed struct field.
+/** A parsed and analyzed struct field. */
 struct ParsedField {
-    /// The field identifier.
+    /** The field identifier. */
     ident: Ident,
-    /// The key name used in KEY=VALUE format.
+    /** The key name used in KEY=VALUE format. */
     key_name: String,
-    /// How this field should be parsed.
+    /** How this field should be parsed. */
     kind: FieldKind,
-    /// The inner type (e.g., `T` from `Vec<T>`).
+    /** The inner type (e.g., `T` from `Vec<T>`). */
     inner_type: Type,
-    /// The original declared type.
+    /** The original declared type. */
     original_type: Type,
-    /// Whether an unparseable value becomes `None` instead of erroring.
+    /** Whether an unparseable value becomes `None` instead of erroring. */
     lenient: bool,
 }
 
 impl ParsedField {
-    /// Analyzes a field and extracts parsing metadata.
+    /** Analyzes a field and extracts parsing metadata. */
     fn from_field(field: &Field) -> syn::Result<Self> {
         let ident = field.ident.clone().ok_or_else(|| {
             syn::Error::new_spanned(field, "expected named field")
@@ -763,7 +773,7 @@ impl ParsedField {
 
         let attrs = FieldAttrs::parse(&field.attrs)?;
 
-        // `lenient` only applies to optional single-value fields.
+        /* `lenient` only applies to optional single-value fields. */
         if attrs.lenient
             && (extract_type_param(&field.ty, "Option").is_none()
                 || extract_option_vec_inner(&field.ty).is_some())
@@ -774,7 +784,7 @@ impl ParsedField {
             ));
         }
 
-        // Validate collect field type
+        /* Validate collect field type */
         if attrs.collect {
             validate_collect_type(&field.ty, field)?;
             return Ok(Self {
@@ -787,7 +797,7 @@ impl ParsedField {
             });
         }
 
-        // Validate multiline is only used with Vec types
+        /* Validate multiline is only used with Vec types */
         if attrs.multiline
             && extract_type_param(&field.ty, "Vec").is_none()
             && extract_option_vec_inner(&field.ty).is_none()
@@ -814,7 +824,7 @@ impl ParsedField {
         })
     }
 
-    /// Returns the type used during parsing to accumulate values.
+    /** Returns the type used during parsing to accumulate values. */
     fn state_type(&self) -> TokenStream2 {
         let inner = &self.inner_type;
         match self.kind {
@@ -833,7 +843,7 @@ impl ParsedField {
         }
     }
 
-    /// Generates an expression to merge a new value into the accumulator.
+    /** Generates an expression to merge a new value into the accumulator. */
     fn merge_expr(&self, kv: &TokenStream2) -> TokenStream2 {
         let inner = &self.inner_type;
         let ident = &self.ident;
@@ -873,7 +883,7 @@ impl ParsedField {
         }
     }
 
-    /// Generates an expression to extract the final value from the accumulator.
+    /** Generates an expression to extract the final value from the accumulator. */
     fn extract_expr(&self, kv: &TokenStream2) -> TokenStream2 {
         let ident = &self.ident;
         let key_name = &self.key_name;
@@ -894,7 +904,7 @@ impl ParsedField {
     }
 }
 
-/// Validates that a collect field has the correct type.
+/** Validates that a collect field has the correct type. */
 fn validate_collect_type(ty: &Type, field: &Field) -> syn::Result<()> {
     let err = || {
         syn::Error::new_spanned(
@@ -926,9 +936,9 @@ fn validate_collect_type(ty: &Type, field: &Field) -> syn::Result<()> {
     if is_valid { Ok(()) } else { Err(err()) }
 }
 
-/// Analyzes a type to determine its field kind and inner type.
+/** Analyzes a type to determine its field kind and inner type. */
 fn analyze_type(ty: &Type, multiline: bool) -> (FieldKind, Type) {
-    // Check for Option<Vec<T>>
+    /* Check for Option<Vec<T>> */
     if let Some(vec_inner) = extract_option_vec_inner(ty) {
         let kind = if multiline {
             FieldKind::OptionMultiLine
@@ -938,12 +948,12 @@ fn analyze_type(ty: &Type, multiline: bool) -> (FieldKind, Type) {
         return (kind, vec_inner);
     }
 
-    // Check for Option<T>
+    /* Check for Option<T> */
     if let Some(inner) = extract_type_param(ty, "Option") {
         return (FieldKind::Optional, inner);
     }
 
-    // Check for Vec<T>
+    /* Check for Vec<T> */
     if let Some(inner) = extract_type_param(ty, "Vec") {
         let kind = if multiline {
             FieldKind::MultiLine
@@ -953,17 +963,17 @@ fn analyze_type(ty: &Type, multiline: bool) -> (FieldKind, Type) {
         return (kind, inner);
     }
 
-    // Plain T
+    /* Plain T */
     (FieldKind::Required, ty.clone())
 }
 
-/// Extracts the inner type from `Option<Vec<T>>`.
+/** Extracts the inner type from `Option<Vec<T>>`. */
 fn extract_option_vec_inner(ty: &Type) -> Option<Type> {
     let option_inner = extract_type_param(ty, "Option")?;
     extract_type_param(&option_inner, "Vec")
 }
 
-/// Extracts the type parameter from a generic type like `Wrapper<T>`.
+/** Extracts the type parameter from a generic type like `Wrapper<T>`. */
 fn extract_type_param(ty: &Type, wrapper: &str) -> Option<Type> {
     let Type::Path(type_path) = ty else {
         return None;
