@@ -1,6 +1,6 @@
 [package]
 name = "pkgsrc-kv-derive"
-version = "0.4.0"
+version = "0.5.0"
 authors = ["Jonathan Perkin <jonathan@perkin.org.uk>"]
 license = "ISC"
 repository = "https://github.com/jperkin/pkgsrc-rs"
