@@ -138,10 +138,6 @@ const ZSTD_MAGIC: [u8; 4] = [0x28, 0xb5, 0x2f, 0xfd];
 /// Result type for archive operations.
 pub type Result<T> = std::result::Result<T, ArchiveError>;
 
-// ============================================================================
-// Compression
-// ============================================================================
-
 /// Compression format for package archives.
 #[derive(Clone, Copy, Debug, Default, Eq, Hash, PartialEq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
@@ -206,9 +202,33 @@ impl fmt::Display for Compression {
     }
 }
 
-// ============================================================================
-// PkgHashAlgorithm
-// ============================================================================
+/**
+ * Detect the compression of an unsigned tarball from its magic bytes,
+ * falling back to the file extension and finally to gzip.
+ */
+fn detect_compression(magic: &[u8], path: Option<&Path>) -> Compression {
+    Compression::from_magic(magic)
+        .or_else(|| path.and_then(Compression::from_extension))
+        .unwrap_or(Compression::Gzip)
+}
+
+/**
+ * Wrap a reader in the decompression decoder for `compression`.
+ *
+ * The returned decoder borrows for as long as `reader` lives, so this
+ * serves both the owning callers (file and buffer readers) and the
+ * streaming signed path, which decodes a borrowed `ar` entry in place.
+ */
+fn decode<'r, R: Read + 'r>(
+    reader: R,
+    compression: Compression,
+) -> Result<Box<dyn Read + 'r>> {
+    Ok(match compression {
+        Compression::None => Box::new(reader),
+        Compression::Gzip => Box::new(GzDecoder::new(reader)),
+        Compression::Zstd => Box::new(zstd::stream::Decoder::new(reader)?),
+    })
+}
 
 /// Hash algorithm used for package signing.
 #[derive(Clone, Copy, Debug, Default, Eq, Hash, PartialEq)]
@@ -280,10 +300,6 @@ impl std::str::FromStr for PkgHashAlgorithm {
     }
 }
 
-// ============================================================================
-// Error
-// ============================================================================
-
 /// Error type for archive operations.
 #[derive(Debug, thiserror::Error)]
 #[non_exhaustive]
@@ -340,10 +356,6 @@ pub enum ArchiveError {
     #[error("no path available: {0}")]
     NoPath(String),
 }
-
-// ============================================================================
-// ExtractOptions
-// ============================================================================
 
 /// Options for extracting package files.
 #[derive(Clone, Debug, Default, Eq, Hash, PartialEq)]
@@ -421,10 +433,6 @@ pub enum ChecksumFailureKind {
         actual: String,
     },
 }
-
-// ============================================================================
-// PkgHash
-// ============================================================================
 
 /// The `+PKG_HASH` file contents for signed packages.
 ///
@@ -696,10 +704,6 @@ impl std::str::FromStr for PkgHash {
     }
 }
 
-// ============================================================================
-// ArchiveType
-// ============================================================================
-
 /// Type of binary package archive.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
@@ -709,10 +713,6 @@ pub enum ArchiveType {
     /// Signed package (ar archive containing tarball + signatures)
     Signed,
 }
-
-// ============================================================================
-// Archive (low-level, tar-style)
-// ============================================================================
 
 /// Wrapper for different decompression decoders.
 ///
@@ -826,10 +826,6 @@ impl<R: Read> Archive<R> {
     }
 }
 
-// ============================================================================
-// Package (high-level, cached metadata)
-// ============================================================================
-
 /// Options for converting a [`BinaryPackage`] to a [`Summary`].
 #[derive(Clone, Debug, Default, Eq, Hash, PartialEq)]
 pub struct SummaryOptions {
@@ -926,15 +922,8 @@ impl BinaryPackage {
         magic: &[u8],
         file_size: u64,
     ) -> Result<Self> {
-        let compression = Compression::from_magic(magic)
-            .or_else(|| Compression::from_extension(path))
-            .unwrap_or(Compression::Gzip);
-
-        let decompressed: Box<dyn Read> = match compression {
-            Compression::None => Box::new(reader),
-            Compression::Gzip => Box::new(GzDecoder::new(reader)),
-            Compression::Zstd => Box::new(zstd::stream::Decoder::new(reader)?),
-        };
+        let compression = detect_compression(magic, Some(path));
+        let decompressed = decode(reader, compression)?;
 
         let mut archive = TarArchive::new(decompressed);
         let mut metadata = Metadata::new();
@@ -1048,14 +1037,7 @@ impl BinaryPackage {
                     compression = Compression::from_extension(&name)
                         .unwrap_or(Compression::Gzip);
 
-                    let decompressed: Box<dyn Read> = match compression {
-                        Compression::None => Box::new(entry),
-                        Compression::Gzip => Box::new(GzDecoder::new(entry)),
-                        Compression::Zstd => {
-                            Box::new(zstd::stream::Decoder::new(entry)?)
-                        }
-                    };
-
+                    let decompressed = decode(entry, compression)?;
                     let mut archive = TarArchive::new(decompressed);
 
                     for tar_entry_result in archive.entries()? {
@@ -1579,9 +1561,214 @@ impl TryFrom<&BinaryPackage> for Summary {
     }
 }
 
-// ============================================================================
-// Builder (low-level, tar-style)
-// ============================================================================
+/**
+ * A single metadata member yielded by [`Members`].
+ */
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+pub struct MetadataMember {
+    /** The kind of metadata file (`+CONTENTS`, `+BUILD_VERSION`, etc.). */
+    pub entry: Entry,
+    /** The full decoded contents of the member, untrimmed. */
+    pub content: String,
+}
+
+/**
+ * Streaming reader for a binary package's leading metadata members.
+ *
+ * Unlike [`BinaryPackage::open`], which eagerly reads every `+*` member and
+ * builds an owned [`Plist`](crate::plist::Plist), this yields each metadata
+ * member as an owned [`MetadataMember`] on demand.  Callers that only need a
+ * few fields (for example `+BUILD_VERSION` and the `@blddep` lines of
+ * `+CONTENTS`) can read just those and stop, without allocating an owned
+ * entry per packing-list line.
+ *
+ * Iteration stops at the first member that is not a recognised metadata
+ * file (one named by [`Entry::from_filename`]); in a well-formed package
+ * that is the first regular file, so only the leading metadata is decoded.
+ *
+ * Signed packages are supported; the inner tarball is buffered in memory
+ * before its metadata is streamed, so the saving applies to the unsigned
+ * tarballs that dominate the hot path rather than to signed packages.
+ *
+ * # Example
+ *
+ * ```no_run
+ * use pkgsrc::archive::MetadataReader;
+ * use pkgsrc::metadata::Entry;
+ * use pkgsrc::plist::{self, PlistEntry};
+ *
+ * let mut reader = MetadataReader::open("package-1.0.tgz")?;
+ * let mut build_version = None;
+ * let mut blddeps = Vec::new();
+ *
+ * for member in reader.members()? {
+ *     let member = member?;
+ *     match member.entry {
+ *         Entry::BuildVersion => build_version = Some(member.content),
+ *         Entry::Contents => {
+ *             for entry in plist::parse(member.content.as_bytes()) {
+ *                 if let PlistEntry::BldDep(d) = entry? {
+ *                     blddeps.push(d.into_owned());
+ *                 }
+ *             }
+ *         }
+ *         _ => {}
+ *     }
+ * }
+ * # Ok::<(), pkgsrc::archive::ArchiveError>(())
+ * ```
+ */
+pub struct MetadataReader {
+    archive: TarArchive<Box<dyn Read>>,
+}
+
+impl MetadataReader {
+    /**
+     * Open a package and prepare to stream its metadata members.
+     *
+     * Detects the signed (`ar`) and unsigned (compressed tarball) formats
+     * from the leading magic bytes, falling back to the file extension for
+     * compression when the magic is ambiguous.
+     */
+    pub fn open(path: impl AsRef<Path>) -> Result<Self> {
+        let path = path.as_ref();
+        let file = File::open(path)?;
+        let reader = BufReader::new(file);
+        Self::open_reader(reader, Some(path))
+    }
+
+    /**
+     * Build a reader from an already-opened seekable stream.  `path` is used
+     * only as a compression-detection fallback for unsigned tarballs.
+     */
+    fn open_reader<R: Read + Seek + 'static>(
+        mut reader: R,
+        path: Option<&Path>,
+    ) -> Result<Self> {
+        let mut magic = [0u8; 8];
+        reader.read_exact(&mut magic)?;
+        reader.seek(SeekFrom::Start(0))?;
+
+        let decoder: Box<dyn Read> = if &magic[..7] == b"!<arch>" {
+            Self::signed_decoder(reader)?
+        } else {
+            decode(reader, detect_compression(&magic, path))?
+        };
+
+        Ok(Self {
+            archive: TarArchive::new(decoder),
+        })
+    }
+
+    /**
+     * Locate the inner tarball of a signed package and decode it.
+     *
+     * The tarball is buffered in memory; this avoids a second self-borrow
+     * of the `ar` archive that streaming directly would require.
+     */
+    fn signed_decoder<R: Read>(reader: R) -> Result<Box<dyn Read>> {
+        let mut ar = ar::Archive::new(reader);
+
+        loop {
+            let mut entry = match ar.next_entry() {
+                Some(Ok(entry)) => entry,
+                Some(Err(e)) if e.kind() == io::ErrorKind::UnexpectedEof => {
+                    break;
+                }
+                Some(Err(e)) => return Err(e.into()),
+                None => break,
+            };
+            let name = String::from_utf8_lossy(entry.header().identifier())
+                .into_owned();
+
+            if name.ends_with(".tgz")
+                || name.ends_with(".tzst")
+                || name.ends_with(".tar")
+            {
+                let compression = Compression::from_extension(&name)
+                    .unwrap_or(Compression::Gzip);
+                let mut data = Vec::new();
+                entry.read_to_end(&mut data)?;
+                return decode(Cursor::new(data), compression);
+            }
+        }
+
+        Err(ArchiveError::InvalidFormat(
+            "signed package missing inner tarball".into(),
+        ))
+    }
+
+    /**
+     * Return an iterator over the leading `+*` metadata members.
+     *
+     * This consumes the archive stream and may be called only once.
+     */
+    pub fn members(&mut self) -> Result<Members<'_>> {
+        Ok(Members {
+            entries: self.archive.entries()?,
+            done: false,
+        })
+    }
+}
+
+/**
+ * Iterator over a package's leading metadata members.
+ *
+ * Returned by [`MetadataReader::members`].  Yields each recognised metadata
+ * member as an owned [`MetadataMember`] and stops at the first member that is
+ * not one.  A read or decode error is reported once, after which the iterator
+ * is exhausted.
+ */
+pub struct Members<'a> {
+    entries: Entries<'a, Box<dyn Read>>,
+    done: bool,
+}
+
+impl Iterator for Members<'_> {
+    type Item = Result<MetadataMember>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.done {
+            return None;
+        }
+
+        let mut entry = match self.entries.next()? {
+            Ok(entry) => entry,
+            Err(e) => {
+                self.done = true;
+                return Some(Err(e.into()));
+            }
+        };
+
+        let name = match entry.path() {
+            Ok(path) => path.into_owned(),
+            Err(e) => {
+                self.done = true;
+                return Some(Err(e.into()));
+            }
+        };
+
+        /* Stop at the first member that is not a recognised metadata file. */
+        let Some(kind) = name.to_str().and_then(Entry::from_filename) else {
+            self.done = true;
+            return None;
+        };
+
+        let size = entry.header().size().unwrap_or(0) as usize;
+        let mut content = String::with_capacity(size);
+        if let Err(e) = entry.read_to_string(&mut content) {
+            self.done = true;
+            return Some(Err(e.into()));
+        }
+
+        Some(Ok(MetadataMember {
+            entry: kind,
+            content,
+        }))
+    }
+}
+
+impl std::iter::FusedIterator for Members<'_> {}
 
 /// Wrapper for different compression encoders.
 enum Encoder<W: Write> {
@@ -1749,10 +1936,6 @@ impl<W: Write> Builder<W> {
     }
 }
 
-// ============================================================================
-// SignedArchive
-// ============================================================================
-
 /// A signed binary package ready to be written.
 ///
 /// This is created by [`BinaryPackage::sign`] or [`SignedArchive::from_unsigned`].
@@ -1850,10 +2033,6 @@ impl SignedArchive {
         Ok(())
     }
 }
-
-// ============================================================================
-// Tests
-// ============================================================================
 
 #[cfg(test)]
 mod tests {
@@ -2153,5 +2332,117 @@ def456
         assert!(opts.apply_mode);
         assert!(opts.apply_ownership);
         assert!(!opts.preserve_mtime);
+    }
+
+    /* Build an unsigned gzip package with metadata followed by one file. */
+    fn build_unsigned_pkg() -> Vec<u8> {
+        let mut builder =
+            Builder::with_compression(Vec::new(), Compression::Gzip).unwrap();
+        builder
+            .append_metadata_file("+COMMENT", b"A test package")
+            .unwrap();
+        builder
+            .append_metadata_file("+DESC", b"A description.\n")
+            .unwrap();
+        builder
+            .append_metadata_file(
+                "+CONTENTS",
+                b"@name testpkg-1.0\n@blddep deppkg-2.0\nbin/foo\n",
+            )
+            .unwrap();
+        builder
+            .append_metadata_file("+BUILD_VERSION", b"some-version-info\n")
+            .unwrap();
+        builder
+            .append_file("bin/foo", b"#!/bin/sh\n", 0o755)
+            .unwrap();
+        builder.finish().unwrap()
+    }
+
+    #[test]
+    fn test_metadata_reader_members() -> Result<()> {
+        let bytes = build_unsigned_pkg();
+        let mut reader = MetadataReader::open_reader(Cursor::new(bytes), None)?;
+
+        let members: Vec<MetadataMember> =
+            reader.members()?.collect::<Result<_>>()?;
+
+        let kinds: Vec<Entry> = members.iter().map(|m| m.entry).collect();
+        assert_eq!(
+            kinds,
+            vec![
+                Entry::Comment,
+                Entry::Desc,
+                Entry::Contents,
+                Entry::BuildVersion,
+            ]
+        );
+
+        let comment =
+            members.iter().find(|m| m.entry == Entry::Comment).unwrap();
+        assert_eq!(comment.content, "A test package");
+        Ok(())
+    }
+
+    #[test]
+    fn test_metadata_reader_early_break() -> Result<()> {
+        let bytes = build_unsigned_pkg();
+        let mut reader = MetadataReader::open_reader(Cursor::new(bytes), None)?;
+
+        let mut build_version = None;
+        for member in reader.members()? {
+            let member = member?;
+            if member.entry == Entry::BuildVersion {
+                build_version = Some(member.content);
+                break;
+            }
+        }
+        assert_eq!(build_version.as_deref(), Some("some-version-info\n"));
+        Ok(())
+    }
+
+    #[test]
+    fn test_metadata_reader_blddep() -> Result<()> {
+        use crate::plist::{self, PlistEntry};
+
+        let bytes = build_unsigned_pkg();
+        let mut reader = MetadataReader::open_reader(Cursor::new(bytes), None)?;
+
+        let mut blddeps = Vec::new();
+        for member in reader.members()? {
+            let member = member?;
+            if member.entry == Entry::Contents {
+                for entry in plist::parse(member.content.as_bytes()) {
+                    if let PlistEntry::BldDep(d) = entry? {
+                        blddeps.push(d.into_owned());
+                    }
+                }
+            }
+        }
+        assert_eq!(blddeps, vec!["deppkg-2.0".to_string()]);
+        Ok(())
+    }
+
+    #[test]
+    fn test_metadata_reader_signed() -> Result<()> {
+        let tarball = build_unsigned_pkg();
+        let signed = SignedArchive::from_unsigned(
+            tarball,
+            "testpkg-1.0",
+            b"fake-signature",
+            Compression::Gzip,
+        )?;
+        let mut out = Vec::new();
+        signed.write(&mut out)?;
+
+        let mut reader = MetadataReader::open_reader(Cursor::new(out), None)?;
+        let kinds: Vec<Entry> = reader
+            .members()?
+            .map(|m| m.map(|m| m.entry))
+            .collect::<Result<_>>()?;
+
+        assert!(kinds.contains(&Entry::Contents));
+        assert!(kinds.contains(&Entry::BuildVersion));
+        Ok(())
     }
 }
