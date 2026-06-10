@@ -731,6 +731,7 @@ impl ScanIndex {
             reader,
             line_buf: String::new(),
             buffer: String::new(),
+            record_buf: String::new(),
             done: false,
             warnings: Vec::new(),
         }
@@ -748,6 +749,7 @@ pub struct ScanIndexIter<R> {
     reader: R,
     line_buf: String,
     buffer: String,
+    record_buf: String,
     done: bool,
     warnings: Vec<KvWarning>,
 }
@@ -789,16 +791,22 @@ impl<R: BufRead> Iterator for ScanIndexIter<R> {
                     if self.buffer.is_empty() {
                         return None;
                     }
-                    let record = std::mem::take(&mut self.buffer);
-                    return Some(parse_record(&record, &mut self.warnings));
+                    return Some(parse_record(
+                        &self.buffer,
+                        &mut self.warnings,
+                    ));
                 }
                 Ok(_) => {
                     if self.line_buf.starts_with("PKGNAME=")
                         && !self.buffer.is_empty()
                     {
-                        let record = std::mem::take(&mut self.buffer);
+                        std::mem::swap(&mut self.buffer, &mut self.record_buf);
+                        self.buffer.clear();
                         self.buffer.push_str(&self.line_buf);
-                        return Some(parse_record(&record, &mut self.warnings));
+                        return Some(parse_record(
+                            &self.record_buf,
+                            &mut self.warnings,
+                        ));
                     }
                     self.buffer.push_str(&self.line_buf);
                 }
