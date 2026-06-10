@@ -103,12 +103,17 @@
  * assert_eq!(best, Some("pkg-2.0"));
  * # Ok::<(), pkgsrc::PatternError>(())
  * ```
+ *
+ * When scanning many candidates, [`Pattern::best_matcher`] returns a
+ * [`BestMatch`] accumulator that caches the parsed version of the running
+ * best rather than re-parsing it on every comparison.
  */
 
 use crate::dewey::{Dewey, DeweyError, DeweyOp, DeweyVersion, dewey_cmp};
 use crate::pkgname::{pkgversion, pkgversion_norev};
 use hashbrown::HashMap;
 use hashbrown::hash_map::EntryRef;
+use std::cmp::Ordering;
 use std::fmt;
 use std::str::FromStr;
 use thiserror::Error;
@@ -460,6 +465,34 @@ impl Pattern {
         self.best_match_cmp(current, candidate, std::cmp::Ordering::Greater)
     }
 
+    /**
+     * Return a [`BestMatch`] accumulator for this pattern.  When
+     * versions compare equal, the lexicographically smaller string is
+     * preferred, matching [`Pattern::best_match`].
+     */
+    #[must_use]
+    pub fn best_matcher(&self) -> BestMatch<'_> {
+        BestMatch {
+            pattern: self,
+            tiebreak: Ordering::Less,
+            best: None,
+        }
+    }
+
+    /**
+     * Identical to [`Pattern::best_matcher`] except when versions
+     * compare equal, the lexicographically greater string is
+     * preferred, matching [`Pattern::best_match_pbulk`].
+     */
+    #[must_use]
+    pub fn best_matcher_pbulk(&self) -> BestMatch<'_> {
+        BestMatch {
+            pattern: self,
+            tiebreak: Ordering::Greater,
+            best: None,
+        }
+    }
+
     fn best_match_cmp<'a>(
         &self,
         current: Option<&'a str>,
@@ -598,6 +631,88 @@ impl Pattern {
 
     const fn is_simple_byte(b: u8) -> bool {
         b.is_ascii_alphanumeric() || b == b'-'
+    }
+}
+
+/**
+ * Accumulator for selecting the best match from a stream of candidates.
+ *
+ * Created by [`Pattern::best_matcher`] (pkg_install tiebreak) or
+ * [`Pattern::best_matcher_pbulk`] (pbulk tiebreak).  Unlike repeated
+ * [`Pattern::best_match`] calls, the parsed version of the running
+ * best is cached, so a scan over many candidates parses each
+ * candidate once rather than re-parsing the best on every comparison.
+ *
+ * [`consider`] returns whether the candidate became the new best,
+ * which callers can use to track data associated with the winner.  A
+ * candidate identical to the current best does not win.
+ *
+ * # Example
+ *
+ * ```
+ * use pkgsrc::Pattern;
+ *
+ * let p = Pattern::new("pkg-[0-9]*")?;
+ * let mut m = p.best_matcher();
+ * assert!(m.consider("pkg-1.0")?);
+ * assert!(m.consider("pkg-2.0")?);
+ * assert!(!m.consider("pkg-1.5")?);
+ * assert!(!m.consider("other-9.9")?);
+ * assert_eq!(m.best(), Some("pkg-2.0"));
+ * # Ok::<(), pkgsrc::PatternError>(())
+ * ```
+ *
+ * [`consider`]: BestMatch::consider
+ */
+#[derive(Clone, Debug)]
+pub struct BestMatch<'a> {
+    pattern: &'a Pattern,
+    tiebreak: Ordering,
+    best: Option<(&'a str, DeweyVersion)>,
+}
+
+impl<'a> BestMatch<'a> {
+    /**
+     * Test a candidate against the pattern and the current best.
+     * Returns true if the candidate became the new best.
+     *
+     * # Errors
+     *
+     * Returns [`PatternError::Dewey`] if parsing the candidate
+     * version fails.  The current best is unchanged.
+     */
+    pub fn consider(
+        &mut self,
+        candidate: &'a str,
+    ) -> Result<bool, PatternError> {
+        if !self.pattern.matches(candidate) {
+            return Ok(false);
+        }
+        let version = DeweyVersion::new(pkgversion(candidate))?;
+        let won = match &self.best {
+            None => true,
+            Some((best, bestver)) => {
+                if dewey_cmp(&version, &DeweyOp::GT, bestver) {
+                    true
+                } else if dewey_cmp(&version, &DeweyOp::LT, bestver) {
+                    false
+                } else {
+                    best.cmp(&candidate) == self.tiebreak.reverse()
+                }
+            }
+        };
+        if won {
+            self.best = Some((candidate, version));
+        }
+        Ok(won)
+    }
+
+    /**
+     * Return the current best candidate, if any.
+     */
+    #[must_use]
+    pub fn best(&self) -> Option<&'a str> {
+        self.best.as_ref().map(|(s, _)| *s)
     }
 }
 
@@ -986,6 +1101,78 @@ mod tests {
             m.best_match(Some("pkg-1.0"), overflow_ver),
             Err(PatternError::Dewey(_))
         ));
+        Ok(())
+    }
+
+    #[test]
+    fn best_matcher_dewey() -> Result<(), PatternError> {
+        let p = Pattern::new("pkg>1<3")?;
+        let mut m = p.best_matcher();
+        /* Non-matching candidates are ignored. */
+        assert!(!m.consider("pkg-0.5")?);
+        assert!(!m.consider("pkg-3.0")?);
+        assert_eq!(m.best(), None);
+        /* First match becomes the best. */
+        assert!(m.consider("pkg-1.1")?);
+        assert_eq!(m.best(), Some("pkg-1.1"));
+        /* Higher version wins, lower does not. */
+        assert!(m.consider("pkg-2.0")?);
+        assert!(!m.consider("pkg-1.1")?);
+        assert_eq!(m.best(), Some("pkg-2.0"));
+        Ok(())
+    }
+
+    /*
+     * The accumulator must apply the same tiebreaks as best_match and
+     * best_match_pbulk when versions compare equal.
+     */
+    #[test]
+    fn best_matcher_order() -> Result<(), PatternError> {
+        let p = Pattern::new("mpg123{,-esound,-nas}>=0.59.18")?;
+        /* pkg_install pkg_order() prefers the smaller string. */
+        let mut m = p.best_matcher();
+        assert!(m.consider("mpg123-esound-1")?);
+        assert!(m.consider("mpg123-1")?);
+        assert!(!m.consider("mpg123-nas-1")?);
+        assert_eq!(m.best(), Some("mpg123-1"));
+        /* pbulk pkg_order() prefers the greater string. */
+        let mut m = p.best_matcher_pbulk();
+        assert!(m.consider("mpg123-1")?);
+        assert!(m.consider("mpg123-esound-1")?);
+        assert!(m.consider("mpg123-nas-1")?);
+        assert_eq!(m.best(), Some("mpg123-nas-1"));
+        Ok(())
+    }
+
+    /*
+     * A candidate identical to the current best must not win, so
+     * callers tracking the winner keep the first occurrence.
+     */
+    #[test]
+    fn best_matcher_tie_keeps_first() -> Result<(), PatternError> {
+        let p = Pattern::new("pkg-[0-9]*")?;
+        let mut m = p.best_matcher();
+        assert!(m.consider("pkg-1.0")?);
+        assert!(!m.consider("pkg-1.0")?);
+        assert_eq!(m.best(), Some("pkg-1.0"));
+        let mut m = p.best_matcher_pbulk();
+        assert!(m.consider("pkg-1.0")?);
+        assert!(!m.consider("pkg-1.0")?);
+        assert_eq!(m.best(), Some("pkg-1.0"));
+        Ok(())
+    }
+
+    #[test]
+    fn best_matcher_overflow() -> Result<(), PatternError> {
+        let p = Pattern::new("pkg-[0-9]*")?;
+        let mut m = p.best_matcher();
+        assert!(m.consider("pkg-1.0")?);
+        /* Version component overflow errors, leaving best unchanged. */
+        assert!(matches!(
+            m.consider("pkg-20251208143052123456"),
+            Err(PatternError::Dewey(_))
+        ));
+        assert_eq!(m.best(), Some("pkg-1.0"));
         Ok(())
     }
 
