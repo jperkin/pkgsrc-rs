@@ -618,7 +618,7 @@ checksum = "19f132c84eca552bf34cab8ec81f1c1dcc229b811638f9d283dceabe58c5569e"
 
 [[package]]
 name = "pkgsrc"
-version = "0.12.3"
+version = "0.13.0"
 dependencies = [
  "anyhow",
  "ar",
