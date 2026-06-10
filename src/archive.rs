@@ -106,13 +106,14 @@ use std::io::{self, BufReader, Cursor, Read, Seek, SeekFrom, Write};
 #[cfg(unix)]
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
+use std::sync::OnceLock;
 
 use flate2::read::GzDecoder;
 use flate2::write::GzEncoder;
 use tar::{Archive as TarArchive, Builder as TarBuilder, Entries, Header};
 
 use crate::metadata::{Entry, FileRead, Metadata};
-use crate::plist::Plist;
+use crate::plist::{self, Plist, PlistEntry};
 use crate::summary::Summary;
 
 /// Parse a mode string (octal) into a u32.
@@ -874,8 +875,11 @@ pub struct BinaryPackage {
     /// Parsed metadata from the package.
     metadata: Metadata,
 
-    /// Parsed packing list.
-    plist: Plist,
+    /** Package name from the packing list `@name`, captured at open. */
+    pkgname: Option<String>,
+
+    /** Packing list, materialised on first [`BinaryPackage::plist`] call. */
+    plist: OnceLock<Plist>,
 
     /// Build info key-value pairs.
     build_info: HashMap<String, Vec<String>>,
@@ -915,7 +919,9 @@ impl BinaryPackage {
         }
     }
 
-    /// Read an unsigned package (compressed tarball).
+    /**
+     * Read an unsigned package (compressed tarball).
+     */
     fn read_unsigned<R: Read + Seek>(
         path: &Path,
         reader: R,
@@ -927,7 +933,6 @@ impl BinaryPackage {
 
         let mut archive = TarArchive::new(decompressed);
         let mut metadata = Metadata::new();
-        let mut plist = Plist::new();
         let mut build_info: HashMap<String, Vec<String>> = HashMap::new();
 
         for entry_result in archive.entries()? {
@@ -958,9 +963,7 @@ impl BinaryPackage {
                 ))
             })?;
 
-            if entry_path.as_os_str() == "+CONTENTS" {
-                plist = Plist::from_bytes(content.as_bytes())?;
-            } else if entry_path.as_os_str() == "+BUILD_INFO" {
+            if entry_path.as_os_str() == "+BUILD_INFO" {
                 for line in content.lines() {
                     if let Some((key, value)) = line.split_once('=') {
                         build_info
@@ -975,13 +978,15 @@ impl BinaryPackage {
         metadata.validate().map_err(|e| {
             ArchiveError::MissingMetadata(format!("incomplete package: {}", e))
         })?;
+        let pkgname = Self::validate_contents(metadata.contents().as_bytes())?;
 
         Ok(Self {
             path: path.to_path_buf(),
             compression,
             archive_type: ArchiveType::Unsigned,
             metadata,
-            plist,
+            pkgname,
+            plist: OnceLock::new(),
             build_info,
             pkg_hash: None,
             gpg_signature: None,
@@ -989,7 +994,9 @@ impl BinaryPackage {
         })
     }
 
-    /// Read a signed package (ar archive).
+    /**
+     * Read a signed package (ar archive).
+     */
     fn read_signed<R: Read>(
         path: &Path,
         reader: R,
@@ -1000,7 +1007,6 @@ impl BinaryPackage {
         let mut pkg_hash_content: Option<String> = None;
         let mut gpg_signature: Option<Vec<u8>> = None;
         let mut metadata = Metadata::new();
-        let mut plist = Plist::new();
         let mut build_info: HashMap<String, Vec<String>> = HashMap::new();
         let mut compression = Compression::Gzip;
 
@@ -1072,9 +1078,7 @@ impl BinaryPackage {
                             },
                         )?;
 
-                        if entry_path.as_os_str() == "+CONTENTS" {
-                            plist = Plist::from_bytes(content.as_bytes())?;
-                        } else if entry_path.as_os_str() == "+BUILD_INFO" {
+                        if entry_path.as_os_str() == "+BUILD_INFO" {
                             for line in content.lines() {
                                 if let Some((key, value)) = line.split_once('=')
                                 {
@@ -1098,18 +1102,37 @@ impl BinaryPackage {
         metadata.validate().map_err(|e| {
             ArchiveError::MissingMetadata(format!("incomplete package: {}", e))
         })?;
+        let pkgname = Self::validate_contents(metadata.contents().as_bytes())?;
 
         Ok(Self {
             path: path.to_path_buf(),
             compression,
             archive_type: ArchiveType::Signed,
             metadata,
-            plist,
+            pkgname,
+            plist: OnceLock::new(),
             build_info,
             pkg_hash,
             gpg_signature,
             file_size,
         })
+    }
+
+    /*
+     * Validate the packing list without materialising owned entries,
+     * capturing the `@name` value.  The owned Plist is built lazily on
+     * first plist() access; open() still fails on malformed input.
+     */
+    fn validate_contents(bytes: &[u8]) -> Result<Option<String>> {
+        let mut pkgname = None;
+        for entry in plist::parse(bytes) {
+            if let PlistEntry::Name(name) = entry?
+                && pkgname.is_none()
+            {
+                pkgname = Some(name.into_owned());
+            }
+        }
+        Ok(pkgname)
     }
 
     /// Return the path to the package file.
@@ -1142,16 +1165,23 @@ impl BinaryPackage {
         &self.metadata
     }
 
-    /// Return the packing list.
+    /**
+     * Return the packing list, materialising it on first access.
+     */
     #[must_use]
     pub fn plist(&self) -> &Plist {
-        &self.plist
+        self.plist.get_or_init(|| {
+            Plist::from_bytes(self.metadata.contents().as_bytes())
+                .expect("plist validated at open")
+        })
     }
 
-    /// Return the package name from the plist.
+    /**
+     * Return the package name from the plist.
+     */
     #[must_use]
     pub fn pkgname(&self) -> Option<&str> {
-        self.plist.pkgname()
+        self.pkgname.as_deref()
     }
 
     /// Return the build info key-value pairs.
@@ -1210,33 +1240,35 @@ impl BinaryPackage {
         Ok(())
     }
 
-    /// Extract files to a destination directory with plist-based permissions.
-    ///
-    /// This method extracts files and applies permissions specified in the
-    /// packing list (`@mode`, `@owner`, `@group` directives).
-    ///
-    /// # Arguments
-    ///
-    /// * `dest` - Destination directory for extraction
-    /// * `options` - Extraction options controlling mode/ownership application
-    ///
-    /// # Returns
-    ///
-    /// A vector of [`ExtractedFile`] describing each extracted file.
-    ///
-    /// # Example
-    ///
-    /// ```no_run
-    /// use pkgsrc::archive::{BinaryPackage, ExtractOptions};
-    ///
-    /// let pkg = BinaryPackage::open("package-1.0.tgz")?;
-    /// let options = ExtractOptions::new().with_mode();
-    /// let extracted = pkg.extract_with_plist("/usr/pkg", options)?;
-    /// for file in &extracted {
-    ///     println!("Extracted: {}", file.path.display());
-    /// }
-    /// # Ok::<(), pkgsrc::archive::ArchiveError>(())
-    /// ```
+    /**
+     * Extract files to a destination directory with plist-based permissions.
+     *
+     * This method extracts files and applies permissions specified in the
+     * packing list (`@mode`, `@owner`, `@group` directives).
+     *
+     * # Arguments
+     *
+     * * `dest` - Destination directory for extraction
+     * * `options` - Extraction options controlling mode/ownership application
+     *
+     * # Returns
+     *
+     * A vector of [`ExtractedFile`] describing each extracted file.
+     *
+     * # Example
+     *
+     * ```no_run
+     * use pkgsrc::archive::{BinaryPackage, ExtractOptions};
+     *
+     * let pkg = BinaryPackage::open("package-1.0.tgz")?;
+     * let options = ExtractOptions::new().with_mode();
+     * let extracted = pkg.extract_with_plist("/usr/pkg", options)?;
+     * for file in &extracted {
+     *     println!("Extracted: {}", file.path.display());
+     * }
+     * # Ok::<(), pkgsrc::archive::ArchiveError>(())
+     * ```
+     */
     #[cfg(unix)]
     pub fn extract_with_plist(
         &self,
@@ -1262,7 +1294,7 @@ impl BinaryPackage {
 
         // Build a map of file paths to their plist metadata
         let file_infos: HashMap<PathBuf, FileInfo> = self
-            .plist
+            .plist()
             .files_with_info()
             .map(|info| (info.path.clone(), info))
             .collect();
@@ -1310,12 +1342,14 @@ impl BinaryPackage {
         Ok(extracted)
     }
 
-    /// Verify checksums of extracted files against plist MD5 values.
-    ///
-    /// Checks that files under `dest` match the MD5 checksums recorded in
-    /// the packing list.  Returns a [`ChecksumFailure`] for each file that
-    /// is missing or whose checksum does not match; an empty vector means
-    /// everything passed.
+    /**
+     * Verify checksums of extracted files against plist MD5 values.
+     *
+     * Checks that files under `dest` match the MD5 checksums recorded in
+     * the packing list.  Returns a [`ChecksumFailure`] for each file that
+     * is missing or whose checksum does not match; an empty vector means
+     * everything passed.
+     */
     pub fn verify_checksums(
         &self,
         dest: impl AsRef<Path>,
@@ -1325,7 +1359,7 @@ impl BinaryPackage {
         let dest = dest.as_ref();
         let mut failures = Vec::new();
 
-        for info in self.plist.files_with_info() {
+        for info in self.plist().files_with_info() {
             let Some(expected) = info.checksum else {
                 continue;
             };
@@ -1399,18 +1433,20 @@ impl BinaryPackage {
         self.to_summary_with_opts(&SummaryOptions::default())
     }
 
-    /// Convert this package to a [`Summary`] entry with options.
-    ///
-    /// # Example
-    ///
-    /// ```no_run
-    /// use pkgsrc::archive::{BinaryPackage, SummaryOptions};
-    ///
-    /// let pkg = BinaryPackage::open("package-1.0.tgz")?;
-    /// let opts = SummaryOptions { compute_file_cksum: true };
-    /// let summary = pkg.to_summary_with_opts(&opts)?;
-    /// # Ok::<(), pkgsrc::archive::ArchiveError>(())
-    /// ```
+    /**
+     * Convert this package to a [`Summary`] entry with options.
+     *
+     * # Example
+     *
+     * ```no_run
+     * use pkgsrc::archive::{BinaryPackage, SummaryOptions};
+     *
+     * let pkg = BinaryPackage::open("package-1.0.tgz")?;
+     * let opts = SummaryOptions { compute_file_cksum: true };
+     * let summary = pkg.to_summary_with_opts(&opts)?;
+     * # Ok::<(), pkgsrc::archive::ArchiveError>(())
+     * ```
+     */
     pub fn to_summary_with_opts(
         &self,
         opts: &SummaryOptions,
@@ -1418,10 +1454,24 @@ impl BinaryPackage {
         use sha2::{Digest, Sha256};
 
         let pkgname = self
-            .plist
-            .pkgname()
+            .pkgname
+            .as_deref()
             .map(crate::PkgName::new)
             .ok_or_else(|| ArchiveError::MissingMetadata("PKGNAME".into()))?;
+
+        /*
+         * Collect depends and conflicts with a borrowing parse of the
+         * packing list rather than materialising the owned Plist.
+         */
+        let mut conflicts: Vec<String> = Vec::new();
+        let mut depends: Vec<String> = Vec::new();
+        for entry in plist::parse(self.metadata.contents().as_bytes()) {
+            match entry.expect("plist validated at open") {
+                PlistEntry::PkgCfl(s) => conflicts.push(s.into_owned()),
+                PlistEntry::PkgDep(s) => depends.push(s.into_owned()),
+                _ => {}
+            }
+        }
 
         // Helper to filter empty/whitespace-only strings
         let non_empty = |s: &&str| !s.trim().is_empty();
@@ -1463,10 +1513,8 @@ impl BinaryPackage {
             to_string(self.build_info_value("PKGTOOLS_VERSION").unwrap_or("")),
             self.metadata.desc().lines().map(String::from).collect(),
             // Optional fields - avoid Vec<String> allocation when empty
-            Some(self.plist.conflicts().map(String::from).collect::<Vec<_>>())
-                .filter(|v| !v.is_empty()),
-            Some(self.plist.depends().map(String::from).collect::<Vec<_>>())
-                .filter(|v| !v.is_empty()),
+            Some(conflicts).filter(|v| !v.is_empty()),
+            Some(depends).filter(|v| !v.is_empty()),
             self.build_info_value("HOMEPAGE")
                 .filter(non_empty)
                 .map(to_string),
@@ -1493,7 +1541,7 @@ impl BinaryPackage {
 
 impl FileRead for BinaryPackage {
     fn pkgname(&self) -> &str {
-        self.plist.pkgname().unwrap_or("")
+        self.pkgname.as_deref().unwrap_or("")
     }
 
     fn comment(&self) -> std::io::Result<String> {
@@ -1575,12 +1623,11 @@ pub struct MetadataMember {
 /**
  * Streaming reader for a binary package's leading metadata members.
  *
- * Unlike [`BinaryPackage::open`], which eagerly reads every `+*` member and
- * builds an owned [`Plist`](crate::plist::Plist), this yields each metadata
- * member as an owned [`MetadataMember`] on demand.  Callers that only need a
- * few fields (for example `+BUILD_VERSION` and the `@blddep` lines of
- * `+CONTENTS`) can read just those and stop, without allocating an owned
- * entry per packing-list line.
+ * Unlike [`BinaryPackage::open`], which eagerly reads and stores every `+*`
+ * member, this yields each metadata member as an owned [`MetadataMember`] on
+ * demand.  Callers that only need a few fields (for example `+BUILD_VERSION`
+ * and the `@blddep` lines of `+CONTENTS`) can read just those and stop,
+ * without buffering members they do not care about.
  *
  * Iteration stops at the first member that is not a recognised metadata
  * file (one named by [`Entry::from_filename`]); in a well-formed package
@@ -2347,7 +2394,8 @@ def456
         builder
             .append_metadata_file(
                 "+CONTENTS",
-                b"@name testpkg-1.0\n@blddep deppkg-2.0\nbin/foo\n",
+                b"@name testpkg-1.0\n@pkgdep deppkg-[0-9]*\n\
+                  @blddep deppkg-2.0\nbin/foo\n",
             )
             .unwrap();
         builder
@@ -2420,6 +2468,55 @@ def456
             }
         }
         assert_eq!(blddeps, vec!["deppkg-2.0".to_string()]);
+        Ok(())
+    }
+
+    #[test]
+    fn test_binary_package_lazy_plist() -> Result<()> {
+        let bytes = build_unsigned_pkg();
+        let pkg = BinaryPackage::read_unsigned(
+            Path::new("testpkg-1.0.tgz"),
+            Cursor::new(&bytes),
+            &bytes[..8],
+            bytes.len() as u64,
+        )?;
+
+        /* @name is captured at open without materialising the Plist. */
+        assert_eq!(pkg.pkgname(), Some("testpkg-1.0"));
+        assert!(pkg.plist.get().is_none());
+
+        /* Summary generation must not materialise it either. */
+        let summary = pkg.to_summary()?;
+        assert_eq!(summary.pkgname().pkgname(), "testpkg-1.0");
+        assert_eq!(
+            summary.depends(),
+            Some(["deppkg-[0-9]*".to_string()].as_slice())
+        );
+        assert!(pkg.plist.get().is_none());
+
+        /* plist() materialises on demand and agrees with the metadata. */
+        assert_eq!(pkg.plist().pkgname(), Some("testpkg-1.0"));
+        assert_eq!(pkg.plist().depends().count(), 1);
+        assert!(pkg.plist.get().is_some());
+        Ok(())
+    }
+
+    #[test]
+    fn test_binary_package_invalid_plist() -> Result<()> {
+        let mut builder = Builder::new(Vec::new())?;
+        builder.append_metadata_file("+COMMENT", b"A test package")?;
+        builder.append_metadata_file("+DESC", b"A description.\n")?;
+        builder.append_metadata_file("+CONTENTS", b"@name x-1.0\n@bogus\n")?;
+        let bytes = builder.finish()?;
+
+        /* A malformed packing list must still fail at open time. */
+        let res = BinaryPackage::read_unsigned(
+            Path::new("x-1.0.tgz"),
+            Cursor::new(&bytes),
+            &bytes[..8],
+            bytes.len() as u64,
+        );
+        assert!(matches!(res, Err(ArchiveError::Plist(_))));
         Ok(())
     }
 
