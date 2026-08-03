@@ -98,6 +98,7 @@
  * ```
  */
 
+use std::cell::Cell;
 use std::collections::HashMap;
 use std::fmt;
 use std::fmt::Write as FmtWrite;
@@ -229,6 +230,33 @@ fn decode<'r, R: Read + 'r>(
         Compression::Gzip => Box::new(GzDecoder::new(reader)),
         Compression::Zstd => Box::new(zstd::stream::Decoder::new(reader)?),
     })
+}
+
+/**
+ * Reader wrapper that tracks the current offset.
+ *
+ * Used to learn where a member's data begins inside an `ar` archive
+ * while scanning it.
+ */
+struct CountingReader<'a, R> {
+    inner: R,
+    pos: &'a Cell<u64>,
+}
+
+impl<R: Read> Read for CountingReader<'_, R> {
+    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+        let len = self.inner.read(buf)?;
+        self.pos.set(self.pos.get() + len as u64);
+        Ok(len)
+    }
+}
+
+impl<R: Seek> Seek for CountingReader<'_, R> {
+    fn seek(&mut self, from: SeekFrom) -> io::Result<u64> {
+        let offset = self.inner.seek(from)?;
+        self.pos.set(offset);
+        Ok(offset)
+    }
 }
 
 /// Hash algorithm used for package signing.
@@ -1633,9 +1661,8 @@ pub struct MetadataMember {
  * file (one named by [`Entry::from_filename`]); in a well-formed package
  * that is the first regular file, so only the leading metadata is decoded.
  *
- * Signed packages are supported; the inner tarball is buffered in memory
- * before its metadata is streamed, so the saving applies to the unsigned
- * tarballs that dominate the hot path rather than to signed packages.
+ * Signed packages are supported; the inner tarball is located and then
+ * read in place, so the saving applies to them as well.
  *
  * # Example
  *
@@ -1710,39 +1737,63 @@ impl MetadataReader {
     /**
      * Locate the inner tarball of a signed package and decode it.
      *
-     * The tarball is buffered in memory; this avoids a second self-borrow
-     * of the `ar` archive that streaming directly would require.
+     * The members are scanned through a borrowed reader that tracks its
+     * offset, and the tarball is then read from the file itself, so only
+     * the leading metadata members are read whatever the size of the
+     * package.  Seeking each entry to its end before dropping it stops
+     * `ar` from consuming the member it is about to discard.
      */
-    fn signed_decoder<R: Read>(reader: R) -> Result<Box<dyn Read>> {
-        let mut ar = ar::Archive::new(reader);
+    fn signed_decoder<R: Read + Seek + 'static>(
+        mut reader: R,
+    ) -> Result<Box<dyn Read>> {
+        let pos = Cell::new(0);
+        let mut tarball = None;
 
-        loop {
-            let mut entry = match ar.next_entry() {
-                Some(Ok(entry)) => entry,
-                Some(Err(e)) if e.kind() == io::ErrorKind::UnexpectedEof => {
+        {
+            let mut ar = ar::Archive::new(CountingReader {
+                inner: &mut reader,
+                pos: &pos,
+            });
+
+            loop {
+                let mut entry = match ar.next_entry() {
+                    Some(Ok(entry)) => entry,
+                    Some(Err(e))
+                        if e.kind() == io::ErrorKind::UnexpectedEof =>
+                    {
+                        break;
+                    }
+                    Some(Err(e)) => return Err(e.into()),
+                    None => break,
+                };
+                let name = String::from_utf8_lossy(entry.header().identifier())
+                    .into_owned();
+
+                if name.ends_with(".tgz")
+                    || name.ends_with(".tzst")
+                    || name.ends_with(".tar")
+                {
+                    tarball = Some((
+                        pos.get(),
+                        entry.header().size(),
+                        Compression::from_extension(&name)
+                            .unwrap_or(Compression::Gzip),
+                    ));
+                    entry.seek(SeekFrom::End(0))?;
                     break;
                 }
-                Some(Err(e)) => return Err(e.into()),
-                None => break,
-            };
-            let name = String::from_utf8_lossy(entry.header().identifier())
-                .into_owned();
-
-            if name.ends_with(".tgz")
-                || name.ends_with(".tzst")
-                || name.ends_with(".tar")
-            {
-                let compression = Compression::from_extension(&name)
-                    .unwrap_or(Compression::Gzip);
-                let mut data = Vec::new();
-                entry.read_to_end(&mut data)?;
-                return decode(Cursor::new(data), compression);
+                entry.seek(SeekFrom::End(0))?;
             }
         }
 
-        Err(ArchiveError::InvalidFormat(
-            "signed package missing inner tarball".into(),
-        ))
+        let Some((offset, size, compression)) = tarball else {
+            return Err(ArchiveError::InvalidFormat(
+                "signed package missing inner tarball".into(),
+            ));
+        };
+
+        reader.seek(SeekFrom::Start(offset))?;
+        decode(reader.take(size), compression)
     }
 
     /**
@@ -2085,6 +2136,30 @@ impl SignedArchive {
 mod tests {
     use super::*;
     use std::io::Cursor;
+    use std::rc::Rc;
+
+    /*
+     * Counts bytes read, ignoring seeks, so that skipping over a member
+     * can be told apart from consuming it.
+     */
+    struct ReadCounter {
+        inner: Cursor<Vec<u8>>,
+        read: Rc<Cell<u64>>,
+    }
+
+    impl Read for ReadCounter {
+        fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+            let len = self.inner.read(buf)?;
+            self.read.set(self.read.get() + len as u64);
+            Ok(len)
+        }
+    }
+
+    impl Seek for ReadCounter {
+        fn seek(&mut self, from: SeekFrom) -> io::Result<u64> {
+            self.inner.seek(from)
+        }
+    }
 
     #[test]
     fn test_compression_from_magic() {
@@ -2407,6 +2482,33 @@ def456
         builder.finish().unwrap()
     }
 
+    /*
+     * As above, but with a large incompressible trailing file, so that
+     * reading only the leading metadata is measurably different from
+     * reading the whole tarball.
+     */
+    fn build_bulky_unsigned_pkg() -> Vec<u8> {
+        let mut builder =
+            Builder::with_compression(Vec::new(), Compression::Gzip).unwrap();
+        builder
+            .append_metadata_file("+CONTENTS", b"@name testpkg-1.0\nbin/foo\n")
+            .unwrap();
+        builder
+            .append_metadata_file("+BUILD_VERSION", b"some-version-info\n")
+            .unwrap();
+        let mut x: u64 = 0x2545f4914f6cdd1d;
+        let bulk: Vec<u8> = (0..256 * 1024)
+            .map(|_| {
+                x ^= x << 13;
+                x ^= x >> 7;
+                x ^= x << 17;
+                (x >> 24) as u8
+            })
+            .collect();
+        builder.append_file("bin/foo", &bulk, 0o755).unwrap();
+        builder.finish().unwrap()
+    }
+
     #[test]
     fn test_metadata_reader_members() -> Result<()> {
         let bytes = build_unsigned_pkg();
@@ -2526,6 +2628,74 @@ def456
         let signed = SignedArchive::from_unsigned(
             tarball,
             "testpkg-1.0",
+            b"fake-signature",
+            Compression::Gzip,
+        )?;
+        let mut out = Vec::new();
+        signed.write(&mut out)?;
+
+        let mut reader = MetadataReader::open_reader(Cursor::new(out), None)?;
+        let kinds: Vec<Entry> = reader
+            .members()?
+            .map(|m| m.map(|m| m.entry))
+            .collect::<Result<_>>()?;
+
+        assert!(kinds.contains(&Entry::Contents));
+        assert!(kinds.contains(&Entry::BuildVersion));
+        Ok(())
+    }
+
+    /*
+     * `ar` consumes any unread part of a member when it is dropped, so
+     * locating the tarball must skip over it rather than walk off the
+     * end of it.
+     */
+    #[test]
+    fn test_metadata_reader_signed_skips_payload() -> Result<()> {
+        let tarball = build_bulky_unsigned_pkg();
+        let payload = tarball.len() as u64;
+        let signed = SignedArchive::from_unsigned(
+            tarball,
+            "testpkg-1.0",
+            b"fake-signature",
+            Compression::Gzip,
+        )?;
+        let mut out = Vec::new();
+        signed.write(&mut out)?;
+
+        let read = Rc::new(Cell::new(0));
+        let counter = ReadCounter {
+            inner: Cursor::new(out),
+            read: Rc::clone(&read),
+        };
+
+        let mut reader = MetadataReader::open_reader(counter, None)?;
+        let kinds: Vec<Entry> = reader
+            .members()?
+            .map(|m| m.map(|m| m.entry))
+            .collect::<Result<_>>()?;
+
+        assert!(kinds.contains(&Entry::BuildVersion));
+        assert!(
+            read.get() < payload,
+            "read {} bytes of a {} byte payload",
+            read.get(),
+            payload
+        );
+        Ok(())
+    }
+
+    /*
+     * An inner tarball whose name exceeds the 16 bytes an `ar` header
+     * holds is stored with the name in the member data, so the data
+     * starts later than the header alone implies.
+     */
+    #[test]
+    fn test_metadata_reader_signed_long_name() -> Result<()> {
+        let tarball = build_unsigned_pkg();
+        let signed = SignedArchive::from_unsigned(
+            tarball,
+            "flightgear-data-2020.3.6",
             b"fake-signature",
             Compression::Gzip,
         )?;
