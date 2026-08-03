@@ -121,7 +121,7 @@ use thiserror::Error;
 /**
  * Characters that indicate the start of a glob pattern.
  */
-const GLOB_START: [u8; 3] = [b'*', b'?', b'['];
+const GLOB_START: [u8; 3] = *b"*?[";
 
 #[cfg(feature = "serde")]
 use serde_with::{DeserializeFromStr, SerializeDisplay};
