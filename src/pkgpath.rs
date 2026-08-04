@@ -72,7 +72,7 @@
  */
 
 use std::borrow::Borrow;
-use std::path::{Component, Path, PathBuf};
+use std::path::{Component, Path};
 use std::str::FromStr;
 use thiserror::Error;
 
@@ -152,38 +152,31 @@ pub struct PkgPath {
 
 impl PkgPath {
     /**
-     * Create a new PkgPath
+     * Create a new [`PkgPath`].
+     *
+     * Accepts either `category/package` or `../../category/package`,
+     * anything else is invalid.
      */
     pub fn new(path: &str) -> Result<Self, PkgPathError> {
-        let p = PathBuf::from(path);
-        let c: Vec<_> = p.components().collect();
-
-        let (cat, pkg) = match c.len() {
-            //
-            // Handle the "category/package" case.
-            //
-            2 => match (c[0], c[1]) {
-                (Component::Normal(cat), Component::Normal(pkg)) => (cat, pkg),
-                _ => return Err(PkgPathError::InvalidPath),
-            },
-            //
-            // Handle the "../../category/package" case, extracting
-            // just the "category/package" portion.
-            //
-            4 => match (c[0], c[1], c[2], c[3]) {
+        let mut c = Path::new(path).components();
+        let (cat, pkg) =
+            match (c.next(), c.next(), c.next(), c.next(), c.next()) {
                 (
-                    Component::ParentDir,
-                    Component::ParentDir,
-                    Component::Normal(cat),
-                    Component::Normal(pkg),
+                    Some(Component::Normal(cat)),
+                    Some(Component::Normal(pkg)),
+                    None,
+                    None,
+                    None,
+                ) => (cat, pkg),
+                (
+                    Some(Component::ParentDir),
+                    Some(Component::ParentDir),
+                    Some(Component::Normal(cat)),
+                    Some(Component::Normal(pkg)),
+                    None,
                 ) => (cat, pkg),
                 _ => return Err(PkgPathError::InvalidPath),
-            },
-            //
-            // All other forms of input are invalid.
-            //
-            _ => return Err(PkgPathError::InvalidPath),
-        };
+            };
 
         let cat = cat.to_str().ok_or(PkgPathError::InvalidPath)?;
         let pkg = pkg.to_str().ok_or(PkgPathError::InvalidPath)?;
