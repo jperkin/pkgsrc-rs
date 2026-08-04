@@ -1032,31 +1032,22 @@ pub struct SummaryOptions {
 pub struct BinaryPackage {
     /// Path to the package file.
     path: PathBuf,
-
     /// Detected compression format.
     compression: Compression,
-
     /// Type of package (signed or unsigned).
     archive_type: ArchiveType,
-
     /// Parsed metadata from the package.
     metadata: Metadata,
-
-    /** Package name from the packing list `@name`, captured at open. */
+    /// Package name from the packing list `@name`, captured at open.
     pkgname: Option<String>,
-
-    /** Packing list, materialised on first [`BinaryPackage::plist`] call. */
+    /// Packing list, materialised on first [`BinaryPackage::plist`] call.
     plist: OnceLock<Plist>,
-
-    /// Build info key-value pairs.
-    build_info: HashMap<String, Vec<String>>,
-
+    /// Build info key-value map, materialised on first access.
+    build_info: OnceLock<HashMap<String, Vec<String>>>,
     /// Package hash (for signed packages).
     pkg_hash: Option<PkgHash>,
-
     /// GPG signature (for signed packages).
     gpg_signature: Option<Vec<u8>>,
-
     /// File size of the package.
     file_size: u64,
 }
@@ -1100,7 +1091,6 @@ impl BinaryPackage {
 
         let mut archive = TarArchive::new(decompressed);
         let mut metadata = Metadata::new();
-        let mut build_info: HashMap<String, Vec<String>> = HashMap::new();
 
         for entry_result in archive.entries()? {
             let mut entry = entry_result?;
@@ -1129,17 +1119,6 @@ impl BinaryPackage {
                     e
                 ))
             })?;
-
-            if entry_path.as_os_str() == "+BUILD_INFO" {
-                for line in content.lines() {
-                    if let Some((key, value)) = line.split_once('=') {
-                        build_info
-                            .entry(key.to_string())
-                            .or_default()
-                            .push(value.to_string());
-                    }
-                }
-            }
         }
 
         metadata.validate().map_err(|e| {
@@ -1154,7 +1133,7 @@ impl BinaryPackage {
             metadata,
             pkgname,
             plist: OnceLock::new(),
-            build_info,
+            build_info: OnceLock::new(),
             pkg_hash: None,
             gpg_signature: None,
             file_size,
@@ -1174,7 +1153,6 @@ impl BinaryPackage {
         let mut pkg_hash_content: Option<String> = None;
         let mut gpg_signature: Option<Vec<u8>> = None;
         let mut metadata = Metadata::new();
-        let mut build_info: HashMap<String, Vec<String>> = HashMap::new();
         let mut compression = Compression::Gzip;
 
         loop {
@@ -1244,18 +1222,6 @@ impl BinaryPackage {
                                 ))
                             },
                         )?;
-
-                        if entry_path.as_os_str() == "+BUILD_INFO" {
-                            for line in content.lines() {
-                                if let Some((key, value)) = line.split_once('=')
-                                {
-                                    build_info
-                                        .entry(key.to_string())
-                                        .or_default()
-                                        .push(value.to_string());
-                                }
-                            }
-                        }
                     }
                     break;
                 }
@@ -1278,7 +1244,7 @@ impl BinaryPackage {
             metadata,
             pkgname,
             plist: OnceLock::new(),
-            build_info,
+            build_info: OnceLock::new(),
             pkg_hash,
             gpg_signature,
             file_size,
@@ -1354,13 +1320,23 @@ impl BinaryPackage {
     /// Return the build info key-value pairs.
     #[must_use]
     pub fn build_info(&self) -> &HashMap<String, Vec<String>> {
-        &self.build_info
+        self.build_info.get_or_init(|| {
+            let mut map: HashMap<String, Vec<String>> = HashMap::new();
+            for line in self.metadata.build_info().unwrap_or(&[]) {
+                if let Some((key, value)) = line.split_once('=') {
+                    map.entry(key.to_string())
+                        .or_default()
+                        .push(value.to_string());
+                }
+            }
+            map
+        })
     }
 
     /// Get a specific build info value (first value if multiple exist).
     #[must_use]
     pub fn build_info_value(&self, key: &str) -> Option<&str> {
-        self.build_info
+        self.build_info()
             .get(key)
             .and_then(|v| v.first())
             .map(|s| s.as_str())
@@ -1369,7 +1345,7 @@ impl BinaryPackage {
     /// Get all values for a build info key.
     #[must_use]
     pub fn build_info_values(&self, key: &str) -> Option<&[String]> {
-        self.build_info.get(key).map(|v| v.as_slice())
+        self.build_info().get(key).map(|v| v.as_slice())
     }
 
     /// Return the package hash (for signed packages).
@@ -1781,9 +1757,9 @@ impl TryFrom<&BinaryPackage> for Summary {
  */
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub struct MetadataMember {
-    /** The kind of metadata file (`+CONTENTS`, `+BUILD_VERSION`, etc.). */
+    /// The kind of metadata file (`+CONTENTS`, `+BUILD_VERSION`, etc.).
     pub entry: Entry,
-    /** The full decoded contents of the member, untrimmed. */
+    /// The full decoded contents of the member, untrimmed.
     pub content: String,
 }
 
