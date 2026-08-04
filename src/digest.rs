@@ -317,15 +317,19 @@ impl FromStr for Digest {
     type Err = DigestError;
 
     fn from_str(s: &str) -> DigestResult<Self> {
-        match s.to_lowercase().as_str() {
-            "blake2s" => Ok(Digest::BLAKE2s),
-            "md5" => Ok(Digest::MD5),
-            "rmd160" => Ok(Digest::RMD160),
-            "sha1" => Ok(Digest::SHA1),
-            "sha256" => Ok(Digest::SHA256),
-            "sha512" => Ok(Digest::SHA512),
-            _ => Err(DigestError::Unsupported(s.to_string())),
+        for (name, digest) in [
+            ("blake2s", Digest::BLAKE2s),
+            ("md5", Digest::MD5),
+            ("rmd160", Digest::RMD160),
+            ("sha1", Digest::SHA1),
+            ("sha256", Digest::SHA256),
+            ("sha512", Digest::SHA512),
+        ] {
+            if s.eq_ignore_ascii_case(name) {
+                return Ok(digest);
+            }
         }
+        Err(DigestError::Unsupported(s.to_string()))
     }
 }
 
