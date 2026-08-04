@@ -167,8 +167,8 @@ impl PkgPath {
                     None,
                     None,
                     None,
-                ) => (cat, pkg),
-                (
+                )
+                | (
                     Some(Component::ParentDir),
                     Some(Component::ParentDir),
                     Some(Component::Normal(cat)),
