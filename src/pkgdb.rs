@@ -72,6 +72,7 @@
  * [`FileRead`]: crate::metadata::FileRead
  */
 use crate::metadata::{Entry, FileRead};
+use crate::pkgname::PkgName;
 use std::fs;
 use std::fs::ReadDir;
 use std::io;
@@ -110,9 +111,7 @@ pub struct PkgDB {
 #[derive(Clone, Debug, Default, Eq, Hash, PartialEq)]
 pub struct InstalledPackage {
     path: PathBuf,
-    pkgbase: String,
-    pkgname: String,
-    pkgversion: String,
+    pkgname: PkgName,
 }
 
 impl PkgDB {
@@ -157,13 +156,10 @@ impl PkgDB {
     /**
      * Check if a directory is a valid package directory.
      *
-     * A valid package directory must be a directory containing the three
-     * required metadata files: `+COMMENT`, `+CONTENTS`, and `+DESC`.
+     * A valid package directory contains the three required metadata
+     * files: `+COMMENT`, `+CONTENTS`, and `+DESC`.
      */
     fn is_valid_pkgdir(&self, pkgdir: &Path) -> bool {
-        if !pkgdir.is_dir() {
-            return false;
-        }
         pkgdir.join(Entry::Comment.to_filename()).exists()
             && pkgdir.join(Entry::Contents.to_filename()).exists()
             && pkgdir.join(Entry::Desc.to_filename()).exists()
@@ -184,7 +180,7 @@ impl InstalledPackage {
      */
     #[must_use]
     pub fn pkgbase(&self) -> &str {
-        &self.pkgbase
+        self.pkgname.pkgbase()
     }
 
     /**
@@ -192,7 +188,7 @@ impl InstalledPackage {
      */
     #[must_use]
     pub fn pkgname(&self) -> &str {
-        &self.pkgname
+        self.pkgname.pkgname()
     }
 
     /**
@@ -200,7 +196,7 @@ impl InstalledPackage {
      */
     #[must_use]
     pub fn pkgversion(&self) -> &str {
-        &self.pkgversion
+        self.pkgname.pkgversion()
     }
 
     /**
@@ -228,7 +224,7 @@ impl InstalledPackage {
 
 impl FileRead for InstalledPackage {
     fn pkgname(&self) -> &str {
-        &self.pkgname
+        self.pkgname.pkgname()
     }
 
     fn comment(&self) -> io::Result<String> {
@@ -321,21 +317,16 @@ impl Iterator for PkgDB {
                     }
                 };
 
-                let (pkgbase, pkgversion) = match dirname.rsplit_once('-') {
-                    Some((base, version)) => (base, version),
-                    None => {
-                        return Some(Err(io::Error::new(
-                            io::ErrorKind::InvalidData,
-                            format!("Invalid package name: {}", dirname),
-                        )));
-                    }
-                };
+                if !dirname.contains('-') {
+                    return Some(Err(io::Error::new(
+                        io::ErrorKind::InvalidData,
+                        format!("Invalid package name: {}", dirname),
+                    )));
+                }
 
                 return Some(Ok(InstalledPackage {
                     path,
-                    pkgname: dirname.to_string(),
-                    pkgbase: pkgbase.to_string(),
-                    pkgversion: pkgversion.to_string(),
+                    pkgname: PkgName::new(dirname),
                 }));
             },
             DBType::Database => None,
