@@ -1439,7 +1439,7 @@ impl BinaryPackage {
         let file_infos: HashMap<PathBuf, FileInfo> = self
             .plist()
             .files_with_info()
-            .map(|info| (info.path.clone(), info))
+            .map(|mut info| (std::mem::take(&mut info.path), info))
             .collect();
 
         let mut archive = self.archive()?;
