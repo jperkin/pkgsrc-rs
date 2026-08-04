@@ -181,14 +181,6 @@ pub(crate) fn hex_encode(bytes: &[u8]) -> String {
     s
 }
 
-fn file_hash<R: Read, D: digest::Digest + std::io::Write>(
-    reader: &mut R,
-) -> DigestResult<String> {
-    let mut hasher = D::new();
-    std::io::copy(reader, &mut hasher)?;
-    Ok(hex_encode(&hasher.finalize()))
-}
-
 fn str_hash<D: digest::Digest>(s: &str) -> String {
     let mut hasher = D::new();
     hasher.update(s);
@@ -201,14 +193,8 @@ impl Digest {
      * processed in any way.  Suitable for distfiles.
      */
     pub fn hash_file<R: Read>(&self, reader: &mut R) -> DigestResult<String> {
-        match self {
-            Digest::BLAKE2s => file_hash::<_, blake2::Blake2s256>(reader),
-            Digest::MD5 => file_hash::<_, md5::Md5>(reader),
-            Digest::RMD160 => file_hash::<_, ripemd::Ripemd160>(reader),
-            Digest::SHA1 => file_hash::<_, sha1::Sha1>(reader),
-            Digest::SHA256 => file_hash::<_, sha2::Sha256>(reader),
-            Digest::SHA512 => file_hash::<_, sha2::Sha512>(reader),
-        }
+        let mut hashes = Self::multi_hash_file(reader, &[*self])?;
+        Ok(hashes.remove(0))
     }
 
     /**

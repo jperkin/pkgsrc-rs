@@ -101,7 +101,6 @@
 use std::cell::Cell;
 use std::collections::HashMap;
 use std::fmt;
-use std::fmt::Write as FmtWrite;
 use std::fs::{self, File, Permissions};
 use std::io::{self, BufReader, Cursor, Read, Seek, SeekFrom, Write};
 #[cfg(unix)]
@@ -113,6 +112,7 @@ use flate2::read::GzDecoder;
 use flate2::write::GzEncoder;
 use tar::{Archive as TarArchive, Builder as TarBuilder, Entries, Header};
 
+use crate::digest::DigestError;
 use crate::metadata::{Entry, FileRead, Metadata};
 use crate::plist::{self, Plist, PlistEntry};
 use crate::summary::Summary;
@@ -369,6 +369,10 @@ pub enum ArchiveError {
     /// Plist parsing error.
     #[error("plist error: {0}")]
     Plist(#[from] crate::plist::PlistError),
+
+    /// Digest error.
+    #[error(transparent)]
+    Digest(#[from] DigestError),
 
     /// Hash verification failed.
     #[error("hash verification failed: {0}")]
@@ -1497,8 +1501,6 @@ impl BinaryPackage {
         &self,
         dest: impl AsRef<Path>,
     ) -> Result<Vec<ChecksumFailure>> {
-        use md5::{Digest, Md5};
-
         let dest = dest.as_ref();
         let mut failures = Vec::new();
 
@@ -1523,9 +1525,7 @@ impl BinaryPackage {
             }
 
             let mut file = File::open(&path)?;
-            let mut hasher = Md5::new();
-            io::copy(&mut file, &mut hasher)?;
-            let actual = format!("{:032x}", hasher.finalize());
+            let actual = crate::digest::Digest::MD5.hash_file(&mut file)?;
 
             if actual != expected {
                 failures.push(ChecksumFailure {
@@ -1594,8 +1594,6 @@ impl BinaryPackage {
         &self,
         opts: &SummaryOptions,
     ) -> Result<Summary> {
-        use sha2::{Digest, Sha256};
-
         let pkgname = self
             .pkgname
             .as_deref()
@@ -1625,16 +1623,8 @@ impl BinaryPackage {
         // Compute SHA256 checksum of the package file if requested
         let file_cksum = if opts.compute_file_cksum && self.file_size > 0 {
             let mut file = File::open(&self.path)?;
-            let mut hasher = Sha256::new();
-            io::copy(&mut file, &mut hasher)?;
-            let hash = hasher.finalize();
-            const PREFIX: &str = "sha256 ";
-            let mut s = String::with_capacity(PREFIX.len() + hash.len() * 2);
-            s.push_str(PREFIX);
-            for b in &hash {
-                let _ = write!(s, "{b:02x}");
-            }
-            Some(s)
+            let hash = crate::digest::Digest::SHA256.hash_file(&mut file)?;
+            Some(format!("sha256 {hash}"))
         } else {
             None
         };
