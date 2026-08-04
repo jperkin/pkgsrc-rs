@@ -307,16 +307,6 @@ impl PkgHashAlgorithm {
         }
     }
 
-    /// Compute hash of data.
-    #[must_use]
-    pub fn hash(&self, data: &[u8]) -> Vec<u8> {
-        use sha2::{Digest, Sha256, Sha512};
-        match self {
-            Self::Sha512 => Sha512::digest(data).to_vec(),
-            Self::Sha256 => Sha256::digest(data).to_vec(),
-        }
-    }
-
     /// Format hash as lowercase hex string.
     #[must_use]
     pub fn hash_hex(&self, data: &[u8]) -> String {
