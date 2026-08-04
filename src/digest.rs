@@ -193,15 +193,21 @@ fn patch_hash<R: Read, D: digest::Digest + std::io::Write>(
     reader: &mut R,
 ) -> DigestResult<String> {
     let mut hasher = D::new();
-    let bufreader = BufReader::new(reader);
+    let mut bufreader = BufReader::new(reader);
 
-    for line in bufreader.split(b'\n') {
-        let line = line?;
+    let mut line: Vec<u8> = Vec::new();
+    loop {
+        line.clear();
+        if bufreader.read_until(b'\n', &mut line)? == 0 {
+            break;
+        }
         if line.windows(7).any(|window| window == b"$NetBSD") {
             continue;
         }
+        if line.last() != Some(&b'\n') {
+            line.push(b'\n');
+        }
         hasher.update(&line);
-        hasher.update(b"\n");
     }
 
     Ok(hex_encode(&hasher.finalize()))
@@ -313,14 +319,21 @@ impl Digest {
     ) -> DigestResult<Vec<String>> {
         let mut hashers: Vec<Box<dyn DynDigest>> =
             digests.iter().map(Digest::hasher).collect();
-        for line in BufReader::new(reader).split(b'\n') {
-            let line = line?;
+        let mut bufreader = BufReader::new(reader);
+        let mut line: Vec<u8> = Vec::new();
+        loop {
+            line.clear();
+            if bufreader.read_until(b'\n', &mut line)? == 0 {
+                break;
+            }
             if line.windows(7).any(|w| w == b"$NetBSD") {
                 continue;
             }
+            if line.last() != Some(&b'\n') {
+                line.push(b'\n');
+            }
             for h in &mut hashers {
                 h.update(&line);
-                h.update(b"\n");
             }
         }
         Ok(hashers
