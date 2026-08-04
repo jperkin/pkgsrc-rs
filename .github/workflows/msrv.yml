@@ -1,0 +1,18 @@
+name: msrv
+on:
+  push:
+  pull_request:
+jobs:
+  msrv:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Check each crate against its declared rust-version
+        run: |
+          cargo metadata --no-deps --format-version 1 |
+            jq -r '.packages[] | select(.rust_version) |
+                   "\(.name) \(.rust_version)"' |
+            while read -r name msrv; do
+              rustup toolchain install "$msrv" --profile minimal
+              cargo "+$msrv" check -p "$name" --all-features
+            done
