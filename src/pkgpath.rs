@@ -198,6 +198,7 @@ impl PkgPath {
      * Return a [`Path`] reference containing the short version of a PkgPath,
      * for example `pkgtools/pkg_install`.
      */
+    #[must_use]
     pub fn as_path(&self) -> &Path {
         Path::new(self.as_str())
     }
@@ -215,6 +216,7 @@ impl PkgPath {
      * Return a [`Path`] reference containing the full version of a PkgPath,
      * for example `../../pkgtools/pkg_install`.
      */
+    #[must_use]
     pub fn as_full_path(&self) -> &Path {
         Path::new(&self.full)
     }

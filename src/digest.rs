@@ -239,6 +239,7 @@ impl Digest {
      * callers to drive multiple algorithms over a single byte stream rather
      * than re-reading the input once per algorithm.
      */
+    #[must_use]
     pub fn hasher(&self) -> Box<dyn DynDigest> {
         match self {
             Digest::BLAKE2s => Box::<blake2::Blake2s256>::default(),

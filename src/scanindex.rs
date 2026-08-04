@@ -114,6 +114,7 @@ impl ScanDepends {
     /**
      * Return the raw string contents.
      */
+    #[must_use]
     pub fn as_str(&self) -> &str {
         &self.0
     }
@@ -200,6 +201,7 @@ impl AllDepends {
      * pattern and pkgpath strings via [`RawDepend::pattern`] and
      * [`RawDepend::pkgpath`].
      */
+    #[must_use]
     pub fn iter(&self) -> AllDependsIter<'_> {
         AllDependsIter(self.items())
     }
@@ -222,6 +224,7 @@ impl AllDepends {
     /**
      * Return the raw string contents.
      */
+    #[must_use]
     pub fn as_str(&self) -> &str {
         &self.0
     }
@@ -330,6 +333,7 @@ impl<'a> RawDepend<'a> {
     /**
      * Return the pattern portion (left of `:`).
      */
+    #[must_use]
     pub fn pattern(&self) -> &'a str {
         &self.raw[..self.colon]
     }
@@ -337,6 +341,7 @@ impl<'a> RawDepend<'a> {
     /**
      * Return the pkgpath portion (right of `:`).
      */
+    #[must_use]
     pub fn pkgpath(&self) -> &'a str {
         &self.raw[self.colon + 1..]
     }
@@ -344,6 +349,7 @@ impl<'a> RawDepend<'a> {
     /**
      * Return the raw `pattern:pkgpath` string.
      */
+    #[must_use]
     pub fn as_str(&self) -> &'a str {
         self.raw
     }

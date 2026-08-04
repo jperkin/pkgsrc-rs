@@ -656,6 +656,7 @@ impl Summary {
      * # }
      * ```
      */
+    #[must_use]
     pub fn build_date(&self) -> &str {
         &self.build_date
     }
@@ -708,6 +709,7 @@ impl Summary {
      * # }
      * ```
      */
+    #[must_use]
     pub fn categories(&self) -> &[String] {
         &self.categories
     }
@@ -748,6 +750,7 @@ impl Summary {
      * # }
      * ```
      */
+    #[must_use]
     pub fn comment(&self) -> &str {
         &self.comment
     }
@@ -798,6 +801,7 @@ impl Summary {
      * # }
      * ```
      */
+    #[must_use]
     pub fn conflicts(&self) -> Option<&[String]> {
         self.conflicts.as_deref()
     }
@@ -847,6 +851,7 @@ impl Summary {
      * # }
      * ```
      */
+    #[must_use]
     pub fn depends(&self) -> Option<&[String]> {
         self.depends.as_deref()
     }
@@ -890,6 +895,7 @@ impl Summary {
      * # }
      * ```
      */
+    #[must_use]
     pub fn description(&self) -> &[String] {
         self.description.as_slice()
     }
@@ -930,6 +936,7 @@ impl Summary {
      * # }
      * ```
      */
+    #[must_use]
     pub fn file_cksum(&self) -> Option<&str> {
         self.file_cksum.as_deref()
     }
@@ -970,6 +977,7 @@ impl Summary {
      * # }
      * ```
      */
+    #[must_use]
     pub fn file_name(&self) -> Option<&str> {
         self.file_name.as_deref()
     }
@@ -1010,6 +1018,7 @@ impl Summary {
      * # }
      * ```
      */
+    #[must_use]
     pub fn file_size(&self) -> Option<u64> {
         self.file_size
     }
@@ -1050,6 +1059,7 @@ impl Summary {
      * # }
      * ```
      */
+    #[must_use]
     pub fn homepage(&self) -> Option<&str> {
         self.homepage.as_deref()
     }
@@ -1090,6 +1100,7 @@ impl Summary {
      * # }
      * ```
      */
+    #[must_use]
     pub fn license(&self) -> Option<&str> {
         self.license.as_deref()
     }
@@ -1130,6 +1141,7 @@ impl Summary {
      * # }
      * ```
      */
+    #[must_use]
     pub fn machine_arch(&self) -> &str {
         &self.machine_arch
     }
@@ -1170,6 +1182,7 @@ impl Summary {
      * # }
      * ```
      */
+    #[must_use]
     pub fn opsys(&self) -> &str {
         &self.opsys
     }
@@ -1210,6 +1223,7 @@ impl Summary {
      * # }
      * ```
      */
+    #[must_use]
     pub fn os_version(&self) -> &str {
         &self.os_version
     }
@@ -1259,6 +1273,7 @@ impl Summary {
      * # }
      * ```
      */
+    #[must_use]
     pub fn pkg_options(&self) -> Option<&str> {
         self.pkg_options.as_deref()
     }
@@ -1300,6 +1315,7 @@ impl Summary {
      * # }
      * ```
      */
+    #[must_use]
     pub fn pkgname(&self) -> &PkgName {
         &self.pkgname
     }
@@ -1340,6 +1356,7 @@ impl Summary {
      * # }
      * ```
      */
+    #[must_use]
     pub fn pkgpath(&self) -> &str {
         &self.pkgpath
     }
@@ -1380,6 +1397,7 @@ impl Summary {
      * # }
      * ```
      */
+    #[must_use]
     pub fn pkgtools_version(&self) -> &str {
         &self.pkgtools_version
     }
@@ -1428,6 +1446,7 @@ impl Summary {
      * # }
      * ```
      */
+    #[must_use]
     pub fn prev_pkgpath(&self) -> Option<&str> {
         self.prev_pkgpath.as_deref()
     }
@@ -1479,6 +1498,7 @@ impl Summary {
      * # }
      * ```
      */
+    #[must_use]
     pub fn provides(&self) -> Option<&[String]> {
         self.provides.as_deref()
     }
@@ -1530,6 +1550,7 @@ impl Summary {
      * # }
      * ```
      */
+    #[must_use]
     pub fn requires(&self) -> Option<&[String]> {
         self.requires.as_deref()
     }
@@ -1570,6 +1591,7 @@ impl Summary {
      * # }
      * ```
      */
+    #[must_use]
     pub fn size_pkg(&self) -> u64 {
         self.size_pkg
     }
@@ -1619,6 +1641,7 @@ impl Summary {
      * # }
      * ```
      */
+    #[must_use]
     pub fn supersedes(&self) -> Option<&[String]> {
         self.supersedes.as_deref()
     }
@@ -2214,6 +2237,7 @@ impl SummaryError {
      *
      * Only set when parsing multiple entries via [`Summary::from_reader`].
      */
+    #[must_use]
     pub fn entry(&self) -> Option<usize> {
         match self {
             Self::Incomplete { context, .. }
@@ -2231,6 +2255,7 @@ impl SummaryError {
      *
      * The span contains the byte offset and length of the problematic region.
      */
+    #[must_use]
     pub fn span(&self) -> Option<Span> {
         match self {
             Self::Incomplete { context, .. }

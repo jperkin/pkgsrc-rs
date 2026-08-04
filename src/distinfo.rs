@@ -87,6 +87,7 @@ impl Checksum {
     /**
      * Create a new empty [`Checksum`] entry using the specified [`Digest`].
      */
+    #[must_use]
     pub fn new(digest: Digest, hash: String) -> Checksum {
         Checksum { digest, hash }
     }
@@ -213,6 +214,7 @@ impl Entry {
      * the package uses DIST_SUBDIR.  This is the string that will be stored
      * in the resulting `distinfo` file.
      */
+    #[must_use]
     pub fn filename(&self) -> &Path {
         &self.filename
     }
@@ -221,6 +223,7 @@ impl Entry {
      * Full path to filename.  This is not used in the `distinfo` file but is
      * stored here for processing purposes.
      */
+    #[must_use]
     pub fn filepath(&self) -> &Path {
         &self.filepath
     }
@@ -230,6 +233,7 @@ impl Entry {
      * are distributed alongside the distinfo file and are not downloaded
      * separately, thus a single hash check is sufficient.
      */
+    #[must_use]
     pub fn size(&self) -> Option<u64> {
         self.size
     }
@@ -238,6 +242,7 @@ impl Entry {
      * List of checksums, one [`Checksum`] entry per Digest type.  These are in
      * order of appearance in the `distinfo` file.
      */
+    #[must_use]
     pub fn checksums(&self) -> &[Checksum] {
         &self.checksums
     }
@@ -245,6 +250,7 @@ impl Entry {
     /**
      * Whether this entry is a distfile or a patchfile.
      */
+    #[must_use]
     pub fn filetype(&self) -> EntryType {
         self.filetype
     }
@@ -383,6 +389,7 @@ impl Entry {
      * Convenience wrapper around [`Entry::write_to`] that returns an owned
      * byte vector.
      */
+    #[must_use]
     pub fn to_bytes(&self) -> Vec<u8> {
         let mut out = Vec::new();
         let _ = self.write_to(&mut out);
@@ -459,6 +466,7 @@ impl Distinfo {
     /**
      * Return a new empty [`Distinfo`].
      */
+    #[must_use]
     pub fn new() -> Self {
         Self::default()
     }
@@ -467,6 +475,7 @@ impl Distinfo {
      * Return an [`Option`] containing either a valid `$NetBSD: ...` RCS Id
      * line, or None if one was not found.
      */
+    #[must_use]
     pub fn rcsid(&self) -> Option<&OsStr> {
         self.rcsid.as_deref()
     }
@@ -498,6 +507,7 @@ impl Distinfo {
     /**
      * Return an iterator of distfile entries in insertion order.
      */
+    #[must_use]
     pub fn distfiles(&self) -> Values<'_, PathBuf, Entry> {
         self.distfiles.values()
     }
@@ -505,6 +515,7 @@ impl Distinfo {
     /**
      * Return an iterator of patchfile entries in insertion order.
      */
+    #[must_use]
     pub fn patchfiles(&self) -> Values<'_, PathBuf, Entry> {
         self.patchfiles.values()
     }
@@ -628,6 +639,7 @@ impl Distinfo {
      * Read a [`Vec`] of [`u8`] bytes and parse for [`Distinfo`] entries.  If
      * nothing is found then an empty [`Distinfo`] is returned.
      */
+    #[must_use]
     pub fn from_bytes(bytes: &[u8]) -> Self {
         let mut distinfo = Self::new();
         for line in bytes.split(|c| *c == b'\n') {
@@ -667,6 +679,7 @@ impl Distinfo {
      * Convenience wrapper around [`Distinfo::write_to`] that returns an
      * owned byte vector.
      */
+    #[must_use]
     pub fn to_bytes(&self) -> Vec<u8> {
         let mut out = Vec::new();
         let _ = self.write_to(&mut out);
