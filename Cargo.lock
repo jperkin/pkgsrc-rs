@@ -635,7 +635,7 @@ checksum = "19f132c84eca552bf34cab8ec81f1c1dcc229b811638f9d283dceabe58c5569e"
 
 [[package]]
 name = "pkgsrc"
-version = "0.13.0"
+version = "0.14.0"
 dependencies = [
  "anyhow",
  "ar",
@@ -666,7 +666,7 @@ dependencies = [
 
 [[package]]
 name = "pkgsrc-kv"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "pkgsrc-kv-derive",
  "serde",
@@ -675,7 +675,7 @@ dependencies = [
 
 [[package]]
 name = "pkgsrc-kv-derive"
-version = "0.5.0"
+version = "0.5.1"
 dependencies = [
  "proc-macro-crate",
  "proc-macro2",
