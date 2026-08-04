@@ -1186,14 +1186,8 @@ impl BinaryPackage {
                     entry.read_to_end(&mut data)?;
                     gpg_signature = Some(data);
                 }
-                _ if name.ends_with(".tgz")
-                    || name.ends_with(".tzst")
-                    || name.ends_with(".tar") =>
-                {
-                    // Detect compression from inner tarball name
-                    compression = Compression::from_extension(&name)
-                        .unwrap_or(Compression::Gzip);
-
+                _ if let Some(c) = Compression::from_extension(&name) => {
+                    compression = c;
                     let decompressed = decode(entry, compression)?;
                     let mut archive = TarArchive::new(decompressed);
 
@@ -1890,16 +1884,9 @@ impl MetadataReader {
                 let name = String::from_utf8_lossy(entry.header().identifier())
                     .into_owned();
 
-                if name.ends_with(".tgz")
-                    || name.ends_with(".tzst")
-                    || name.ends_with(".tar")
-                {
-                    tarball = Some((
-                        pos.get(),
-                        entry.header().size(),
-                        Compression::from_extension(&name)
-                            .unwrap_or(Compression::Gzip),
-                    ));
+                if let Some(compression) = Compression::from_extension(&name) {
+                    tarball =
+                        Some((pos.get(), entry.header().size(), compression));
                     entry.seek(SeekFrom::End(0))?;
                     break;
                 }
