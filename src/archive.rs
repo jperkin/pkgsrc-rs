@@ -187,14 +187,18 @@ impl Compression {
     /// Detect compression format from file extension.
     #[must_use]
     pub fn from_extension(path: impl AsRef<Path>) -> Option<Self> {
-        let name = path.as_ref().file_name()?.to_str()?;
-        let lower = name.to_lowercase();
+        let name = path.as_ref().file_name()?.to_str()?.as_bytes();
+        let ext = |suffix: &[u8]| {
+            name.len() >= suffix.len()
+                && name[name.len() - suffix.len()..]
+                    .eq_ignore_ascii_case(suffix)
+        };
 
-        if lower.ends_with(".tgz") || lower.ends_with(".tar.gz") {
+        if ext(b".tgz") || ext(b".tar.gz") {
             Some(Self::Gzip)
-        } else if lower.ends_with(".tzst") || lower.ends_with(".tar.zst") {
+        } else if ext(b".tzst") || ext(b".tar.zst") {
             Some(Self::Zstd)
-        } else if lower.ends_with(".tar") {
+        } else if ext(b".tar") {
             Some(Self::None)
         } else {
             None
@@ -328,10 +332,12 @@ impl std::str::FromStr for PkgHashAlgorithm {
     type Err = ArchiveError;
 
     fn from_str(s: &str) -> std::result::Result<Self, Self::Err> {
-        match s.to_uppercase().as_str() {
-            "SHA512" => Ok(Self::Sha512),
-            "SHA256" => Ok(Self::Sha256),
-            _ => Err(ArchiveError::UnsupportedAlgorithm(s.to_string())),
+        if s.eq_ignore_ascii_case("SHA512") {
+            Ok(Self::Sha512)
+        } else if s.eq_ignore_ascii_case("SHA256") {
+            Ok(Self::Sha256)
+        } else {
+            Err(ArchiveError::UnsupportedAlgorithm(s.to_string()))
         }
     }
 }
