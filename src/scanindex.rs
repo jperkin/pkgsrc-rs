@@ -76,7 +76,8 @@ use std::str::FromStr;
  *
  * `ScanDepends` wraps the raw `SCAN_DEPENDS` value from `pbulk-index` output
  * without splitting or allocating individual path entries.  This avoids
- * millions of [`PathBuf`] allocations when parsing large scan datasets.
+ * millions of [`PathBuf`](std::path::PathBuf) allocations when parsing
+ * large scan datasets.
  *
  * Individual paths can be accessed lazily via [`iter`](ScanDepends::iter).
  *
