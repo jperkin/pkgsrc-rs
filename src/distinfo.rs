@@ -56,7 +56,7 @@
 
 use crate::digest::{Digest, DigestError};
 use indexmap::IndexMap;
-use indexmap::map::Values;
+use indexmap::map::{Entry as MapEntry, Values};
 use std::ffi::{OsStr, OsString};
 use std::fs::File;
 use std::io;
@@ -685,14 +685,18 @@ impl Distinfo {
             EntryType::Distfile => &mut self.distfiles,
             EntryType::Patchfile => &mut self.patchfiles,
         };
-        map.entry(path.clone())
-            .and_modify(|e| e.size = Some(size))
-            .or_insert_with(|| Entry {
-                filename: path,
-                size: Some(size),
-                filetype,
-                ..Default::default()
-            });
+        match map.entry(path) {
+            MapEntry::Occupied(mut e) => e.get_mut().size = Some(size),
+            MapEntry::Vacant(e) => {
+                let filename = e.key().clone();
+                e.insert(Entry {
+                    filename,
+                    size: Some(size),
+                    filetype,
+                    ..Default::default()
+                });
+            }
+        }
     }
 
     fn upsert_checksum(&mut self, path: PathBuf, digest: Digest, hash: String) {
@@ -702,14 +706,18 @@ impl Distinfo {
             EntryType::Patchfile => &mut self.patchfiles,
         };
         let checksum = Checksum { digest, hash };
-        map.entry(path.clone())
-            .and_modify(|e| e.checksums.push(checksum.clone()))
-            .or_insert_with(|| Entry {
-                filename: path,
-                checksums: vec![checksum],
-                filetype,
-                ..Default::default()
-            });
+        match map.entry(path) {
+            MapEntry::Occupied(mut e) => e.get_mut().checksums.push(checksum),
+            MapEntry::Vacant(e) => {
+                let filename = e.key().clone();
+                e.insert(Entry {
+                    filename,
+                    checksums: vec![checksum],
+                    filetype,
+                    ..Default::default()
+                });
+            }
+        }
     }
 }
 
