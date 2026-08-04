@@ -255,9 +255,9 @@ struct DeweyMatch {
 }
 
 impl DeweyMatch {
-    fn new(op: &DeweyOp, pattern: &str) -> Result<Self, DeweyError> {
+    fn new(op: DeweyOp, pattern: &str) -> Result<Self, DeweyError> {
         let version = DeweyVersion::new(pattern)?;
-        Ok(Self { op: *op, version })
+        Ok(Self { op, version })
     }
 }
 
@@ -376,7 +376,7 @@ impl Dewey {
             }
             1 => {
                 let p = &pattern[deweyops[0].1..];
-                matches.push(DeweyMatch::new(&deweyops[0].2, p)?);
+                matches.push(DeweyMatch::new(deweyops[0].2, p)?);
             }
             2 => {
                 match (&deweyops[0].2, &deweyops[1].2) {
@@ -389,9 +389,9 @@ impl Dewey {
                     }
                 }
                 let p = &pattern[deweyops[0].1..deweyops[1].0];
-                matches.push(DeweyMatch::new(&deweyops[0].2, p)?);
+                matches.push(DeweyMatch::new(deweyops[0].2, p)?);
                 let p = &pattern[deweyops[1].1..];
-                matches.push(DeweyMatch::new(&deweyops[1].2, p)?);
+                matches.push(DeweyMatch::new(deweyops[1].2, p)?);
             }
             _ => {
                 return Err(DeweyError {
@@ -438,7 +438,7 @@ impl Dewey {
             return false;
         };
         for m in &self.matches {
-            if !dewey_cmp(&pkgver, &m.op, &m.version) {
+            if !dewey_cmp(&pkgver, m.op, &m.version) {
                 return false;
             }
         }
@@ -457,7 +457,7 @@ impl Dewey {
 /*
  * Compare two i64s using the specified operator.
  */
-const fn dewey_test(lhs: i64, op: &DeweyOp, rhs: i64) -> bool {
+const fn dewey_test(lhs: i64, op: DeweyOp, rhs: i64) -> bool {
     match op {
         DeweyOp::GE => lhs >= rhs,
         DeweyOp::GT => lhs > rhs,
@@ -477,7 +477,7 @@ const fn dewey_test(lhs: i64, op: &DeweyOp, rhs: i64) -> bool {
  */
 pub(crate) fn dewey_cmp(
     lhs: &DeweyVersion,
-    op: &DeweyOp,
+    op: DeweyOp,
     rhs: &DeweyVersion,
 ) -> bool {
     let llen = lhs.version.len();

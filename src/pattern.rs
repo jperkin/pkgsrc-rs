@@ -501,9 +501,9 @@ impl Pattern {
         };
         let d1 = DeweyVersion::new(pkgversion(current))?;
         let d2 = DeweyVersion::new(pkgversion(candidate))?;
-        if dewey_cmp(&d1, &DeweyOp::GT, &d2) {
+        if dewey_cmp(&d1, DeweyOp::GT, &d2) {
             Ok(Some(current))
-        } else if dewey_cmp(&d1, &DeweyOp::LT, &d2) {
+        } else if dewey_cmp(&d1, DeweyOp::LT, &d2) {
             Ok(Some(candidate))
         } else if current.cmp(candidate) == tiebreak {
             Ok(Some(current))
@@ -686,9 +686,9 @@ impl<'a> BestMatch<'a> {
         let won = match &self.best {
             None => true,
             Some((best, bestver)) => {
-                if dewey_cmp(&version, &DeweyOp::GT, bestver) {
+                if dewey_cmp(&version, DeweyOp::GT, bestver) {
                     true
-                } else if dewey_cmp(&version, &DeweyOp::LT, bestver) {
+                } else if dewey_cmp(&version, DeweyOp::LT, bestver) {
                     false
                 } else {
                     best.cmp(&candidate) == self.tiebreak.reverse()
