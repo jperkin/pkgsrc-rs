@@ -367,7 +367,7 @@ pub struct Summary {
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct SummaryBuilder {
-    lines: Vec<String>,
+    input: String,
     allow_unknown: bool,
     allow_incomplete: bool,
 }
@@ -393,7 +393,8 @@ impl SummaryBuilder {
      */
     #[must_use]
     pub fn var(mut self, line: impl AsRef<str>) -> Self {
-        self.lines.push(line.as_ref().to_string());
+        self.input.push_str(line.as_ref());
+        self.input.push('\n');
         self
     }
 
@@ -429,7 +430,7 @@ impl SummaryBuilder {
         S: AsRef<str>,
     {
         for line in lines {
-            self.lines.push(line.as_ref().to_string());
+            self = self.var(line);
         }
         self
     }
@@ -524,8 +525,7 @@ impl SummaryBuilder {
      * ```
      */
     pub fn build(self) -> Result<Summary> {
-        let input = self.lines.join("\n");
-        parse_summary(&input, self.allow_unknown, self.allow_incomplete)
+        parse_summary(&self.input, self.allow_unknown, self.allow_incomplete)
     }
 }
 
