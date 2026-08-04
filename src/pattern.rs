@@ -243,7 +243,6 @@ pub enum PatternError {
 pub struct Pattern {
     matchtype: PatternType,
     pattern: String,
-    likely: bool,
 }
 
 impl fmt::Display for Pattern {
@@ -359,27 +358,23 @@ impl Pattern {
             return Ok(Self {
                 matchtype: PatternType::Alternate(expanded),
                 pattern: pattern.to_string(),
-                likely: false,
             });
         }
         if has_dewey {
             return Ok(Self {
                 matchtype: PatternType::Dewey(Dewey::new(pattern)?),
                 pattern: pattern.to_string(),
-                likely: false,
             });
         }
         if has_glob {
             return Ok(Self {
                 matchtype: PatternType::Glob(glob::Pattern::new(pattern)?),
                 pattern: pattern.to_string(),
-                likely: false,
             });
         }
         Ok(Self {
             matchtype: PatternType::Simple,
             pattern: pattern.to_string(),
-            likely: false,
         })
     }
 
@@ -403,13 +398,12 @@ impl Pattern {
     #[must_use]
     pub fn matches(&self, pkg: &str) -> bool {
         /*
-         * As a small optimisation, unless the "likely" flag has been set,
-         * perform a quick test on the first few characters to see if this can
-         * possibly be a match, and if not return early.  This can have quite
-         * a decent performance benefit when matching across many thousands of
-         * packages.
+         * As a small optimisation, perform a quick test on the first few
+         * characters to see if this can possibly be a match, and if not
+         * return early.  This can have quite a decent performance benefit
+         * when matching across many thousands of packages.
          */
-        if !self.likely && !Self::quick_pkg_match(&self.pattern, pkg) {
+        if !Self::quick_pkg_match(&self.pattern, pkg) {
             return false;
         }
 
