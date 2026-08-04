@@ -400,7 +400,7 @@ pub enum ArchiveError {
 }
 
 /// Options for extracting package files.
-#[derive(Clone, Debug, Default, Eq, Hash, PartialEq)]
+#[derive(Clone, Copy, Debug, Default, Eq, Hash, PartialEq)]
 pub struct ExtractOptions {
     /// Apply file modes from plist `@mode` directives.
     pub apply_mode: bool,
