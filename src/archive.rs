@@ -1190,7 +1190,10 @@ impl BinaryPackage {
                     entry.read_to_end(&mut data)?;
                     gpg_signature = Some(data);
                 }
-                _ if let Some(c) = Compression::from_extension(&name) => {
+                _ => {
+                    let Some(c) = Compression::from_extension(&name) else {
+                        continue;
+                    };
                     compression = c;
                     let decompressed = decode(entry, compression)?;
                     let mut archive = TarArchive::new(decompressed);
@@ -1229,7 +1232,6 @@ impl BinaryPackage {
                     }
                     break;
                 }
-                _ => {}
             }
         }
 
