@@ -411,7 +411,7 @@ impl Metadata {
             value
                 .trim()
                 .lines()
-                .map(|s| s.to_string())
+                .map(ToString::to_string)
                 .collect::<Vec<_>>()
         };
 

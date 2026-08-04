@@ -1339,13 +1339,13 @@ impl BinaryPackage {
         self.build_info()
             .get(key)
             .and_then(|v| v.first())
-            .map(|s| s.as_str())
+            .map(String::as_str)
     }
 
     /// Get all values for a build info key.
     #[must_use]
     pub fn build_info_values(&self, key: &str) -> Option<&[String]> {
-        self.build_info().get(key).map(|v| v.as_slice())
+        self.build_info().get(key).map(Vec::as_slice)
     }
 
     /// Return the package hash (for signed packages).
@@ -1666,9 +1666,9 @@ impl BinaryPackage {
             self.build_info_value("PREV_PKGPATH")
                 .filter(non_empty)
                 .map(to_string),
-            self.build_info_values("PROVIDES").map(|v| v.to_vec()),
-            self.build_info_values("REQUIRES").map(|v| v.to_vec()),
-            self.build_info_values("SUPERSEDES").map(|v| v.to_vec()),
+            self.build_info_values("PROVIDES").map(<[String]>::to_vec),
+            self.build_info_values("REQUIRES").map(<[String]>::to_vec),
+            self.build_info_values("SUPERSEDES").map(<[String]>::to_vec),
             self.path
                 .file_name()
                 .map(|f| f.to_string_lossy().into_owned()),
@@ -1708,15 +1708,15 @@ impl FileRead for BinaryPackage {
     }
 
     fn deinstall(&self) -> std::io::Result<Option<String>> {
-        Ok(self.metadata.deinstall().map(|s| s.to_string()))
+        Ok(self.metadata.deinstall().map(ToString::to_string))
     }
 
     fn display(&self) -> std::io::Result<Option<String>> {
-        Ok(self.metadata.display().map(|s| s.to_string()))
+        Ok(self.metadata.display().map(ToString::to_string))
     }
 
     fn install(&self) -> std::io::Result<Option<String>> {
-        Ok(self.metadata.install().map(|s| s.to_string()))
+        Ok(self.metadata.install().map(ToString::to_string))
     }
 
     fn installed_info(&self) -> std::io::Result<Option<String>> {

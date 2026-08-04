@@ -159,7 +159,7 @@ impl PkgDB {
      * A valid package directory contains the three required metadata
      * files: `+COMMENT`, `+CONTENTS`, and `+DESC`.
      */
-    fn is_valid_pkgdir(&self, pkgdir: &Path) -> bool {
+    fn is_valid_pkgdir(pkgdir: &Path) -> bool {
         pkgdir.join(Entry::Comment.to_filename()).exists()
             && pkgdir.join(Entry::Contents.to_filename()).exists()
             && pkgdir.join(Entry::Desc.to_filename()).exists()
@@ -302,7 +302,7 @@ impl Iterator for PkgDB {
                 };
 
                 let path = entry.path();
-                if !self.is_valid_pkgdir(&path) {
+                if !PkgDB::is_valid_pkgdir(&path) {
                     continue;
                 }
 

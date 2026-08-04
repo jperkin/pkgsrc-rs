@@ -143,7 +143,7 @@ impl EntryType {
         if s.starts_with("patch-local-")
             || s.ends_with(".orig")
             || s.ends_with(".rej")
-            || s.ends_with("~")
+            || s.ends_with('~')
         {
             return false;
         }
@@ -262,15 +262,14 @@ impl Entry {
         if let Some(size) = self.size {
             let f = File::open(path)?;
             let fsize = f.metadata()?.len();
-            if fsize != size {
-                return Err(DistinfoError::Size(
-                    self.filename.clone(),
-                    size,
-                    fsize,
-                ));
-            } else {
+            if fsize == size {
                 return Ok(size);
             }
+            return Err(DistinfoError::Size(
+                self.filename.clone(),
+                size,
+                fsize,
+            ));
         }
         Err(DistinfoError::MissingSize(path.as_ref().to_path_buf()))
     }
@@ -299,16 +298,15 @@ impl Entry {
                 EntryType::Distfile => c.digest.hash_file(&mut f)?,
                 EntryType::Patchfile => c.digest.hash_patch(&mut f)?,
             };
-            if hash != c.hash {
-                return Err(DistinfoError::Checksum(
-                    self.filename.clone(),
-                    c.digest,
-                    c.hash.clone(),
-                    hash,
-                ));
-            } else {
+            if hash == c.hash {
                 return Ok(digest);
             }
+            return Err(DistinfoError::Checksum(
+                self.filename.clone(),
+                c.digest,
+                c.hash.clone(),
+                hash,
+            ));
         }
         Err(DistinfoError::MissingChecksum(
             path.as_ref().to_path_buf(),
