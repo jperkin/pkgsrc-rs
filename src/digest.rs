@@ -189,30 +189,6 @@ fn file_hash<R: Read, D: digest::Digest + std::io::Write>(
     Ok(hex_encode(&hasher.finalize()))
 }
 
-fn patch_hash<R: Read, D: digest::Digest + std::io::Write>(
-    reader: &mut R,
-) -> DigestResult<String> {
-    let mut hasher = D::new();
-    let mut bufreader = BufReader::new(reader);
-
-    let mut line: Vec<u8> = Vec::new();
-    loop {
-        line.clear();
-        if bufreader.read_until(b'\n', &mut line)? == 0 {
-            break;
-        }
-        if line.windows(7).any(|window| window == b"$NetBSD") {
-            continue;
-        }
-        if line.last() != Some(&b'\n') {
-            line.push(b'\n');
-        }
-        hasher.update(&line);
-    }
-
-    Ok(hex_encode(&hasher.finalize()))
-}
-
 fn str_hash<D: digest::Digest + std::io::Write>(
     s: &str,
 ) -> DigestResult<String> {
@@ -242,14 +218,8 @@ impl Digest {
      * so that CVS Id expansion does not change the hash.
      */
     pub fn hash_patch<R: Read>(&self, reader: &mut R) -> DigestResult<String> {
-        match self {
-            Digest::BLAKE2s => patch_hash::<_, blake2::Blake2s256>(reader),
-            Digest::MD5 => patch_hash::<_, md5::Md5>(reader),
-            Digest::RMD160 => patch_hash::<_, ripemd::Ripemd160>(reader),
-            Digest::SHA1 => patch_hash::<_, sha1::Sha1>(reader),
-            Digest::SHA256 => patch_hash::<_, sha2::Sha256>(reader),
-            Digest::SHA512 => patch_hash::<_, sha2::Sha512>(reader),
-        }
+        let mut hashes = Self::multi_hash_patch(reader, &[*self])?;
+        Ok(hashes.remove(0))
     }
     /**
      * Hash a string.  Mostly useful for testing.
