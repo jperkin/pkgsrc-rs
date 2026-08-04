@@ -31,19 +31,19 @@
  * fn main() -> DigestResult<()> {
  *     /* Select digest using an explicit type. */
  *     let d = Digest::BLAKE2s;
- *     let h = d.hash_str("hello world")?;
+ *     let h = d.hash_str("hello world");
  *     assert_eq!(h, "9aec6806794561107e594b1f6a8a6b0c92a0cba9acf5e5e93cca06f781813b0b");
  *
  *     /* Set digest from an input string. */
  *     let d = Digest::from_str("RMD160")?;
- *     let h = d.hash_str("hello world")?;
+ *     let h = d.hash_str("hello world");
  *     assert_eq!(h, "98c615784ccb5fe5936fbc0cbe9dfdb408d92f0f");
  *
  *     /*
  *      * Internally .finalize() is called on the underlying digest type, so
  *      * state is reset each time and a new string can be hashed.
  *      */
- *     let h = d.hash_str("hello again")?;
+ *     let h = d.hash_str("hello again");
  *     assert_eq!(h, "4240355d8422a9f6d7cca0aee38751fb287d2cc2");
  *
  *     /*
@@ -189,12 +189,10 @@ fn file_hash<R: Read, D: digest::Digest + std::io::Write>(
     Ok(hex_encode(&hasher.finalize()))
 }
 
-fn str_hash<D: digest::Digest + std::io::Write>(
-    s: &str,
-) -> DigestResult<String> {
+fn str_hash<D: digest::Digest>(s: &str) -> String {
     let mut hasher = D::new();
     hasher.update(s);
-    Ok(hex_encode(&hasher.finalize()))
+    hex_encode(&hasher.finalize())
 }
 
 impl Digest {
@@ -224,7 +222,8 @@ impl Digest {
     /**
      * Hash a string.  Mostly useful for testing.
      */
-    pub fn hash_str(&self, s: &str) -> DigestResult<String> {
+    #[must_use]
+    pub fn hash_str(&self, s: &str) -> String {
         match self {
             Digest::BLAKE2s => str_hash::<blake2::Blake2s256>(s),
             Digest::MD5 => str_hash::<md5::Md5>(s),
@@ -361,7 +360,7 @@ mod tests {
     #[test]
     fn digest_str() -> DigestResult<()> {
         let d = Digest::from_str("SHA1")?;
-        let h = d.hash_str("hello there")?;
+        let h = d.hash_str("hello there");
         assert_eq!(h, "6e71b3cac15d32fe2d36c270887df9479c25c640");
         Ok(())
     }
@@ -369,7 +368,7 @@ mod tests {
     #[test]
     fn digest_str_lower() -> DigestResult<()> {
         let d = Digest::from_str("sha1")?;
-        let h = d.hash_str("hello there")?;
+        let h = d.hash_str("hello there");
         assert_eq!(h, "6e71b3cac15d32fe2d36c270887df9479c25c640");
         Ok(())
     }
@@ -415,7 +414,7 @@ mod tests {
             let d = Digest::from_str(name)?;
             assert_eq!(d, digest);
             assert_eq!(d.to_string().to_lowercase(), name);
-            let h = d.hash_str(input)?;
+            let h = d.hash_str(input);
             assert_eq!(h.len(), hex_len);
             assert_eq!(h, hash);
             let mut cursor = std::io::Cursor::new(input);
