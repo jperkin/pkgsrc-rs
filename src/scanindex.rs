@@ -362,7 +362,7 @@ impl fmt::Display for RawDepend<'_> {
  * only when the value matches `[nN][oO]`; any other value, or the variable
  * being unset, means safe.
  */
-#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(feature = "serde", serde(transparent))]
 pub struct MakeJobsSafe(bool);
@@ -393,7 +393,7 @@ impl From<bool> for MakeJobsSafe {
  * The value is either `yes` for a package that is part of the pkgsrc
  * bootstrap, or empty for one that is not.
  */
-#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(feature = "serde", serde(transparent))]
 pub struct BootstrapPkg(bool);
