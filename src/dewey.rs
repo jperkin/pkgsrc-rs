@@ -84,6 +84,7 @@
  * [`Pattern`]: crate::Pattern
  */
 
+use smallvec::SmallVec;
 use std::cmp::Ordering;
 use thiserror::Error;
 
@@ -121,11 +122,15 @@ pub(crate) enum DeweyOp {
  *
  * This is a combined version of pkg_install dewey.c's mkversion() and
  * mkcomponent().
+ *
+ * The inline capacity is sized from the tests/data/scanindex fixture:
+ * 99.6% of its 29,022 package versions and 99.98% of its 234,388 dewey
+ * pattern versions parse to 8 or fewer components.
  */
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub(crate) struct DeweyVersion {
-    version: Vec<i64>,
+    version: SmallVec<[i64; 8]>,
     pkgrevision: i64,
 }
 
@@ -135,11 +140,7 @@ impl DeweyVersion {
      * version component overflows i64.
      */
     pub fn new(s: &str) -> Result<Self, DeweyError> {
-        /*
-         * Typical pkgsrc versions have 3-6 numeric components; pre-allocate
-         * to avoid the initial Vec growth reallocations.
-         */
-        let mut version: Vec<i64> = Vec::with_capacity(8);
+        let mut version = SmallVec::new();
         let mut pkgrevision = 0;
         let mut idx = 0;
 
@@ -514,7 +515,7 @@ mod tests {
     #[test]
     fn dewey_version_empty() -> Result<(), DeweyError> {
         let dv = DeweyVersion::new("")?;
-        assert_eq!(dv.version, Vec::<i64>::new());
+        assert!(dv.version.is_empty());
         assert_eq!(dv.pkgrevision, 0);
         Ok(())
     }
@@ -534,7 +535,7 @@ mod tests {
     #[test]
     fn dewey_version_utf8() -> Result<(), DeweyError> {
         let dv = DeweyVersion::new("é")?;
-        assert_eq!(dv.version, Vec::<i64>::new());
+        assert!(dv.version.is_empty());
         assert_eq!(dv.pkgrevision, 0);
         Ok(())
     }
@@ -542,11 +543,14 @@ mod tests {
     #[test]
     fn dewey_version_modifiers() -> Result<(), DeweyError> {
         let dv = DeweyVersion::new("1.0alpha1beta2rc3pl4_5nb17")?;
-        assert_eq!(dv.version, vec![1, 0, 0, -3, 1, -2, 2, -1, 3, 0, 4, 0, 5]);
+        assert_eq!(
+            dv.version.as_slice(),
+            [1, 0, 0, -3, 1, -2, 2, -1, 3, 0, 4, 0, 5]
+        );
         assert_eq!(dv.pkgrevision, 17);
         // chars replaced with [0, <char code>], - ignored.
         let dv = DeweyVersion::new("ojnknb30_-")?;
-        assert_eq!(dv.version, vec![0, 111, 0, 106, 0, 110, 0, 107, 0]);
+        assert_eq!(dv.version.as_slice(), [0, 111, 0, 106, 0, 110, 0, 107, 0]);
         assert_eq!(dv.pkgrevision, 30);
         // Ensure "pre" is parsed correctly.
         let m = Dewey::new("spandsp>=0.0.6pre18")?;
@@ -560,7 +564,7 @@ mod tests {
     #[test]
     fn dewey_version_empty_pkgrevision() -> Result<(), DeweyError> {
         let dv = DeweyVersion::new("100nb")?;
-        assert_eq!(dv.version, vec![100]);
+        assert_eq!(dv.version.as_slice(), [100]);
         assert_eq!(dv.pkgrevision, 0);
         Ok(())
     }
