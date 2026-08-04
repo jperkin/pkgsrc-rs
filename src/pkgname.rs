@@ -177,7 +177,7 @@ pub fn pkgversion_norev(pkgversion: &str) -> &str {
  * Return the `PKGREVISION` parsed from a package version, i.e. the
  * integer following the final `nb`.
  *
- * Returns [`None`] when no `nb` marker is present, [`Some(0)`] when the
+ * Returns [`None`] when no `nb` marker is present, [`Some(0)`](Some) when the
  * marker is present but the digits cannot be parsed as an [`i64`] (or
  * are absent entirely).
  */
