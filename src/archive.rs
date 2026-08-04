@@ -128,6 +128,24 @@ fn parse_mode(mode_str: &str) -> Option<u32> {
 /// Default block size for package hashing (64KB).
 pub const DEFAULT_BLOCK_SIZE: usize = 65536;
 
+/**
+ * Smallest block size accepted in a `+PKG_HASH` file.
+ *
+ * `pkg_install` rejects anything below this.
+ */
+pub const MIN_BLOCK_SIZE: usize = 1024;
+
+/**
+ * Largest block size accepted in a `+PKG_HASH` file.
+ *
+ * A buffer of this size is allocated before any package data is read,
+ * from a file whose signature has not been checked yet.  `pkg_install`
+ * writes [`DEFAULT_BLOCK_SIZE`] and nothing else, so sixteen times that
+ * accepts anything a real writer produces while keeping the allocation
+ * a hostile file can ask for small.
+ */
+pub const MAX_BLOCK_SIZE: usize = 16 * DEFAULT_BLOCK_SIZE;
+
 /// Current pkgsrc signature version.
 pub const PKGSRC_SIGNATURE_VERSION: u32 = 1;
 
@@ -463,6 +481,26 @@ pub enum ChecksumFailureKind {
     },
 }
 
+/**
+ * Read until `buf` is full or the reader has no more to give.
+ *
+ * `Read::read()` may return fewer bytes than asked for at any time, so
+ * a single call cannot be assumed to have produced a whole block.  Only
+ * the last block of a package is short.
+ */
+fn fill_block<R: Read>(reader: &mut R, buf: &mut [u8]) -> io::Result<usize> {
+    let mut len = 0;
+    while len < buf.len() {
+        match reader.read(&mut buf[len..]) {
+            Ok(0) => break,
+            Ok(n) => len += n,
+            Err(e) if e.kind() == io::ErrorKind::Interrupted => {}
+            Err(e) => return Err(e),
+        }
+    }
+    Ok(len)
+}
+
 /// The `+PKG_HASH` file contents for signed packages.
 ///
 /// This structure represents the hash metadata file used in signed pkgsrc
@@ -474,15 +512,22 @@ pub enum ChecksumFailureKind {
 ///
 /// ```text
 /// pkgsrc signature
+///
 /// version: 1
 /// pkgname: package-1.0
 /// algorithm: SHA512
 /// block size: 65536
 /// file size: 123456
+///
 /// <hash1>
 /// <hash2>
 /// ...
+/// end pkgsrc signature
 /// ```
+///
+/// Both blank lines and the trailer are part of the format `pkg_install`
+/// reads, the fields are required in the order shown, and there are
+/// exactly `ceil(file size / block size)` hashes.
 #[derive(Clone, Debug, Default, Eq, Hash, PartialEq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct PkgHash {
@@ -515,8 +560,15 @@ impl PkgHash {
         algorithm: PkgHashAlgorithm,
         block_size: usize,
     ) -> Result<Self> {
-        if block_size == 0 {
+        if !(MIN_BLOCK_SIZE..=MAX_BLOCK_SIZE).contains(&block_size) {
             return Err(ArchiveError::InvalidBlockSize(block_size));
+        }
+
+        let pkgname = pkgname.into();
+        if !valid_pkgname(&pkgname) {
+            return Err(ArchiveError::InvalidPkgHash(format!(
+                "invalid pkgname: {pkgname}"
+            )));
         }
 
         let mut pkg_hash = PkgHash::new(pkgname);
@@ -527,14 +579,23 @@ impl PkgHash {
         let mut total_size: u64 = 0;
 
         loop {
-            let bytes_read = reader.read(&mut buffer)?;
-            if bytes_read == 0 {
+            let len = fill_block(&mut reader, &mut buffer)?;
+            if len == 0 {
                 break;
             }
 
-            total_size += bytes_read as u64;
-            let hash = algorithm.hash_hex(&buffer[..bytes_read]);
-            pkg_hash.hashes.push(hash);
+            total_size += len as u64;
+            pkg_hash.hashes.push(algorithm.hash_hex(&buffer[..len]));
+
+            if len < block_size {
+                break;
+            }
+        }
+
+        if total_size == 0 {
+            return Err(ArchiveError::InvalidPkgHash(
+                "cannot hash an empty tarball".into(),
+            ));
         }
 
         pkg_hash.file_size = total_size;
@@ -579,7 +640,7 @@ impl PkgHash {
 
     /// Verify a tarball against this hash.
     pub fn verify<R: Read>(&self, mut reader: R) -> Result<bool> {
-        if self.block_size == 0 {
+        if !(MIN_BLOCK_SIZE..=MAX_BLOCK_SIZE).contains(&self.block_size) {
             return Err(ArchiveError::InvalidBlockSize(self.block_size));
         }
 
@@ -588,12 +649,12 @@ impl PkgHash {
         let mut total_size: u64 = 0;
 
         loop {
-            let bytes_read = reader.read(&mut buffer)?;
-            if bytes_read == 0 {
+            let len = fill_block(&mut reader, &mut buffer)?;
+            if len == 0 {
                 break;
             }
 
-            total_size += bytes_read as u64;
+            total_size += len as u64;
 
             if hash_idx >= self.hashes.len() {
                 return Err(ArchiveError::HashMismatch(
@@ -601,7 +662,7 @@ impl PkgHash {
                 ));
             }
 
-            let computed = self.algorithm.hash_hex(&buffer[..bytes_read]);
+            let computed = self.algorithm.hash_hex(&buffer[..len]);
             if computed != self.hashes[hash_idx] {
                 return Err(ArchiveError::HashMismatch(format!(
                     "block {} hash mismatch",
@@ -610,6 +671,10 @@ impl PkgHash {
             }
 
             hash_idx += 1;
+
+            if len < self.block_size {
+                break;
+            }
         }
 
         if total_size != self.file_size {
@@ -632,16 +697,65 @@ impl PkgHash {
 impl fmt::Display for PkgHash {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         writeln!(f, "pkgsrc signature")?;
+        writeln!(f)?;
         writeln!(f, "version: {}", self.version)?;
         writeln!(f, "pkgname: {}", self.pkgname)?;
         writeln!(f, "algorithm: {}", self.algorithm)?;
         writeln!(f, "block size: {}", self.block_size)?;
         writeln!(f, "file size: {}", self.file_size)?;
+        writeln!(f)?;
         for hash in &self.hashes {
             writeln!(f, "{}", hash)?;
         }
-        Ok(())
+        writeln!(f, "end pkgsrc signature")
     }
+}
+
+/**
+ * Take the next line, naming what was expected if there is none.
+ */
+fn next_line<'a>(
+    lines: &mut std::str::Split<'a, char>,
+    what: &str,
+) -> Result<&'a str> {
+    lines
+        .next()
+        .ok_or_else(|| ArchiveError::InvalidPkgHash(format!("missing {what}")))
+}
+
+/**
+ * Whether a package name is one `pkg_install` will accept.
+ */
+fn valid_pkgname(pkgname: &str) -> bool {
+    !pkgname.is_empty() && pkgname.bytes().all(|b| b.is_ascii_graphic())
+}
+
+/**
+ * Take the next line and strip a required `key: ` prefix from it.
+ */
+fn field<'a>(
+    lines: &mut std::str::Split<'a, char>,
+    prefix: &str,
+) -> Result<&'a str> {
+    let line = next_line(lines, prefix.trim_end_matches(": "))?;
+    line.strip_prefix(prefix).ok_or_else(|| {
+        ArchiveError::InvalidPkgHash(format!("expected {prefix:?}: {line}"))
+    })
+}
+
+/**
+ * Parse a plain decimal value, rejecting signs and other decoration
+ * that `pkg_install` would not accept.
+ */
+fn decimal<T: std::str::FromStr>(value: &str, what: &str) -> Result<T> {
+    if value.is_empty() || !value.bytes().all(|b| b.is_ascii_digit()) {
+        return Err(ArchiveError::InvalidPkgHash(format!(
+            "invalid {what}: {value}"
+        )));
+    }
+    value.parse().map_err(|_| {
+        ArchiveError::InvalidPkgHash(format!("invalid {what}: {value}"))
+    })
 }
 
 impl std::str::FromStr for PkgHash {
@@ -649,87 +763,123 @@ impl std::str::FromStr for PkgHash {
 
     /**
      * Parse a `PkgHash` from `+PKG_HASH` file contents.
+     *
+     * The fields are required in the order `pkg_install` writes them,
+     * there must be exactly one hash per block, and nothing may follow
+     * the trailer.
      */
     fn from_str(s: &str) -> Result<Self> {
-        let lines: Vec<&str> = s.lines().collect();
+        /*
+         * Split on newlines directly.  str::lines() would also strip a
+         * carriage return, accepting CRLF files that pkg_install reads
+         * as literal LF and rejects.
+         */
+        let Some(body) = s.strip_suffix('\n') else {
+            return Err(ArchiveError::InvalidPkgHash(
+                "missing final newline".into(),
+            ));
+        };
 
-        if lines.is_empty() || lines[0] != "pkgsrc signature" {
+        let mut lines = body.split('\n');
+
+        if next_line(&mut lines, "header")? != "pkgsrc signature" {
             return Err(ArchiveError::InvalidPkgHash(
                 "missing 'pkgsrc signature' header".into(),
             ));
         }
+        if !next_line(&mut lines, "blank line after header")?.is_empty() {
+            return Err(ArchiveError::InvalidPkgHash(
+                "expected blank line after header".into(),
+            ));
+        }
 
-        let mut pkg_hash = PkgHash::default();
-        let mut header_complete = false;
-        let mut line_idx = 1;
+        /*
+         * Compared as written rather than as a number, because
+         * pkg_install matches the literal text and so rejects spellings
+         * such as `01` that would parse to the same value.
+         */
+        let spelling = field(&mut lines, "version: ")?;
+        if spelling != PKGSRC_SIGNATURE_VERSION.to_string() {
+            return Err(ArchiveError::InvalidPkgHash(format!(
+                "unsupported version: {spelling}"
+            )));
+        }
+        let version = PKGSRC_SIGNATURE_VERSION;
 
-        while line_idx < lines.len() && !header_complete {
-            let line = lines[line_idx];
+        let pkgname = field(&mut lines, "pkgname: ")?;
+        if !valid_pkgname(pkgname) {
+            return Err(ArchiveError::InvalidPkgHash(format!(
+                "invalid pkgname: {pkgname}"
+            )));
+        }
 
-            if let Some((key, value)) = line.split_once(": ") {
-                match key {
-                    "version" => {
-                        pkg_hash.version = value.parse().map_err(|_| {
-                            ArchiveError::InvalidPkgHash(format!(
-                                "invalid version: {}",
-                                value
-                            ))
-                        })?;
-                    }
-                    "pkgname" => {
-                        pkg_hash.pkgname = value.to_string();
-                    }
-                    "algorithm" => {
-                        pkg_hash.algorithm = value.parse()?;
-                    }
-                    "block size" => {
-                        pkg_hash.block_size = value.parse().map_err(|_| {
-                            ArchiveError::InvalidPkgHash(format!(
-                                "invalid block size: {}",
-                                value
-                            ))
-                        })?;
-                    }
-                    "file size" => {
-                        pkg_hash.file_size = value.parse().map_err(|_| {
-                            ArchiveError::InvalidPkgHash(format!(
-                                "invalid file size: {}",
-                                value
-                            ))
-                        })?;
-                        header_complete = true;
-                    }
-                    _ => {
-                        return Err(ArchiveError::InvalidPkgHash(format!(
-                            "unknown header field: {}",
-                            key
-                        )));
-                    }
-                }
-            } else if !line.is_empty() {
-                header_complete = true;
-                line_idx -= 1;
+        /*
+         * Only the spelling pkg_install writes is accepted here, where
+         * the public FromStr for PkgHashAlgorithm is case-insensitive.
+         */
+        let spelling = field(&mut lines, "algorithm: ")?;
+        let algorithm: PkgHashAlgorithm = spelling.parse()?;
+        if algorithm.as_str() != spelling {
+            return Err(ArchiveError::UnsupportedAlgorithm(
+                spelling.to_string(),
+            ));
+        }
+
+        let block_size: usize =
+            decimal(field(&mut lines, "block size: ")?, "block size")?;
+        if !(MIN_BLOCK_SIZE..=MAX_BLOCK_SIZE).contains(&block_size) {
+            return Err(ArchiveError::InvalidBlockSize(block_size));
+        }
+
+        let file_size: u64 =
+            decimal(field(&mut lines, "file size: ")?, "file size")?;
+        if file_size == 0 {
+            return Err(ArchiveError::InvalidPkgHash(
+                "file size must not be zero".into(),
+            ));
+        }
+
+        if !next_line(&mut lines, "blank line before hashes")?.is_empty() {
+            return Err(ArchiveError::InvalidPkgHash(
+                "expected blank line before hashes".into(),
+            ));
+        }
+
+        let width = algorithm.hash_size() * 2;
+        let blocks = file_size.div_ceil(block_size as u64);
+        let mut hashes = Vec::new();
+
+        for block in 0..blocks {
+            let line = next_line(&mut lines, "block hash")?;
+            if line.len() != width
+                || !line.bytes().all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f'))
+            {
+                return Err(ArchiveError::InvalidPkgHash(format!(
+                    "invalid hash for block {block}: {line}"
+                )));
             }
-            line_idx += 1;
+            hashes.push(line.to_string());
         }
 
-        while line_idx < lines.len() {
-            let line = lines[line_idx].trim();
-            if !line.is_empty() {
-                pkg_hash.hashes.push(line.to_string());
-            }
-            line_idx += 1;
+        if next_line(&mut lines, "trailer")? != "end pkgsrc signature" {
+            return Err(ArchiveError::InvalidPkgHash(
+                "missing 'end pkgsrc signature' trailer".into(),
+            ));
+        }
+        if lines.next().is_some() {
+            return Err(ArchiveError::InvalidPkgHash(
+                "trailing data after trailer".into(),
+            ));
         }
 
-        if pkg_hash.pkgname.is_empty() {
-            return Err(ArchiveError::InvalidPkgHash("missing pkgname".into()));
-        }
-
-        if pkg_hash.block_size == 0 {
-            return Err(ArchiveError::InvalidBlockSize(pkg_hash.block_size));
-        }
-
-        Ok(pkg_hash)
+        Ok(Self {
+            version,
+            pkgname: pkgname.to_string(),
+            algorithm,
+            block_size,
+            file_size,
+            hashes,
+        })
     }
 }
 
@@ -2221,27 +2371,306 @@ mod tests {
         assert_eq!(PkgHashAlgorithm::Sha256.hash_size(), 32);
     }
 
+    /*
+     * The layout pkg_signature.c writes, with two blocks and a short
+     * final one.
+     */
     #[test]
     fn test_pkg_hash_parse() -> Result<()> {
-        let content = "\
-pkgsrc signature
-version: 1
-pkgname: test-1.0
-algorithm: SHA512
-block size: 65536
-file size: 12345
-abc123
-def456
-";
+        let data = vec![7u8; 70000];
+        let alg = PkgHashAlgorithm::Sha512;
+        let first = alg.hash_hex(&data[..DEFAULT_BLOCK_SIZE]);
+        let second = alg.hash_hex(&data[DEFAULT_BLOCK_SIZE..]);
+        let content = format!(
+            "pkgsrc signature\n\nversion: 1\npkgname: test-1.0\n\
+             algorithm: SHA512\nblock size: 65536\nfile size: 70000\n\n\
+             {first}\n{second}\nend pkgsrc signature\n"
+        );
+
         let pkg_hash: PkgHash = content.parse()?;
 
         assert_eq!(pkg_hash.version(), 1);
         assert_eq!(pkg_hash.pkgname(), "test-1.0");
         assert_eq!(pkg_hash.algorithm(), PkgHashAlgorithm::Sha512);
-        assert_eq!(pkg_hash.block_size(), 65536);
-        assert_eq!(pkg_hash.file_size(), 12345);
-        assert_eq!(pkg_hash.hashes(), &["abc123", "def456"]);
+        assert_eq!(pkg_hash.block_size(), DEFAULT_BLOCK_SIZE);
+        assert_eq!(pkg_hash.file_size(), 70000);
+        assert_eq!(pkg_hash.hashes(), &[first, second]);
+        assert!(pkg_hash.verify(Cursor::new(&data))?);
         Ok(())
+    }
+
+    /*
+     * Serialisation must produce those same bytes, both blank lines and
+     * the trailer included, or pkg_install will not read it.
+     */
+    #[test]
+    fn test_pkg_hash_canonical_format() -> Result<()> {
+        let data = b"Hello, World!";
+        let pkg_hash = PkgHash::from_tarball(
+            "test-1.0",
+            Cursor::new(data),
+            PkgHashAlgorithm::Sha512,
+            MIN_BLOCK_SIZE,
+        )?;
+        let hash = PkgHashAlgorithm::Sha512.hash_hex(data);
+
+        assert_eq!(
+            pkg_hash.to_string(),
+            format!(
+                "pkgsrc signature\n\nversion: 1\npkgname: test-1.0\n\
+                 algorithm: SHA512\nblock size: 1024\nfile size: 13\n\n\
+                 {hash}\nend pkgsrc signature\n"
+            )
+        );
+        Ok(())
+    }
+
+    /*
+     * Read::read() may return less than asked for, which must not move
+     * the block boundaries.
+     */
+    struct DribbleReader {
+        data: Vec<u8>,
+        pos: usize,
+        chunk: usize,
+    }
+
+    impl DribbleReader {
+        fn new(data: &[u8], chunk: usize) -> Self {
+            Self {
+                data: data.to_vec(),
+                pos: 0,
+                chunk,
+            }
+        }
+    }
+
+    impl Read for DribbleReader {
+        fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+            let end = (self.pos + self.chunk).min(self.data.len());
+            let len = (end - self.pos).min(buf.len());
+            buf[..len].copy_from_slice(&self.data[self.pos..self.pos + len]);
+            self.pos += len;
+            Ok(len)
+        }
+    }
+
+    #[test]
+    fn test_pkg_hash_short_reads() -> Result<()> {
+        let data: Vec<u8> = (0..5000u32).map(|i| i as u8).collect();
+        let whole = PkgHash::from_tarball(
+            "test-1.0",
+            Cursor::new(&data),
+            PkgHashAlgorithm::Sha512,
+            MIN_BLOCK_SIZE,
+        )?;
+        let dribbled = PkgHash::from_tarball(
+            "test-1.0",
+            DribbleReader::new(&data, 7),
+            PkgHashAlgorithm::Sha512,
+            MIN_BLOCK_SIZE,
+        )?;
+
+        assert_eq!(whole.file_size(), dribbled.file_size());
+        assert_eq!(whole.hashes(), dribbled.hashes());
+        assert!(whole.verify(DribbleReader::new(&data, 7))?);
+        Ok(())
+    }
+
+    #[test]
+    fn test_pkg_hash_block_boundaries() -> Result<()> {
+        for (label, len) in [
+            ("exact multiple", MIN_BLOCK_SIZE * 3),
+            ("short final block", MIN_BLOCK_SIZE * 2 + 1),
+        ] {
+            let data = vec![1u8; len];
+            let pkg_hash = PkgHash::from_tarball(
+                "test-1.0",
+                Cursor::new(&data),
+                PkgHashAlgorithm::Sha512,
+                MIN_BLOCK_SIZE,
+            )?;
+
+            assert_eq!(pkg_hash.hashes().len(), 3, "{label}");
+            assert_eq!(pkg_hash.file_size(), len as u64, "{label}");
+            assert!(pkg_hash.verify(Cursor::new(&data))?, "{label}");
+
+            let parsed: PkgHash = pkg_hash.to_string().parse()?;
+            assert_eq!(parsed.hashes(), pkg_hash.hashes(), "{label}");
+        }
+        Ok(())
+    }
+
+    fn manifest_lines() -> Vec<String> {
+        vec![
+            "pkgsrc signature".into(),
+            String::new(),
+            "version: 1".into(),
+            "pkgname: test-1.0".into(),
+            "algorithm: SHA512".into(),
+            "block size: 1024".into(),
+            "file size: 13".into(),
+            String::new(),
+            PkgHashAlgorithm::Sha512.hash_hex(b"Hello, World!"),
+            "end pkgsrc signature".into(),
+        ]
+    }
+
+    fn joined(lines: &[String]) -> String {
+        let mut s = lines.join("\n");
+        s.push('\n');
+        s
+    }
+
+    fn rejected(what: &str, mutate: impl Fn(&mut Vec<String>)) {
+        let mut lines = manifest_lines();
+        mutate(&mut lines);
+        assert!(
+            joined(&lines).parse::<PkgHash>().is_err(),
+            "accepted {what}"
+        );
+    }
+
+    #[test]
+    fn test_pkg_hash_parse_rejects() {
+        assert!(joined(&manifest_lines()).parse::<PkgHash>().is_ok());
+        assert!(
+            manifest_lines().join("\n").parse::<PkgHash>().is_err(),
+            "accepted manifest with no final newline"
+        );
+        assert!(
+            joined(&manifest_lines())
+                .replace('\n', "\r\n")
+                .parse::<PkgHash>()
+                .is_err(),
+            "accepted CRLF manifest"
+        );
+
+        rejected("missing blank line after header", |l| {
+            l.remove(1);
+        });
+        rejected("missing blank line before hashes", |l| {
+            l.remove(7);
+        });
+        rejected("reordered fields", |l| l.swap(3, 4));
+        rejected("unsupported version", |l| l[2] = "version: 2".into());
+        rejected("padded version", |l| l[2] = "version: 01".into());
+        rejected("empty pkgname", |l| l[3] = "pkgname: ".into());
+        rejected("pkgname with a space", |l| {
+            l[3] = "pkgname: test 1.0".into();
+        });
+        rejected("unknown algorithm", |l| l[4] = "algorithm: MD5".into());
+        rejected("lowercase algorithm", |l| {
+            l[4] = "algorithm: sha512".into();
+        });
+        rejected("block size below minimum", |l| {
+            l[5] = "block size: 1023".into();
+        });
+        rejected("block size above maximum", |l| {
+            l[5] = format!("block size: {}", MAX_BLOCK_SIZE + 1);
+        });
+        rejected("signed block size", |l| {
+            l[5] = "block size: +1024".into();
+        });
+        rejected("zero file size", |l| l[6] = "file size: 0".into());
+        rejected("missing hash", |l| {
+            l.remove(8);
+        });
+        rejected("extra hash", |l| l.insert(9, l[8].clone()));
+        rejected("malformed hex", |l| l[8] = "g".repeat(128));
+        rejected("uppercase hex", |l| l[8] = l[8].to_uppercase());
+        rejected("digest too short", |l| l[8].truncate(64));
+        rejected("missing trailer", |l| {
+            l.pop();
+        });
+        rejected("wrong trailer", |l| {
+            let last = l.len() - 1;
+            l[last] = "end pkgsrc sig".into();
+        });
+        rejected("trailing data", |l| l.push("extra".into()));
+    }
+
+    /*
+     * Anything from_tarball() returns has to parse back to itself, or a
+     * package can be signed that nothing will read again.
+     */
+    #[test]
+    fn test_pkg_hash_generate_round_trips() -> Result<()> {
+        for len in [
+            1,
+            13,
+            MIN_BLOCK_SIZE - 1,
+            MIN_BLOCK_SIZE,
+            MIN_BLOCK_SIZE + 1,
+            MIN_BLOCK_SIZE * 3,
+        ] {
+            for algorithm in
+                [PkgHashAlgorithm::Sha512, PkgHashAlgorithm::Sha256]
+            {
+                let data = vec![3u8; len];
+                let pkg_hash = PkgHash::from_tarball(
+                    "test-1.0",
+                    Cursor::new(&data),
+                    algorithm,
+                    MIN_BLOCK_SIZE,
+                )?;
+                let parsed: PkgHash = pkg_hash.to_string().parse()?;
+
+                assert_eq!(pkg_hash, parsed, "{algorithm} of {len} bytes");
+                assert!(
+                    parsed.verify(Cursor::new(&data))?,
+                    "{algorithm} of {len} bytes"
+                );
+            }
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn test_pkg_hash_generate_rejects() {
+        for (what, pkgname) in [
+            ("empty pkgname", ""),
+            ("pkgname with a space", "test 1.0"),
+            ("pkgname with a newline", "test\n1.0"),
+        ] {
+            assert!(
+                PkgHash::from_tarball(
+                    pkgname,
+                    Cursor::new(b"data"),
+                    PkgHashAlgorithm::Sha512,
+                    MIN_BLOCK_SIZE,
+                )
+                .is_err(),
+                "accepted {what}"
+            );
+        }
+
+        assert!(
+            PkgHash::from_tarball(
+                "test-1.0",
+                Cursor::new(b""),
+                PkgHashAlgorithm::Sha512,
+                MIN_BLOCK_SIZE,
+            )
+            .is_err(),
+            "accepted an empty tarball"
+        );
+    }
+
+    #[test]
+    fn test_pkg_hash_rejects_block_sizes() {
+        for size in [0, 1, MIN_BLOCK_SIZE - 1, MAX_BLOCK_SIZE + 1] {
+            assert!(
+                PkgHash::from_tarball(
+                    "test-1.0",
+                    Cursor::new(b"x"),
+                    PkgHashAlgorithm::Sha512,
+                    size,
+                )
+                .is_err(),
+                "accepted block size {size}"
+            );
+        }
     }
 
     #[test]
