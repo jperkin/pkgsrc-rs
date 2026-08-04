@@ -320,12 +320,11 @@ impl PkgHashAlgorithm {
     /// Format hash as lowercase hex string.
     #[must_use]
     pub fn hash_hex(&self, data: &[u8]) -> String {
-        let bytes = self.hash(data);
-        let mut s = String::with_capacity(bytes.len() * 2);
-        for b in &bytes {
-            let _ = write!(s, "{b:02x}");
+        use sha2::{Digest, Sha256, Sha512};
+        match self {
+            Self::Sha512 => crate::digest::hex_encode(&Sha512::digest(data)),
+            Self::Sha256 => crate::digest::hex_encode(&Sha256::digest(data)),
         }
-        s
     }
 }
 
@@ -2369,6 +2368,24 @@ mod tests {
 
         assert_eq!(PkgHashAlgorithm::Sha512.hash_size(), 64);
         assert_eq!(PkgHashAlgorithm::Sha256.hash_size(), 32);
+
+        /*
+         * NIST "abc" vectors, verifying each arm dispatches to the
+         * correct algorithm and hex encoding is correct.  Most other
+         * tests compute their expected values using hash_hex() itself.
+         */
+        assert_eq!(
+            PkgHashAlgorithm::Sha256.hash_hex(b"abc"),
+            "ba7816bf8f01cfea414140de5dae2223\
+             b00361a396177a9cb410ff61f20015ad"
+        );
+        assert_eq!(
+            PkgHashAlgorithm::Sha512.hash_hex(b"abc"),
+            "ddaf35a193617abacc417349ae204131\
+             12e6fa4e89a97ea20a9eeee64b55d39a\
+             2192992a274fc1a836ba3c23a3feebbd\
+             454d4423643ce80e2a9ac94fa54ca49f"
+        );
     }
 
     /*
