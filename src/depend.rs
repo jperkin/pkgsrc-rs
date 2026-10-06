@@ -110,7 +110,7 @@ impl Depend {
      * # Errors
      *
      * Returns [`DependError::Invalid`] if the string doesn't contain exactly
-     * one `:` separator.
+     * one `:` separator. The error contains the original input.
      *
      * Returns [`DependError::Pattern`] if the pattern portion is invalid.
      *
@@ -135,10 +135,10 @@ impl Depend {
      */
     pub fn new(s: &str) -> Result<Self, DependError> {
         let Some((left, right)) = s.split_once(':') else {
-            return Err(DependError::Invalid);
+            return Err(DependError::Invalid(s.to_string()));
         };
         if right.contains(':') {
-            return Err(DependError::Invalid);
+            return Err(DependError::Invalid(s.to_string()));
         }
         let pattern = Pattern::new(left)?;
         let pkgpath = PkgPath::from_str(right)?;
@@ -204,9 +204,10 @@ pub enum DependType {
 pub enum DependError {
     /**
      * An invalid string that doesn't match `<pattern>:<pkgpath>`.
+     * Contains the original input supplied by the caller.
      */
-    #[error("Invalid DEPENDS string")]
-    Invalid,
+    #[error("Invalid DEPENDS string: {0}")]
+    Invalid(String),
     /**
      * A transparent [`PatternError`] error.
      *
@@ -285,11 +286,15 @@ mod tests {
     fn test_bad() {
         // Missing ":" separator.
         let dep = Depend::new("pkg");
-        assert!(matches!(dep, Err(DependError::Invalid)));
+        assert!(
+            matches!(dep, Err(DependError::Invalid(input)) if input == "pkg")
+        );
 
         // Too many ":" separators.
         let dep = Depend::new("pkg-[0-9]*::../../pkgtools/pkg");
-        assert!(matches!(dep, Err(DependError::Invalid)));
+        assert!(
+            matches!(dep, Err(DependError::Invalid(input)) if input == "pkg-[0-9]*::../../pkgtools/pkg")
+        );
 
         // Invalid Pattern
         let dep = Depend::new("pkg>2>3:../../pkgtools/pkg");

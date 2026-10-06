@@ -82,15 +82,17 @@ const PREFIX: &str = "../../";
 use serde_with::{DeserializeFromStr, SerializeDisplay};
 
 /**
- * An invalid path was specified trying to create a new [`PkgPath`].
+ * An error parsing a package path.
  */
 #[derive(Debug, Eq, Error, Ord, PartialEq, PartialOrd)]
 pub enum PkgPathError {
     /**
-     * Contains an invalid path.
+     * The supplied path is invalid.
+     *
+     * Contains the original path supplied by the caller.
      */
-    #[error("Invalid path specified")]
-    InvalidPath,
+    #[error("Invalid path specified: {0}")]
+    InvalidPath(String),
 }
 
 /**
@@ -156,6 +158,11 @@ impl PkgPath {
      *
      * Accepts either `category/package` or `../../category/package`,
      * anything else is invalid.
+     *
+     * # Errors
+     *
+     * Returns [`PkgPathError::InvalidPath`] containing the original input
+     * if the path is invalid.
      */
     pub fn new(path: &str) -> Result<Self, PkgPathError> {
         let mut c = Path::new(path).components();
@@ -175,11 +182,15 @@ impl PkgPath {
                     Some(Component::Normal(pkg)),
                     None,
                 ) => (cat, pkg),
-                _ => return Err(PkgPathError::InvalidPath),
+                _ => return Err(PkgPathError::InvalidPath(path.to_string())),
             };
 
-        let cat = cat.to_str().ok_or(PkgPathError::InvalidPath)?;
-        let pkg = pkg.to_str().ok_or(PkgPathError::InvalidPath)?;
+        let cat = cat
+            .to_str()
+            .ok_or_else(|| PkgPathError::InvalidPath(path.to_string()))?;
+        let pkg = pkg
+            .to_str()
+            .ok_or_else(|| PkgPathError::InvalidPath(path.to_string()))?;
         Ok(PkgPath {
             full: format!("{PREFIX}{cat}/{pkg}"),
         })
@@ -290,27 +301,33 @@ mod tests {
 
     #[test]
     fn pkgpath_test_bad_input() {
-        let err = Err(PkgPathError::InvalidPath);
-        assert_eq!(PkgPath::new(""), err);
-        assert_eq!(PkgPath::new("\0"), err);
-        assert_eq!(PkgPath::new("foo"), err);
-        assert_eq!(PkgPath::new("foo/"), err);
-        assert_eq!(PkgPath::new("./foo"), err);
-        assert_eq!(PkgPath::new("./foo/"), err);
-        assert_eq!(PkgPath::new("../foo"), err);
-        assert_eq!(PkgPath::new("../foo/"), err);
-        assert_eq!(PkgPath::new("../foo/bar"), err);
-        assert_eq!(PkgPath::new("../foo/bar/"), err);
-        assert_eq!(PkgPath::new("../foo/bar/ojnk"), err);
-        assert_eq!(PkgPath::new("../foo/bar/ojnk/"), err);
-        assert_eq!(PkgPath::new("../.."), err);
-        assert_eq!(PkgPath::new("../../"), err);
-        assert_eq!(PkgPath::new("../../foo"), err);
-        assert_eq!(PkgPath::new("../../foo/"), err);
-        assert_eq!(PkgPath::new("../../foo/bar/ojnk"), err);
-        assert_eq!(PkgPath::new("../../foo/bar/ojnk/"), err);
-        // ".. /" gets parsed as a Normal file named ".. ".
-        assert_eq!(PkgPath::new(".. /../foo/bar"), err);
+        for path in [
+            "",
+            "\0",
+            "foo",
+            "foo/",
+            "./foo",
+            "./foo/",
+            "../foo",
+            "../foo/",
+            "../foo/bar",
+            "../foo/bar/",
+            "../foo/bar/ojnk",
+            "../foo/bar/ojnk/",
+            "../..",
+            "../../",
+            "../../foo",
+            "../../foo/",
+            "../../foo/bar/ojnk",
+            "../../foo/bar/ojnk/",
+            // ".. /" gets parsed as a Normal file named ".. ".
+            ".. /../foo/bar",
+        ] {
+            assert_eq!(
+                PkgPath::new(path),
+                Err(PkgPathError::InvalidPath(path.to_string()))
+            );
+        }
     }
 
     #[test]

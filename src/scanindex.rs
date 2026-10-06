@@ -323,9 +323,11 @@ pub struct RawDepend<'a> {
 
 impl<'a> RawDepend<'a> {
     fn new(raw: &'a str) -> Result<Self, DependError> {
-        let colon = raw.find(':').ok_or(DependError::Invalid)?;
+        let colon = raw
+            .find(':')
+            .ok_or_else(|| DependError::Invalid(raw.to_string()))?;
         if raw[colon + 1..].contains(':') {
-            return Err(DependError::Invalid);
+            return Err(DependError::Invalid(raw.to_string()));
         }
         Ok(RawDepend { raw, colon })
     }
@@ -977,9 +979,13 @@ mod tests {
         assert_eq!(deps.as_str(), "invalid");
         let results: Vec<_> = deps.iter().collect();
         assert_eq!(results.len(), 1);
-        assert!(results[0].is_err());
+        assert!(
+            matches!(&results[0], Err(DependError::Invalid(input)) if input == "invalid")
+        );
         let results: Vec<_> = deps.depends().collect();
-        assert!(results[0].is_err());
+        assert!(
+            matches!(&results[0], Err(DependError::Invalid(input)) if input == "invalid")
+        );
         Ok(())
     }
 
@@ -1030,7 +1036,8 @@ mod tests {
             .err()
             .ok_or(KvError::Incomplete("expected error".to_string()))?;
         match err {
-            KvError::ParseLine(span) => {
+            KvError::ParseLine { line, span } => {
+                assert_eq!(line, "badline");
                 assert_eq!(span.offset, 17);
                 assert_eq!(span.len, 7);
                 assert_eq!(

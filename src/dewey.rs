@@ -92,9 +92,12 @@ use thiserror::Error;
  * A [`Dewey`] pattern parsing error.
  */
 #[derive(Debug, Error)]
-#[error("Pattern syntax error near position {pos}: {msg}")]
+#[error("Dewey syntax error in {input:?} near byte {pos}: {msg}")]
 pub struct DeweyError {
-    /// The approximate character index of where the error occurred.
+    /// The input being parsed when the error occurred.
+    pub input: String,
+
+    /// The approximate byte offset of the error within `input`.
     pub pos: usize,
 
     /// A message describing the error.
@@ -168,6 +171,7 @@ impl DeweyVersion {
             if digit_end > 0 {
                 let num = slice[..digit_end].parse::<i64>().map_err(|_| {
                     DeweyError {
+                        input: s.to_string(),
                         pos: idx,
                         msg: "Version component overflow",
                     }
@@ -255,8 +259,18 @@ struct DeweyMatch {
 }
 
 impl DeweyMatch {
-    fn new(op: DeweyOp, pattern: &str) -> Result<Self, DeweyError> {
-        let version = DeweyVersion::new(pattern)?;
+    fn new(
+        op: DeweyOp,
+        input: &str,
+        start: usize,
+        end: usize,
+    ) -> Result<Self, DeweyError> {
+        let version =
+            DeweyVersion::new(&input[start..end]).map_err(|mut e| {
+                e.input = input.to_string();
+                e.pos += start;
+                e
+            })?;
         Ok(Self { op, version })
     }
 }
@@ -370,31 +384,46 @@ impl Dewey {
         match deweyops.len() {
             0 => {
                 return Err(DeweyError {
+                    input: pattern.to_string(),
                     pos: 0,
                     msg: "No dewey operators found",
                 });
             }
             1 => {
-                let p = &pattern[deweyops[0].1..];
-                matches.push(DeweyMatch::new(deweyops[0].2, p)?);
+                matches.push(DeweyMatch::new(
+                    deweyops[0].2,
+                    pattern,
+                    deweyops[0].1,
+                    pattern.len(),
+                )?);
             }
             2 => {
                 match (&deweyops[0].2, &deweyops[1].2) {
                     (DeweyOp::GT | DeweyOp::GE, DeweyOp::LT | DeweyOp::LE) => {}
                     _ => {
                         return Err(DeweyError {
+                            input: pattern.to_string(),
                             pos: deweyops[0].0,
                             msg: "Unsupported operator order",
                         });
                     }
                 }
-                let p = &pattern[deweyops[0].1..deweyops[1].0];
-                matches.push(DeweyMatch::new(deweyops[0].2, p)?);
-                let p = &pattern[deweyops[1].1..];
-                matches.push(DeweyMatch::new(deweyops[1].2, p)?);
+                matches.push(DeweyMatch::new(
+                    deweyops[0].2,
+                    pattern,
+                    deweyops[0].1,
+                    deweyops[1].0,
+                )?);
+                matches.push(DeweyMatch::new(
+                    deweyops[1].2,
+                    pattern,
+                    deweyops[1].1,
+                    pattern.len(),
+                )?);
             }
             _ => {
                 return Err(DeweyError {
+                    input: pattern.to_string(),
                     pos: deweyops[2].0,
                     msg: "Too many dewey operators found",
                 });
@@ -526,6 +555,7 @@ mod tests {
         assert!(err.is_err());
         let err = err.unwrap_err();
         assert_eq!(err.pos, 0);
+        assert_eq!(err.input, "pkg");
         assert_eq!(err.msg, "No dewey operators found");
     }
 
@@ -648,6 +678,7 @@ mod tests {
         assert!(err.is_err());
         let err = err.unwrap_err();
         assert_eq!(err.pos, 0);
+        assert_eq!(err.input, "20251208143052000000");
         assert_eq!(err.msg, "Version component overflow");
     }
 
@@ -657,6 +688,7 @@ mod tests {
         assert!(err.is_err());
         let err = err.unwrap_err();
         assert_eq!(err.pos, 2);
+        assert_eq!(err.input, "1.20251208143052000000");
         assert_eq!(err.msg, "Version component overflow");
     }
 

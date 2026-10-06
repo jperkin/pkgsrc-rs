@@ -120,8 +120,13 @@ impl std::fmt::Display for KvWarning {
 #[derive(Debug, Error)]
 pub enum KvError {
     /// A line was not in `KEY=VALUE` format.
-    #[error("line is not in KEY=VALUE format")]
-    ParseLine(Span),
+    #[error("line is not in KEY=VALUE format: {line:?}")]
+    ParseLine {
+        /// The original malformed line, excluding the line ending.
+        line: String,
+        /// Location of the line in the input.
+        span: Span,
+    },
 
     /// A required field was missing from the input.
     #[error("missing required field '{0}'")]
@@ -137,8 +142,10 @@ pub enum KvError {
     },
 
     /// Failed to parse an integer value.
-    #[error("failed to parse integer")]
+    #[error("failed to parse integer {value:?}: {source}")]
     ParseInt {
+        /// The original value that failed to parse.
+        value: String,
         /// The underlying parse error.
         #[source]
         source: ParseIntError,
@@ -163,7 +170,7 @@ impl KvError {
     #[must_use]
     pub const fn span(&self) -> Option<Span> {
         match self {
-            Self::ParseLine(span)
+            Self::ParseLine { span, .. }
             | Self::UnknownVariable { span, .. }
             | Self::ParseInt { span, .. }
             | Self::Parse { span, .. } => Some(*span),
@@ -230,6 +237,7 @@ macro_rules! impl_fromkv_for_int {
             impl FromKv for $t {
                 fn from_kv(value: &str, span: Span) -> Result<Self> {
                     value.parse().map_err(|source: ParseIntError| KvError::ParseInt {
+                        value: value.to_string(),
                         source,
                         span,
                     })

@@ -265,9 +265,14 @@ impl Entry {
         &self,
         path: P,
     ) -> Result<u64, DistinfoError> {
+        let path = path.as_ref();
         if let Some(size) = self.size {
-            let f = File::open(path)?;
-            let fsize = f.metadata()?.len();
+            let f = File::open(path)
+                .map_err(|e| DistinfoError::file_io(path, e))?;
+            let fsize = f
+                .metadata()
+                .map_err(|e| DistinfoError::file_io(path, e))?
+                .len();
             if fsize == size {
                 return Ok(size);
             }
@@ -277,7 +282,7 @@ impl Entry {
                 fsize,
             ));
         }
-        Err(DistinfoError::MissingSize(path.as_ref().to_path_buf()))
+        Err(DistinfoError::MissingSize(path.to_path_buf()))
     }
 
     /**
@@ -295,15 +300,18 @@ impl Entry {
         path: P,
         digest: Digest,
     ) -> Result<Digest, DistinfoError> {
+        let path = path.as_ref();
         for c in &self.checksums {
             if digest != c.digest {
                 continue;
             }
-            let mut f = File::open(path.as_ref())?;
+            let mut f = File::open(path)
+                .map_err(|e| DistinfoError::file_io(path, e))?;
             let hash = match self.filetype {
-                EntryType::Distfile => c.digest.hash_file(&mut f)?,
-                EntryType::Patchfile => c.digest.hash_patch(&mut f)?,
-            };
+                EntryType::Distfile => c.digest.hash_file(&mut f),
+                EntryType::Patchfile => c.digest.hash_patch(&mut f),
+            }
+            .map_err(|e| DistinfoError::file_digest(path, e))?;
             if hash == c.hash {
                 return Ok(digest);
             }
@@ -314,10 +322,7 @@ impl Entry {
                 hash,
             ));
         }
-        Err(DistinfoError::MissingChecksum(
-            path.as_ref().to_path_buf(),
-            digest,
-        ))
+        Err(DistinfoError::MissingChecksum(path.to_path_buf(), digest))
     }
 
     /**
@@ -338,15 +343,15 @@ impl Entry {
         }
         let digests: Vec<Digest> =
             self.checksums.iter().map(|c| c.digest).collect();
-        let mut file = File::open(path)?;
+        let mut file =
+            File::open(path).map_err(|e| DistinfoError::file_io(path, e))?;
         let actual = match self.filetype {
-            EntryType::Distfile => {
-                Digest::multi_hash_file(&mut file, &digests)?
-            }
+            EntryType::Distfile => Digest::multi_hash_file(&mut file, &digests),
             EntryType::Patchfile => {
-                Digest::multi_hash_patch(&mut file, &digests)?
+                Digest::multi_hash_patch(&mut file, &digests)
             }
-        };
+        }
+        .map_err(|e| DistinfoError::file_digest(path, e))?;
         Ok(self
             .checksums
             .iter()
@@ -439,12 +444,30 @@ pub struct Distinfo {
  */
 #[derive(Debug, Error)]
 pub enum DistinfoError {
-    /// Transparent [`io::Error`] error.
+    /// An I/O error without file path context.
     #[error(transparent)]
     Io(#[from] io::Error),
-    /// Transparent [`Digest`] error.
+    /// A digest error without file path context.
     #[error(transparent)]
     Digest(#[from] DigestError),
+    /// An I/O error for the supplied file path.
+    #[error("I/O error for {}: {source}", path.display())]
+    FileIo {
+        /// The original file path supplied by the caller.
+        path: PathBuf,
+        /// The underlying I/O error.
+        #[source]
+        source: io::Error,
+    },
+    /// A digest error for the supplied file path.
+    #[error("Digest error for {}: {source}", path.display())]
+    FileDigest {
+        /// The original file path supplied by the caller.
+        path: PathBuf,
+        /// The underlying digest error.
+        #[source]
+        source: DigestError,
+    },
     /// File was not found as a valid entry in the current [`Distinfo`] struct.
     #[error("File not found: {0}")]
     NotFound(PathBuf),
@@ -460,6 +483,25 @@ pub enum DistinfoError {
     /// No size found for the requested entry.
     #[error("Missing size entry for {0}")]
     MissingSize(PathBuf),
+}
+
+impl DistinfoError {
+    fn file_io(path: &Path, source: io::Error) -> Self {
+        Self::FileIo {
+            path: path.to_path_buf(),
+            source,
+        }
+    }
+
+    fn file_digest(path: &Path, source: DigestError) -> Self {
+        match source {
+            DigestError::Io(source) => Self::file_io(path, source),
+            source => Self::FileDigest {
+                path: path.to_path_buf(),
+                source,
+            },
+        }
+    }
 }
 
 impl Distinfo {
@@ -561,9 +603,22 @@ impl Distinfo {
 
     /**
      * Calculate size of a [`Path`].
+     *
+     * # Errors
+     *
+     * Returns [`DistinfoError::FileIo`] containing the supplied path and
+     * underlying I/O error if the file cannot be opened or inspected.
      */
-    pub fn calculate_size<P: AsRef<Path>>(path: P) -> io::Result<u64> {
-        Ok(File::open(path)?.metadata()?.len())
+    pub fn calculate_size<P: AsRef<Path>>(
+        path: P,
+    ) -> Result<u64, DistinfoError> {
+        let path = path.as_ref();
+        let file =
+            File::open(path).map_err(|e| DistinfoError::file_io(path, e))?;
+        Ok(file
+            .metadata()
+            .map_err(|e| DistinfoError::file_io(path, e))?
+            .len())
     }
 
     /**
@@ -575,11 +630,13 @@ impl Distinfo {
         digest: Digest,
     ) -> Result<String, DistinfoError> {
         let path = path.as_ref();
-        let mut file = File::open(path)?;
+        let mut file =
+            File::open(path).map_err(|e| DistinfoError::file_io(path, e))?;
         let hash = match EntryType::classify(path) {
-            EntryType::Distfile => digest.hash_file(&mut file)?,
-            EntryType::Patchfile => digest.hash_patch(&mut file)?,
-        };
+            EntryType::Distfile => digest.hash_file(&mut file),
+            EntryType::Patchfile => digest.hash_patch(&mut file),
+        }
+        .map_err(|e| DistinfoError::file_digest(path, e))?;
         Ok(hash)
     }
 
@@ -844,6 +901,50 @@ impl Line {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn file_errors_preserve_path() {
+        let entry = Entry::new(
+            "digest.txt",
+            "",
+            vec![Checksum::new(Digest::SHA512, String::new())],
+            Some(158),
+        );
+        let path = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("tests/data/missing-distfile");
+        let errors = [
+            entry.verify_size(&path).unwrap_err(),
+            entry.verify_checksum(&path, Digest::SHA512).unwrap_err(),
+            entry.verify_checksums(&path).unwrap_err(),
+            Distinfo::calculate_size(&path).unwrap_err(),
+            Distinfo::calculate_checksum(&path, Digest::SHA512).unwrap_err(),
+        ];
+        for err in errors {
+            let source = std::error::Error::source(&err).unwrap();
+            assert!(source.downcast_ref::<io::Error>().is_some());
+            assert!(
+                matches!(err, DistinfoError::FileIo { path: actual, .. } if actual == path)
+            );
+        }
+
+        let err = DistinfoError::file_digest(
+            &path,
+            DigestError::Io(io::Error::new(
+                io::ErrorKind::PermissionDenied,
+                "read failed",
+            )),
+        );
+        let DistinfoError::FileIo {
+            path: actual,
+            source,
+        } = err
+        else {
+            panic!("expected FileIo error, got {err:?}");
+        };
+        assert_eq!(actual, path);
+        assert_eq!(source.kind(), io::ErrorKind::PermissionDenied);
+        assert_eq!(source.to_string(), "read failed");
+    }
 
     /*
      * Test RcsId parsing, with and without additional whitespace and comments.

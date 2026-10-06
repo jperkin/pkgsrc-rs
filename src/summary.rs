@@ -1710,6 +1710,7 @@ fn parse_summary_lenient(
         let (key, value) =
             line.split_once('=')
                 .ok_or_else(|| SummaryError::ParseLine {
+                    line: line.to_string(),
                     context: ErrorContext::new(Span {
                         offset: line_offset,
                         len: line.len(),
@@ -2157,8 +2158,10 @@ pub enum SummaryError {
     Io(#[from] io::Error),
 
     /// The supplied line is not in the correct `VARIABLE=VALUE` format.
-    #[error("line is not in VARIABLE=VALUE format")]
+    #[error("line is not in VARIABLE=VALUE format: {line:?}")]
     ParseLine {
+        /// The original malformed line, excluding the line ending.
+        line: String,
         /// Location context for this error.
         context: ErrorContext,
     },
@@ -2175,8 +2178,10 @@ pub enum SummaryError {
     },
 
     /// Parsing a supplied value as an Integer type failed.
-    #[error("failed to parse integer")]
+    #[error("failed to parse integer {value:?}: {source}")]
     ParseInt {
+        /// The original value that failed to parse.
+        value: String,
         /// The underlying parse error.
         #[source]
         source: ParseIntError,
@@ -2206,7 +2211,8 @@ pub enum SummaryError {
 impl From<crate::kv::KvError> for SummaryError {
     fn from(e: crate::kv::KvError) -> Self {
         match e {
-            crate::kv::KvError::ParseLine(span) => Self::ParseLine {
+            crate::kv::KvError::ParseLine { line, span } => Self::ParseLine {
+                line,
                 context: ErrorContext::new(span),
             },
             crate::kv::KvError::Incomplete(field) => Self::Incomplete {
@@ -2219,7 +2225,12 @@ impl From<crate::kv::KvError> for SummaryError {
                     context: ErrorContext::new(span),
                 }
             }
-            crate::kv::KvError::ParseInt { source, span } => Self::ParseInt {
+            crate::kv::KvError::ParseInt {
+                value,
+                source,
+                span,
+            } => Self::ParseInt {
+                value,
                 source,
                 context: ErrorContext::new(span),
             },
@@ -2274,7 +2285,8 @@ impl SummaryError {
                 field,
                 context: context.with_entry(entry),
             },
-            Self::ParseLine { context } => Self::ParseLine {
+            Self::ParseLine { line, context } => Self::ParseLine {
+                line,
                 context: context.with_entry(entry),
             },
             Self::UnknownVariable { variable, context } => {
@@ -2283,7 +2295,12 @@ impl SummaryError {
                     context: context.with_entry(entry),
                 }
             }
-            Self::ParseInt { source, context } => Self::ParseInt {
+            Self::ParseInt {
+                value,
+                source,
+                context,
+            } => Self::ParseInt {
+                value,
                 source,
                 context: context.with_entry(entry),
             },
@@ -2305,7 +2322,8 @@ impl SummaryError {
                 field,
                 context: context.adjust_offset(base),
             },
-            Self::ParseLine { context } => Self::ParseLine {
+            Self::ParseLine { line, context } => Self::ParseLine {
+                line,
                 context: context.adjust_offset(base),
             },
             Self::UnknownVariable { variable, context } => {
@@ -2314,7 +2332,12 @@ impl SummaryError {
                     context: context.adjust_offset(base),
                 }
             }
-            Self::ParseInt { source, context } => Self::ParseInt {
+            Self::ParseInt {
+                value,
+                source,
+                context,
+            } => Self::ParseInt {
+                value,
                 source,
                 context: context.adjust_offset(base),
             },
@@ -2373,7 +2396,9 @@ mod tests {
             FILE_SIZE=NaN
         "};
         let err = Summary::from_str(input).err().ok_or("expected error")?;
-        assert!(matches!(err, SummaryError::ParseInt { .. }));
+        assert!(
+            matches!(err, SummaryError::ParseInt { value, .. } if value == "NaN")
+        );
 
         let err = Summary::from_str("FILE_SIZE=1234")
             .err()
@@ -2388,7 +2413,9 @@ mod tests {
         let err = Summary::from_str("BUILD_DATE=2019-08-12\nBAD LINE\n")
             .err()
             .ok_or("expected error")?;
-        assert!(matches!(err, SummaryError::ParseLine { .. }));
+        assert!(
+            matches!(&err, SummaryError::ParseLine { line, .. } if line == "BAD LINE")
+        );
         let span = err.span().ok_or("should have span")?;
         assert_eq!(span.offset, 22); // byte offset to "BAD LINE" (0-based)
         assert_eq!(span.len, 8); // length of "BAD LINE"
@@ -2434,6 +2461,27 @@ mod tests {
         let err = second.err().ok_or("expected error")?;
         assert_eq!(err.entry(), Some(1)); // 0-based entry index
         Ok(())
+    }
+
+    #[test]
+    fn stream_errors_preserve_input() {
+        let mut iter = Summary::from_reader(
+            "SIZE_PKG=NaN\r\n\r\nBAD LINE\r\n\r\n".as_bytes(),
+        );
+        let numeric = iter.next().unwrap().unwrap_err();
+        let malformed = iter.next().unwrap().unwrap_err();
+        assert!(iter.next().is_none());
+        // Inspect errors after the iterator has reused its input buffers.
+        assert_eq!(numeric.entry(), Some(0));
+        assert_eq!(numeric.span(), Some(Span { offset: 9, len: 3 }));
+        assert!(
+            matches!(numeric, SummaryError::ParseInt { value, .. } if value == "NaN")
+        );
+        assert_eq!(malformed.entry(), Some(1));
+        assert_eq!(malformed.span(), Some(Span { offset: 16, len: 8 }));
+        assert!(
+            matches!(malformed, SummaryError::ParseLine { line, .. } if line == "BAD LINE")
+        );
     }
 
     #[test]

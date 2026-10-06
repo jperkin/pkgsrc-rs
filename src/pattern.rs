@@ -143,14 +143,37 @@ enum PatternType {
 #[derive(Debug, Error)]
 pub enum PatternError {
     /// An alternate pattern was supplied with unbalanced braces.
-    #[error("Unbalanced braces in pattern")]
-    Alternate,
-    /// Transparent [`DeweyError`]
-    #[error(transparent)]
-    Dewey(#[from] DeweyError),
-    /// Transparent [`glob::PatternError`]
-    #[error(transparent)]
-    Glob(#[from] glob::PatternError),
+    #[error("Unbalanced braces in pattern: {0}")]
+    Alternate(String),
+    /// A malformed Dewey pattern.
+    #[error("Invalid pattern {pattern:?}: {source}")]
+    Dewey {
+        /// The original pattern supplied by the caller.
+        pattern: String,
+        /// The underlying error, including the input its position refers to.
+        #[source]
+        source: DeweyError,
+    },
+    /// A malformed glob pattern.
+    #[error("Invalid glob pattern {pattern:?} (parsed as {input:?}): {source}")]
+    Glob {
+        /// The original pattern supplied by the caller.
+        pattern: String,
+        /// The expanded glob input that the source error's position refers to.
+        input: String,
+        /// The underlying glob error.
+        #[source]
+        source: glob::PatternError,
+    },
+    /// A package version could not be parsed while selecting a match.
+    #[error("Invalid version in package {package:?}: {source}")]
+    Version {
+        /// The package whose version could not be parsed.
+        package: String,
+        /// The underlying version error.
+        #[source]
+        source: DeweyError,
+    },
 }
 
 /**
@@ -221,19 +244,19 @@ pub enum PatternError {
  * use pkgsrc::{PatternError::*, Pattern};
  *
  * // Missing closing bracket or too many *'s.
- * assert!(matches!(Pattern::new("foo-[0-9"), Err(Glob(_))));
- * assert!(matches!(Pattern::new("foo-[0-9]***"), Err(Glob(_))));
+ * assert!(matches!(Pattern::new("foo-[0-9"), Err(Glob { .. })));
+ * assert!(matches!(Pattern::new("foo-[0-9]***"), Err(Glob { .. })));
  *
  * // Too many or incorrectly-ordered comparisons.
- * assert!(matches!(Pattern::new("foo>1.0<2<3"), Err(Dewey(_))));
- * assert!(matches!(Pattern::new("foo<1>0"), Err(Dewey(_))));
+ * assert!(matches!(Pattern::new("foo>1.0<2<3"), Err(Dewey { .. })));
+ * assert!(matches!(Pattern::new("foo<1>0"), Err(Dewey { .. })));
  *
  * // Version component overflow (exceeds i64::MAX).
- * assert!(matches!(Pattern::new("foo>=20251208143052123456"), Err(Dewey(_))));
+ * assert!(matches!(Pattern::new("foo>=20251208143052123456"), Err(Dewey { .. })));
  *
  * // Unbalanced or incorrectly-ordered braces.
- * assert!(matches!(Pattern::new("{foo,bar}}>1.0"), Err(Alternate)));
- * assert!(matches!(Pattern::new("foo}b{ar>1.0"), Err(Alternate)));
+ * assert!(matches!(Pattern::new("{foo,bar}}>1.0"), Err(Alternate(_))));
+ * assert!(matches!(Pattern::new("foo}b{ar>1.0"), Err(Alternate(_))));
  * ```
  *
  * [`glob`]: https://docs.rs/glob/latest/glob/
@@ -294,6 +317,13 @@ impl Pattern {
      * ```
      */
     pub fn new(pattern: &str) -> Result<Self, PatternError> {
+        Self::new_with_context(pattern, pattern)
+    }
+
+    fn new_with_context(
+        pattern: &str,
+        original: &str,
+    ) -> Result<Self, PatternError> {
         /*
          * Classify the pattern in a single byte scan rather than repeatedly
          * scanning for each character class below.
@@ -316,7 +346,7 @@ impl Pattern {
         }
         if brace_pos.is_some() {
             if brace_is_close {
-                return Err(PatternError::Alternate);
+                return Err(PatternError::Alternate(original.to_string()));
             }
             /*
              * Verify that braces are correctly balanced.
@@ -327,13 +357,15 @@ impl Pattern {
                     depth += 1;
                 } else if ch == '}' {
                     if depth == 0 {
-                        return Err(PatternError::Alternate);
+                        return Err(PatternError::Alternate(
+                            original.to_string(),
+                        ));
                     }
                     depth -= 1;
                 }
             }
             if depth != 0 {
-                return Err(PatternError::Alternate);
+                return Err(PatternError::Alternate(original.to_string()));
             }
             /*
              * Expand the outermost brace group and pre-compile each
@@ -341,11 +373,11 @@ impl Pattern {
              * remaining brace groups in the expanded patterns.
              */
             let Some(i) = pattern.rfind('{') else {
-                return Err(PatternError::Alternate);
+                return Err(PatternError::Alternate(original.to_string()));
             };
             let (first, rest) = pattern.split_at(i);
             let Some(n) = rest.find('}') else {
-                return Err(PatternError::Alternate);
+                return Err(PatternError::Alternate(original.to_string()));
             };
             let (group, last) = rest.split_at(n + 1);
             let alts = &group[1..group.len() - 1];
@@ -353,7 +385,7 @@ impl Pattern {
             let mut expanded = Vec::new();
             for m in alts.split(',') {
                 let s = format!("{first}{m}{last}");
-                expanded.push(Pattern::new(&s)?);
+                expanded.push(Self::new_with_context(&s, original)?);
             }
             return Ok(Self {
                 matchtype: PatternType::Alternate(expanded),
@@ -362,13 +394,26 @@ impl Pattern {
         }
         if has_dewey {
             return Ok(Self {
-                matchtype: PatternType::Dewey(Dewey::new(pattern)?),
+                matchtype: PatternType::Dewey(Dewey::new(pattern).map_err(
+                    |source| PatternError::Dewey {
+                        pattern: original.to_string(),
+                        source,
+                    },
+                )?),
                 pattern: pattern.to_string(),
             });
         }
         if has_glob {
             return Ok(Self {
-                matchtype: PatternType::Glob(glob::Pattern::new(pattern)?),
+                matchtype: PatternType::Glob(
+                    glob::Pattern::new(pattern).map_err(|source| {
+                        PatternError::Glob {
+                            pattern: original.to_string(),
+                            input: pattern.to_string(),
+                            source,
+                        }
+                    })?,
+                ),
                 pattern: pattern.to_string(),
             });
         }
@@ -432,7 +477,7 @@ impl Pattern {
      *
      * # Errors
      *
-     * Returns [`PatternError::Dewey`] if parsing a package version fails.
+     * Returns [`PatternError::Version`] if parsing a package version fails.
      */
     pub fn best_match<'a>(
         &self,
@@ -449,7 +494,7 @@ impl Pattern {
      *
      * # Errors
      *
-     * Returns [`PatternError::Dewey`] if parsing a package version fails.
+     * Returns [`PatternError::Version`] if parsing a package version fails.
      */
     pub fn best_match_pbulk<'a>(
         &self,
@@ -499,8 +544,19 @@ impl Pattern {
         let Some(current) = current else {
             return Ok(Some(candidate));
         };
-        let d1 = DeweyVersion::new(pkgversion(current))?;
-        let d2 = DeweyVersion::new(pkgversion(candidate))?;
+        let d1 = DeweyVersion::new(pkgversion(current)).map_err(|source| {
+            PatternError::Version {
+                package: current.to_string(),
+                source,
+            }
+        })?;
+        let d2 =
+            DeweyVersion::new(pkgversion(candidate)).map_err(|source| {
+                PatternError::Version {
+                    package: candidate.to_string(),
+                    source,
+                }
+            })?;
         if dewey_cmp(&d1, DeweyOp::GT, &d2) {
             Ok(Some(current))
         } else if dewey_cmp(&d1, DeweyOp::LT, &d2) {
@@ -672,7 +728,7 @@ impl<'a> BestMatch<'a> {
      *
      * # Errors
      *
-     * Returns [`PatternError::Dewey`] if parsing the candidate
+     * Returns [`PatternError::Version`] if parsing the candidate
      * version fails.  The current best is unchanged.
      */
     pub fn consider(
@@ -682,7 +738,13 @@ impl<'a> BestMatch<'a> {
         if !self.pattern.matches(candidate) {
             return Ok(false);
         }
-        let version = DeweyVersion::new(pkgversion(candidate))?;
+        let version =
+            DeweyVersion::new(pkgversion(candidate)).map_err(|source| {
+                PatternError::Version {
+                    package: candidate.to_string(),
+                    source,
+                }
+            })?;
         let won = match &self.best {
             None => true,
             Some((best, bestver)) => {
@@ -822,8 +884,15 @@ mod tests {
     }
     macro_rules! assert_pattern_err {
         ($pattern:expr, $variant:pat) => {
-            let p = Pattern::new($pattern);
-            assert!(matches!(p, Err($variant)));
+            let err = Pattern::new($pattern).unwrap_err();
+            assert!(matches!(&err, $variant));
+            let original = match &err {
+                PatternError::Alternate(pattern)
+                | PatternError::Dewey { pattern, .. }
+                | PatternError::Glob { pattern, .. } => pattern,
+                _ => panic!("unexpected version error"),
+            };
+            assert_eq!(original, $pattern);
         };
     }
 
@@ -890,10 +959,10 @@ mod tests {
     #[test]
     fn alternate_match_err() {
         use super::PatternError::Alternate;
-        assert_pattern_err!("foo}>=1", Alternate);
-        assert_pattern_err!("{foo,bar}}>=1", Alternate);
-        assert_pattern_err!("{{foo,bar}>=1", Alternate);
-        assert_pattern_err!("}foo,bar}>=1", Alternate);
+        assert_pattern_err!("foo}>=1", Alternate(_));
+        assert_pattern_err!("{foo,bar}}>=1", Alternate(_));
+        assert_pattern_err!("{{foo,bar}>=1", Alternate(_));
+        assert_pattern_err!("}foo,bar}>=1", Alternate(_));
     }
 
     /*
@@ -954,15 +1023,15 @@ mod tests {
             r: Result<Pattern, PatternError>,
         ) -> std::result::Result<DeweyError, &'static str> {
             match r {
-                Err(Dewey(e)) => Ok(e),
+                Err(Dewey { source, .. }) => Ok(source),
                 _ => Err("expected Dewey error"),
             }
         }
 
         /* Must be no more than 1 of each direction operator. */
-        assert_pattern_err!("foo>1<2<3", Dewey(_));
+        assert_pattern_err!("foo>1<2<3", Dewey { .. });
         /* Greater than must come before less than. */
-        assert_pattern_err!("foo<2>3", Dewey(_));
+        assert_pattern_err!("foo<2>3", Dewey { .. });
 
         /*
          * Verify position of error.  To make things simple it always points
@@ -982,6 +1051,12 @@ mod tests {
         /* Version component overflow (exceeds i64::MAX). */
         let e = dewey_err(Pattern::new("pkg>=20251208143052123456"))?;
         assert_eq!(e.msg, "Version component overflow");
+        assert_eq!(e.input, "pkg>=20251208143052123456");
+        assert_eq!(e.pos, 5);
+        let e = dewey_err(Pattern::new("pkg>=1<2.20251208143052123456"))?;
+        assert_eq!(e.input, "pkg>=1<2.20251208143052123456");
+        assert_eq!(e.pos, 9);
+        assert_pattern_err!("{foo,bar}>=20251208143052123456", Dewey { .. });
         Ok(())
     }
 
@@ -1014,9 +1089,12 @@ mod tests {
     #[test]
     fn glob_match_err() {
         use super::PatternError::Glob;
-        assert_pattern_err!("foo-[0-9", Glob(_));
+        assert_pattern_err!("foo-[0-9", Glob { .. });
         /* Apparently *** is an error in the glob crate. */
-        assert_pattern_err!("foo-[0-9]***", Glob(_));
+        assert_pattern_err!("foo-[0-9]***", Glob { .. });
+        assert_pattern_err!("{foo,{bar,baz}}-[0-9", Glob { .. });
+        let err = Pattern::new("{foo,bar}-[0-9").unwrap_err();
+        assert!(matches!(err, Glob { input, .. } if input == "foo-[0-9"));
     }
 
     /*
@@ -1091,10 +1169,19 @@ mod tests {
         assert!(m.matches("pkg-1.0"));
         assert!(m.matches(overflow_ver));
         // But best_match should fail when comparing versions
-        assert!(matches!(
-            m.best_match(Some("pkg-1.0"), overflow_ver),
-            Err(PatternError::Dewey(_))
-        ));
+        let err = m.best_match(Some("pkg-1.0"), overflow_ver).unwrap_err();
+        let PatternError::Version { package, source } = err else {
+            panic!("expected Version error, got {err:?}");
+        };
+        assert_eq!(package, overflow_ver);
+        assert_eq!(source.input, "20251208143052123456");
+        assert_eq!(source.pos, 0);
+
+        let err = m.best_match(Some(overflow_ver), "pkg-1.0").unwrap_err();
+        let PatternError::Version { package, .. } = err else {
+            panic!("expected Version error, got {err:?}");
+        };
+        assert_eq!(package, overflow_ver);
         Ok(())
     }
 
@@ -1162,10 +1249,12 @@ mod tests {
         let mut m = p.best_matcher();
         assert!(m.consider("pkg-1.0")?);
         /* Version component overflow errors, leaving best unchanged. */
-        assert!(matches!(
-            m.consider("pkg-20251208143052123456"),
-            Err(PatternError::Dewey(_))
-        ));
+        let err = m.consider("pkg-20251208143052123456").unwrap_err();
+        let PatternError::Version { package, source } = err else {
+            panic!("expected Version error, got {err:?}");
+        };
+        assert_eq!(package, "pkg-20251208143052123456");
+        assert_eq!(source.input, "20251208143052123456");
         assert_eq!(m.best(), Some("pkg-1.0"));
         Ok(())
     }

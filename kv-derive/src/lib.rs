@@ -252,10 +252,13 @@ fn generate_impl(input: &DeriveInput) -> syn::Result<TokenStream2> {
             let eq_pos = match line.find('=') {
                 Some(p) => p,
                 None => {
-                    return Err(#kv::KvError::ParseLine(#kv::Span {
-                        offset: line_offset,
-                        len: line.len(),
-                    }));
+                    return Err(#kv::KvError::ParseLine {
+                        line: line.to_string(),
+                        span: #kv::Span {
+                            offset: line_offset,
+                            len: line.len(),
+                        },
+                    });
                 }
             };
 

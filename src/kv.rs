@@ -345,7 +345,9 @@ mod tests {
             SIZE_PKG=not_a_number
         "};
         let result = SimplePackage::parse(input);
-        assert!(matches!(result, Err(KvError::ParseInt { .. })));
+        assert!(
+            matches!(result, Err(KvError::ParseInt { value, .. }) if value == "not_a_number")
+        );
     }
 
     #[test]
@@ -356,7 +358,9 @@ mod tests {
             SIZE_PKG=6999600
         "};
         let result = SimplePackage::parse(input);
-        assert!(matches!(result, Err(KvError::ParseLine(_))));
+        assert!(
+            matches!(result, Err(KvError::ParseLine { line, .. }) if line == "bad-line")
+        );
     }
 
     #[derive(Kv, Debug, PartialEq)]

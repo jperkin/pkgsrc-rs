@@ -83,10 +83,12 @@ pub enum MetadataError {
     /**
      * A metadata field contains an invalid value.
      */
-    #[error("Invalid value in {field}: {source}")]
+    #[error("Invalid value in {field}: {value:?}: {source}")]
     InvalidValue {
         /** The name of the field that contained the invalid value. */
         field: &'static str,
+        /// The original value supplied for the field.
+        value: String,
         /** The underlying parse error. */
         #[source]
         source: ParseIntError,
@@ -435,6 +437,7 @@ impl Metadata {
                     Some(value.trim().parse::<u64>().map_err(|e| {
                         MetadataError::InvalidValue {
                             field: "+SIZE_ALL",
+                            value: value.to_string(),
                             source: e,
                         }
                     })?);
@@ -444,6 +447,7 @@ impl Metadata {
                     Some(value.trim().parse::<u64>().map_err(|e| {
                         MetadataError::InvalidValue {
                             field: "+SIZE_PKG",
+                            value: value.to_string(),
                             source: e,
                         }
                     })?);
@@ -620,15 +624,25 @@ mod tests {
     #[test]
     fn test_read_metadata_invalid_size() {
         let mut m = Metadata::new();
-        let result = m.read_metadata(Entry::SizeAll, "not a number");
-        assert!(matches!(result, Err(MetadataError::InvalidValue { .. })));
+        let result = m.read_metadata(Entry::SizeAll, "  not a number  ");
+        let Err(MetadataError::InvalidValue { field, value, .. }) = result
+        else {
+            panic!("expected InvalidValue error, got {result:?}");
+        };
+        assert_eq!(field, "+SIZE_ALL");
+        assert_eq!(value, "  not a number  ");
     }
 
     #[test]
     fn test_read_metadata_negative_size() {
         let mut m = Metadata::new();
-        let result = m.read_metadata(Entry::SizeAll, "-100");
-        assert!(matches!(result, Err(MetadataError::InvalidValue { .. })));
+        let result = m.read_metadata(Entry::SizePkg, "-100");
+        let Err(MetadataError::InvalidValue { field, value, .. }) = result
+        else {
+            panic!("expected InvalidValue error, got {result:?}");
+        };
+        assert_eq!(field, "+SIZE_PKG");
+        assert_eq!(value, "-100");
     }
 
     #[test]
