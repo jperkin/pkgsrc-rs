@@ -78,9 +78,9 @@ pub use pkgsrc_kv_derive::Kv;
 #[derive(Clone, Copy, Debug, Default, Eq, Hash, PartialEq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct Span {
-    /** Byte offset where this span starts. */
+    /// Byte offset where this span starts.
     pub offset: usize,
-    /** Length in bytes. */
+    /// Length in bytes.
     pub len: usize,
 }
 
@@ -100,11 +100,11 @@ impl From<Span> for std::ops::Range<usize> {
  */
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub struct KvWarning {
-    /** The variable (key) whose value could not be parsed. */
+    /// The variable (key) whose value could not be parsed.
     pub variable: String,
-    /** The raw value that failed to parse. */
+    /// The raw value that failed to parse.
     pub value: String,
-    /** Location of the value within the input. */
+    /// Location of the value within the input.
     pub span: Span,
 }
 
@@ -114,48 +114,52 @@ impl std::fmt::Display for KvWarning {
     }
 }
 
-/** Errors that can occur during parsing. */
+/**
+ * Errors that can occur during parsing.
+ */
 #[derive(Debug, Error)]
 pub enum KvError {
-    /** A line was not in `KEY=VALUE` format. */
+    /// A line was not in `KEY=VALUE` format.
     #[error("line is not in KEY=VALUE format")]
     ParseLine(Span),
 
-    /** A required field was missing from the input. */
+    /// A required field was missing from the input.
     #[error("missing required field '{0}'")]
     Incomplete(String),
 
-    /** An unknown variable was encountered. */
+    /// An unknown variable was encountered.
     #[error("unknown variable '{variable}'")]
     UnknownVariable {
-        /** The name of the unknown variable. */
+        /// The name of the unknown variable.
         variable: String,
-        /** Location of the variable name in the input. */
+        /// Location of the variable name in the input.
         span: Span,
     },
 
-    /** Failed to parse an integer value. */
+    /// Failed to parse an integer value.
     #[error("failed to parse integer")]
     ParseInt {
-        /** The underlying parse error. */
+        /// The underlying parse error.
         #[source]
         source: ParseIntError,
-        /** Location of the invalid value in the input. */
+        /// Location of the invalid value in the input.
         span: Span,
     },
 
-    /** Failed to parse a value. */
+    /// Failed to parse a value.
     #[error("{message}")]
     Parse {
-        /** Description of the parse error. */
+        /// Description of the parse error. */
         message: String,
-        /** Location of the invalid value in the input. */
+        /// Location of the invalid value in the input.
         span: Span,
     },
 }
 
 impl KvError {
-    /** Returns the [`Span`] for this error, if available. */
+    /**
+     * Returns the [`Span`] for this error, if available.
+     */
     #[must_use]
     pub const fn span(&self) -> Option<Span> {
         match self {
@@ -168,7 +172,9 @@ impl KvError {
     }
 }
 
-/** A [`Result`](std::result::Result) type alias using [`KvError`]. */
+/**
+ * A [`Result`](std::result::Result) type alias using [`KvError`].
+ */
 pub type Result<T> = std::result::Result<T, KvError>;
 
 /**
