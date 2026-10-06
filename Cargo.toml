@@ -15,6 +15,13 @@ documentation = "https://docs.rs/pkgsrc"
 rust-version = "1.88"
 edition = "2024"
 
+[lib]
+bench = false
+
+[[bench]]
+name = "resolve"
+harness = false
+
 [dependencies]
 ar = "0.9.0"
 blake2 = "0.11.0-rc.6"
