@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2025 Jonathan Perkin <jonathan@perkin.org.uk>
+ * Copyright (c) 2026 Jonathan Perkin <jonathan@perkin.org.uk>
  *
  * Permission to use, copy, modify, and distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -174,7 +174,9 @@ pub fn derive_kv(input: TokenStream) -> TokenStream {
     }
 }
 
-/** Main implementation generator. */
+/**
+ * Main implementation generator.
+ */
 fn generate_impl(input: &DeriveInput) -> syn::Result<TokenStream2> {
     let name = &input.ident;
     let container_attrs = ContainerAttrs::parse(&input.attrs)?;
@@ -217,9 +219,10 @@ fn generate_impl(input: &DeriveInput) -> syn::Result<TokenStream2> {
         collect_field,
         &kv,
     );
-    let field_extracts: Vec<_> =
-        parsed_fields.iter().map(|f| f.extract_expr(&kv)).collect();
-    let field_names: Vec<_> = parsed_fields.iter().map(|f| &f.ident).collect();
+    let field_initializers: Vec<_> = parsed_fields
+        .iter()
+        .map(|f| f.field_initializer(&kv))
+        .collect();
 
     let serde_impl = if container_attrs.serde {
         generate_serde_impl(name, &parsed_fields)
@@ -273,7 +276,7 @@ fn generate_impl(input: &DeriveInput) -> syn::Result<TokenStream2> {
 
     let construct = quote! {
         #name {
-            #(#field_names: #field_extracts,)*
+            #(#field_initializers,)*
         }
     };
 
@@ -351,7 +354,9 @@ fn generate_impl(input: &DeriveInput) -> syn::Result<TokenStream2> {
     })
 }
 
-/** Extracts named fields from a struct, returning an error for other types. */
+/**
+ * Extracts named fields from a struct, returning an error for other types.
+ */
 fn extract_named_fields(
     input: &DeriveInput,
 ) -> syn::Result<&syn::punctuated::Punctuated<Field, syn::token::Comma>> {
@@ -389,7 +394,9 @@ fn ensure_at_most_one(
     Ok(())
 }
 
-/** Generates variable declarations for parsing state. */
+/**
+ * Generates variable declarations for parsing state.
+ */
 fn generate_field_declarations(fields: &[ParsedField]) -> Vec<TokenStream2> {
     fields
         .iter()
@@ -406,7 +413,9 @@ fn generate_field_declarations(fields: &[ParsedField]) -> Vec<TokenStream2> {
         .collect()
 }
 
-/** Generates match arms for known keys. */
+/**
+ * Generates match arms for known keys.
+ */
 fn generate_match_arms(
     fields: &[&ParsedField],
     warnings_ident: Option<&Ident>,
@@ -453,7 +462,9 @@ fn generate_match_arms(
         .collect()
 }
 
-/** Generates the fallback arm for unknown keys. */
+/**
+ * Generates the fallback arm for unknown keys.
+ */
 fn generate_unknown_handling(
     allow_unknown: bool,
     collect_field: Option<&ParsedField>,
@@ -636,19 +647,23 @@ fn generate_serde_impl(name: &Ident, fields: &[ParsedField]) -> TokenStream2 {
     }
 }
 
-/** Container-level attributes parsed from `#[kv(...)]`. */
+/**
+ * Container-level attributes parsed from `#[kv(...)]`.
+ */
 #[derive(Default)]
 struct ContainerAttrs {
-    /** If true, unknown keys are silently ignored. */
+    /// If true, unknown keys are silently ignored.
     allow_unknown: bool,
-    /** Override for the path to the `pkgsrc-kv` crate. */
+    /// Override for the path to the `pkgsrc-kv` crate.
     crate_path: Option<Path>,
-    /** If true, emit `serde::Serialize`/`Deserialize` implementations. */
+    /// If true, emit `serde::Serialize`/`Deserialize` implementations.
     serde: bool,
 }
 
 impl ContainerAttrs {
-    /** Parses container attributes from a slice of attributes. */
+    /**
+     * Parses container attributes from a slice of attributes.
+     */
     fn parse(attrs: &[Attribute]) -> syn::Result<Self> {
         let mut result = Self::default();
 
@@ -680,21 +695,25 @@ impl ContainerAttrs {
     }
 }
 
-/** Field-level attributes parsed from `#[kv(...)]`. */
+/**
+ * Field-level attributes parsed from `#[kv(...)]`.
+ */
 #[derive(Default)]
 struct FieldAttrs {
-    /** Custom key name override. */
+    /// Custom key name override.
     variable: Option<String>,
-    /** Whether this field collects multiple lines. */
+    /// Whether this field collects multiple lines.
     multiline: bool,
-    /** Whether this field collects unhandled keys. */
+    /// Whether this field collects unhandled keys.
     collect: bool,
-    /** Whether an unparseable value becomes `None` instead of erroring. */
+    /// Whether an unparseable value becomes `None` instead of erroring.
     lenient: bool,
 }
 
 impl FieldAttrs {
-    /** Parses field attributes from a slice of attributes. */
+    /**
+     * Parses field attributes from a slice of attributes.
+     */
     fn parse(attrs: &[Attribute]) -> syn::Result<Self> {
         let mut result = Self::default();
 
@@ -729,43 +748,49 @@ impl FieldAttrs {
     }
 }
 
-/** Classification of how a field should be parsed. */
+/**
+ * Classification of how a field should be parsed.
+ */
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum FieldKind {
-    /** `T` - required single value. */
+    /// `T` - required single value.
     Required,
-    /** `Option<T>` - optional single value. */
+    /// `Option<T>` - optional single value.
     Optional,
-    /** `Vec<T>` - whitespace-separated values on one line. */
+    /// `Vec<T>` - whitespace-separated values on one line.
     Vec,
-    /** `Option<Vec<T>>` - optional whitespace-separated values. */
+    /// `Option<Vec<T>>` - optional whitespace-separated values.
     OptionVec,
-    /** `Vec<T>` with `multiline` - multiple lines appended. */
+    /// `Vec<T>` with `multiline` - multiple lines appended.
     MultiLine,
-    /** `Option<Vec<T>>` with `multiline` - optional multiple lines. */
+    /// `Option<Vec<T>>` with `multiline` - optional multiple lines.
     OptionMultiLine,
-    /** `HashMap<String, String>` with `collect` - collects unhandled keys. */
+    /// `HashMap<String, String>` with `collect` - collects unhandled keys.
     Collect,
 }
 
-/** A parsed and analyzed struct field. */
+/**
+ * A parsed and analyzed struct field.
+ */
 struct ParsedField {
-    /** The field identifier. */
+    /// The field identifier.
     ident: Ident,
-    /** The key name used in KEY=VALUE format. */
+    /// The key name used in KEY=VALUE format.
     key_name: String,
-    /** How this field should be parsed. */
+    /// How this field should be parsed.
     kind: FieldKind,
-    /** The inner type (e.g., `T` from `Vec<T>`). */
+    /// The inner type (e.g., `T` from `Vec<T>`).
     inner_type: Type,
-    /** The original declared type. */
+    /// The original declared type.
     original_type: Type,
-    /** Whether an unparseable value becomes `None` instead of erroring. */
+    /// Whether an unparseable value becomes `None` instead of erroring.
     lenient: bool,
 }
 
 impl ParsedField {
-    /** Analyzes a field and extracts parsing metadata. */
+    /**
+     * Analyzes a field and extracts parsing metadata.
+     */
     fn from_field(field: &Field) -> syn::Result<Self> {
         let ident = field.ident.clone().ok_or_else(|| {
             syn::Error::new_spanned(field, "expected named field")
@@ -824,7 +849,9 @@ impl ParsedField {
         })
     }
 
-    /** Returns the type used during parsing to accumulate values. */
+    /**
+     * Returns the type used during parsing to accumulate values.
+     */
     fn state_type(&self) -> TokenStream2 {
         let inner = &self.inner_type;
         match self.kind {
@@ -843,7 +870,9 @@ impl ParsedField {
         }
     }
 
-    /** Generates an expression to merge a new value into the accumulator. */
+    /**
+     * Generates an expression to merge a new value into the accumulator.
+     */
     fn merge_expr(&self, kv: &TokenStream2) -> TokenStream2 {
         let inner = &self.inner_type;
         let ident = &self.ident;
@@ -883,15 +912,17 @@ impl ParsedField {
         }
     }
 
-    /** Generates an expression to extract the final value from the accumulator. */
-    fn extract_expr(&self, kv: &TokenStream2) -> TokenStream2 {
+    /**
+     * Generates a struct field initializer from the accumulator.
+     */
+    fn field_initializer(&self, kv: &TokenStream2) -> TokenStream2 {
         let ident = &self.ident;
         let key_name = &self.key_name;
 
         match self.kind {
             FieldKind::Required | FieldKind::Vec | FieldKind::MultiLine => {
                 quote! {
-                    #ident.ok_or_else(|| #kv::KvError::Incomplete(#key_name.to_string()))?
+                    #ident: #ident.ok_or_else(|| #kv::KvError::Incomplete(#key_name.to_string()))?
                 }
             }
             FieldKind::Optional
@@ -904,7 +935,9 @@ impl ParsedField {
     }
 }
 
-/** Validates that a collect field has the correct type. */
+/**
+ * Validates that a collect field has the correct type.
+ */
 fn validate_collect_type(ty: &Type, field: &Field) -> syn::Result<()> {
     let err = || {
         syn::Error::new_spanned(
@@ -936,7 +969,9 @@ fn validate_collect_type(ty: &Type, field: &Field) -> syn::Result<()> {
     if is_valid { Ok(()) } else { Err(err()) }
 }
 
-/** Analyzes a type to determine its field kind and inner type. */
+/**
+ * Analyzes a type to determine its field kind and inner type.
+ */
 fn analyze_type(ty: &Type, multiline: bool) -> (FieldKind, Type) {
     /* Check for Option<Vec<T>> */
     if let Some(vec_inner) = extract_option_vec_inner(ty) {
@@ -967,13 +1002,17 @@ fn analyze_type(ty: &Type, multiline: bool) -> (FieldKind, Type) {
     (FieldKind::Required, ty.clone())
 }
 
-/** Extracts the inner type from `Option<Vec<T>>`. */
+/**
+ * Extracts the inner type from `Option<Vec<T>>`.
+ */
 fn extract_option_vec_inner(ty: &Type) -> Option<Type> {
     let option_inner = extract_type_param(ty, "Option")?;
     extract_type_param(&option_inner, "Vec")
 }
 
-/** Extracts the type parameter from a generic type like `Wrapper<T>`. */
+/**
+ * Extracts the type parameter from a generic type like `Wrapper<T>`.
+ */
 fn extract_type_param(ty: &Type, wrapper: &str) -> Option<Type> {
     let Type::Path(type_path) = ty else {
         return None;
